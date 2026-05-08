@@ -69,17 +69,16 @@ model Formation {
 // TABLA DE NOTICIAS
 // --------------------------------------------------
 model News {
-  id               String   @id @default(uuid())
-  title            String
-  slug             String   @unique
-  body             String
-  authorId         String?
-  author           User?    @relation(fields: [authorId], references: [id])
-  featuredImageUrl String?
-  category         String   
-  status           String   @default("draft") 
-  publishedAt      DateTime?
-  viewsCount       Int      @default(0)
-  likesCount       Int      @default(0)
-  createdAt        DateTime @default(now())
+  id          String   @id @default(uuid())
+  title       String
+  body        String
+  category    String
+  slug        String   @unique
+  url         String?  // 👈 AGREGAR ESTA LÍNEA (con el ? para que sea opcional y no rompa lo anterior)
+  status      String   @default("draft")
+  publishedAt DateTime?
+  authorId    String
+  author      User     @relation(fields: [authorId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }

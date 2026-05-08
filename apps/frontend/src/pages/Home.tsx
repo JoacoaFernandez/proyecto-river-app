@@ -2,14 +2,14 @@
 import { useState, useEffect } from 'react';
 import { getLatestMatch } from '../services/matches.service';
 import { getNews } from '../services/news.service';
-import Plantel from './Plantel'; // Importamos la nueva pantalla
+import Plantel from './Plantel'; 
 
 interface HomeProps {
   onLogout: () => void;
 }
 
 export default function Home({ onLogout }: HomeProps) {
-  const [activeTab, setActiveTab] = useState<'inicio' | 'plantel'>('inicio'); // Control de pestañas
+  const [activeTab, setActiveTab] = useState<'inicio' | 'plantel'>('inicio'); 
   const [match, setMatch] = useState<any>(null);
   const [news, setNews] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -17,14 +17,32 @@ export default function Home({ onLogout }: HomeProps) {
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
-      const [latestMatch, newsList] = await Promise.all([
-        getLatestMatch(),
-        getNews()
-      ]);
-      
-      if (latestMatch) setMatch(latestMatch);
-      setNews(newsList);
-      setLoading(false);
+      try {
+        console.log('📡 Consultando partidos y noticias al backend...');
+        const [latestMatch, newsList] = await Promise.all([
+          getLatestMatch(),
+          getNews()
+        ]);
+        
+        console.log('⚽ Partido recibido del backend:', latestMatch);
+        console.log('📰 Noticias recibidas del backend:', newsList);
+
+        if (latestMatch) {
+          setMatch(latestMatch);
+        } else {
+          setMatch(null);
+        }
+        
+        if (Array.isArray(newsList)) {
+          setNews(newsList);
+        } else {
+          setNews([]);
+        }
+      } catch (err) {
+        console.error('❌ Error cargando datos en el Home:', err);
+      } finally {
+        setLoading(false);
+      }
     };
 
     loadData();
@@ -46,7 +64,6 @@ export default function Home({ onLogout }: HomeProps) {
               <span className="font-bold text-lg tracking-wide">River App</span>
             </div>
             
-            {/* Botones de navegación por pestañas */}
             <div className="hidden sm:flex items-center gap-4">
               <button
                 onClick={() => setActiveTab('inicio')}
@@ -64,7 +81,6 @@ export default function Home({ onLogout }: HomeProps) {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Botones responsivos para celular */}
             <button 
               onClick={() => setActiveTab('plantel')}
               className="sm:hidden bg-neutral-800 text-xs px-3 py-1.5 rounded-lg text-neutral-300"
@@ -81,7 +97,7 @@ export default function Home({ onLogout }: HomeProps) {
         </div>
       </nav>
 
-      {/* RENDERIZADO CONDICIONAL DE PESTAÑAS */}
+      {/* RENDERIZADO CONDICIONAL */}
       {activeTab === 'plantel' ? (
         <Plantel />
       ) : (
@@ -93,7 +109,7 @@ export default function Home({ onLogout }: HomeProps) {
             </div>
           ) : (
             <>
-              {/* TARJETA DE PARTIDO REAL */}
+              {/* TARJETA DE PARTIDO */}
               <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 relative overflow-hidden shadow-xl">
                 {match && match.status === 'live' && (
                   <div className="absolute top-4 right-4 bg-red-600 text-white text-xs font-bold px-2.5 py-1 rounded-full animate-pulse uppercase tracking-wider">
@@ -129,7 +145,7 @@ export default function Home({ onLogout }: HomeProps) {
                 )}
               </section>
 
-              {/* SECCIÓN DE PRENSA - NOTICIAS IA REALES */}
+              {/* SECCIÓN DE PRENSA - CLICK PARA IR A OLÉ */}
               <section className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h2 className="text-xl font-bold tracking-wide">Prensa Millonaria</h2>
@@ -142,7 +158,13 @@ export default function Home({ onLogout }: HomeProps) {
                 {news.length > 0 ? (
                   <div className="grid gap-6">
                     {news.map((item: any) => (
-                      <article key={item.id} className="bg-neutral-900 border border-neutral-800 hover:border-neutral-700 rounded-2xl p-6 transition-all duration-300 shadow-lg">
+                      <a 
+                        key={item.id} 
+                        href={item.url || '#'} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="block group bg-neutral-900 border border-neutral-800 hover:border-riverRed rounded-2xl p-6 transition-all duration-300 shadow-lg cursor-pointer"
+                      >
                         <div className="flex items-center justify-between mb-3">
                           <span className="text-xs font-bold text-riverRed bg-red-950/30 border border-red-900/50 px-2.5 py-0.5 rounded-full uppercase tracking-wider">
                             {item.category || 'Actualidad'}
@@ -156,14 +178,26 @@ export default function Home({ onLogout }: HomeProps) {
                             })}
                           </span>
                         </div>
-                        <h3 className="text-lg font-bold text-white mb-2 leading-snug">{item.title}</h3>
-                        <p className="text-sm text-neutral-400 leading-relaxed">{item.body}</p>
-                      </article>
+                        <h3 className="text-lg font-bold text-white mb-2 leading-snug group-hover:text-riverRed transition-colors">
+                          {item.title}
+                        </h3>
+                        <p className="text-sm text-neutral-400 leading-relaxed line-clamp-3">
+                          {item.body}
+                        </p>
+                        
+                        {item.url && (
+                          <div className="mt-4 text-right">
+                            <span className="text-xs font-semibold text-neutral-500 group-hover:text-riverRed transition-colors">
+                              Leer nota completa en Olé ↗
+                            </span>
+                          </div>
+                        )}
+                      </a>
                     ))}
                   </div>
                 ) : (
                   <div className="text-center py-12 bg-neutral-900 border border-neutral-800 rounded-2xl text-neutral-500 text-sm">
-                    El robot periodista está analizando las novedades en la concentración... ✍️
+                    El robot periodista está buscando primicias en el entrenamiento... ✍️
                   </div>
                 )}
               </section>

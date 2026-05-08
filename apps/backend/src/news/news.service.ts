@@ -8,18 +8,56 @@ import { UpdateNewsDto } from './dto/update-news.dto';
 export class NewsService {
   constructor(private prisma: PrismaService) {}
 
-  // CREAR NOTICIA
-  async create(createNewsDto: CreateNewsDto) {
-    const { slug } = createNewsDto;
+  // Generador automático de slugs limpios para los portales de origen
+  private generateSlug(title: string): string {
+    return title
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+      .replace(/[^\w\s-]/g, '')
+      .replace(/[\s_-]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
 
-    // Verificar si el slug ya existe (debe ser único)
+  // CREACIÓN AUTÓNOMA DE NOTICIAS
+  async create(createNewsDto: CreateNewsDto) {
+    // 1. Buscamos de forma transparente al usuario "Periodista IA" para cumplir la relación obligatoria (fkey)
+    let author = await this.prisma.user.findFirst({
+      where: { email: 'periodista.ia@riverapp.com' },
+    });
+
+    // 2. Si no existe en tu base de Render (por ejemplo, base de datos limpia), lo creamos con tus columnas reales
+    if (!author) {
+      author = await this.prisma.user.create({
+        data: {
+          email: 'periodista.ia@riverapp.com',
+          password_hash: '$2b$10$PlaceholderHashForIASystemAccountOnly', // Tu columna obligatoria real
+          display_name: 'Periodista Millonario IA',                 // Tu columna obligatoria real
+          role: 'ADMIN',
+        },
+      });
+    }
+
+    // 3. Generamos el slug automático para que no lo tengas que definir vos
+    const slug = createNewsDto.slug || this.generateSlug(createNewsDto.title);
+
+    // 4. Evitamos duplicar noticias que ya hayamos extraído de las plataformas de origen
     const slugExists = await this.prisma.news.findUnique({ where: { slug } });
     if (slugExists) {
       throw new BadRequestException('El slug de la noticia ya está en uso. Elige uno diferente.');
     }
 
+    // 5. Guardamos en Render enlazando el ID del autor de forma transparente
     return this.prisma.news.create({
-      data: createNewsDto,
+      data: {
+        title: createNewsDto.title,
+        body: createNewsDto.body,
+        category: createNewsDto.category || 'Actualidad',
+        status: createNewsDto.status || 'published',
+        slug,
+        authorId: createNewsDto.authorId || author.id, // <-- ¡Solución definitiva a la fkey obligatoria!
+      },
     });
   }
 
@@ -60,13 +98,12 @@ export class NewsService {
     return news;
   }
 
-  // EDITAR NOTICIA (O Publicarla cambiando status a 'published')
+  // EDITAR NOTICIA
   async update(id: string, updateNewsDto: UpdateNewsDto) {
-    await this.findOne(id); // Validar existencia
+    await this.findOne(id);
 
     const dataToUpdate: any = { ...updateNewsDto };
     
-    // Si se pasa a estado 'published', guardamos la fecha de publicación actual
     if (updateNewsDto.status === 'published') {
       dataToUpdate.publishedAt = new Date();
     }
