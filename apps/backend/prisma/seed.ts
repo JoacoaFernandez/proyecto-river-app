@@ -104,12 +104,21 @@ async function main() {
     throw new Error('❌ No se encontró la variable API_FOOTBALL_KEY en el archivo .env');
   }
 
-  // Ejecutamos ambas tareas automáticas de corrido
+  // 1. Sincroniza jugadores reales
   await syncPlayers(API_KEY);
   console.log('----------------------------------------------------');
-  await syncFixture(API_KEY);
   
-  console.log('🎉 [ÉXITO TOTAL] ¡Tu base de datos de Render tiene todo el plantel y el fixture cargados!');
+  // 2. Sincroniza partidos reales
+  await syncFixture(API_KEY);
+  console.log('----------------------------------------------------');
+
+  // 3. ¡LLAMA AL ROBOT PERIODISTA PARA QUE CONSIGA LA NOTICIA DE LA PLATAFORMA DE FORMA AUTÓNOMA!
+  console.log('📰 3. Despertando al robot Periodista IA para extraer novedades de la plataforma...');
+  const { NewsAiService } = require('../src/news/news-ai.service');
+  const newsAi = new NewsAiService(prisma);
+  await newsAi.generateAndSaveNews();
+  
+  console.log('🎉 [ÉXITO TOTAL] ¡Tu base de datos tiene todo el plantel, el fixture y la prensa del día de forma 100% autónoma!');
 }
 
 main()

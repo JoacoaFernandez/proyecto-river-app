@@ -26,10 +26,7 @@ export class MatchesService {
   async findAll() {
     return this.prisma.match.findMany({
       orderBy: {
-        matchDate: 'asc',
-      },
-      include: {
-        formations: true, // Trae también las formaciones tácticas asociadas
+        matchDate: 'desc', // Los más recientes primero
       },
     });
   }
