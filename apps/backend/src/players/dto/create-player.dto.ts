@@ -1,47 +1,35 @@
 // apps/backend/src/players/dto/create-player.dto.ts
-import { IsNotEmpty, IsOptional, IsString, IsInt, Min, Max, IsNumber } from 'class-validator';
+import { IsString, IsInt, IsOptional, IsNotEmpty } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreatePlayerDto {
-  @ApiProperty({ example: 'Franco Armani', description: 'Nombre completo del jugador' })
+  @ApiProperty({ description: 'Nombre completo del jugador' })
   @IsString()
-  @IsNotEmpty({ message: 'El nombre completo es obligatorio' })
-  fullName: string;
+  @IsNotEmpty()
+  name: string;
 
-  @ApiProperty({ example: 'Pulpo', description: 'Apodo del jugador', required: false })
+  @ApiProperty({ description: 'Posición en la cancha' })
   @IsString()
-  @IsOptional()
-  alias?: string;
-
-  @ApiProperty({ example: 'Arquero', description: 'Posición del jugador' })
-  @IsString()
-  @IsNotEmpty({ message: 'La posición es obligatoria' })
+  @IsNotEmpty()
   position: string;
 
-  @ApiProperty({ example: 1, description: 'Número de camiseta' })
+  @ApiProperty({ description: 'Dorsal / Número de camiseta', required: false })
   @IsInt()
-  @Min(1)
-  @Max(99)
-  @IsNotEmpty({ message: 'El número de camiseta es obligatorio' })
-  jerseyNumber: number;
+  @IsOptional()
+  number?: number;
 
-  @ApiProperty({ example: 'Argentina', description: 'Nacionalidad del jugador' })
-  @IsString()
-  @IsNotEmpty({ message: 'La nacionalidad es obligatoria' })
-  nationality: string;
+  @ApiProperty({ description: 'Edad del futbolista', required: false })
+  @IsInt()
+  @IsOptional()
+  age?: number;
 
-  @ApiProperty({ example: 'https://ejemplo.com/fotos/armani.png', description: 'URL de la foto', required: false })
+  @ApiProperty({ description: 'URL de la foto oficial', required: false })
   @IsString()
   @IsOptional()
-  photoUrl?: string;
+  photo?: string;
 
-  @ApiProperty({ example: 'active', description: 'Estado del jugador', required: false })
+  @ApiProperty({ description: 'Nacionalidad', required: false })
   @IsString()
   @IsOptional()
-  status?: string;
-
-  @ApiProperty({ example: 1500000.00, description: 'Valor de mercado en USD', required: false })
-  @IsNumber()
-  @IsOptional()
-  marketValueUsd?: number;
+  nationality?: string;
 }
