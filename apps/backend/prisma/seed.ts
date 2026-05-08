@@ -10,7 +10,6 @@ const prisma = new PrismaClient();
 
 const RIVER_PLATE_TEAM_ID = 435; // ID oficial de River Plate
 const API_KEY = process.env.API_FOOTBALL_KEY;
-const CURRENT_YEAR = new Date().getFullYear(); // 2026
 
 async function syncPlayers(apiKey: string) {
   console.log('📡 1. Descargando plantel real de River desde API-Football...');
@@ -52,73 +51,16 @@ async function syncPlayers(apiKey: string) {
   console.log('✅ ¡Sincronización de plantel completada!');
 }
 
-async function syncFixture(apiKey: string) {
-  console.log('📅 2. Descargando Fixture completo de River Plate...');
-  // Limpiamos los partidos previos para evitar duplicados
-  await prisma.match.deleteMany();
-
-  const response = await axios.get('https://v3.football.api-sports.io/fixtures', {
-    params: { 
-      team: RIVER_PLATE_TEAM_ID,
-      season: CURRENT_YEAR
-    },
-    headers: {
-      'x-rapidapi-key': apiKey,
-      'x-rapidapi-host': 'v3.football.api-sports.io',
-    },
-  });
-
-  const fixtures = response.data.response;
-  if (!fixtures || fixtures.length === 0) {
-    console.log('⚠️ No se encontraron partidos programados para esta temporada.');
-    return;
-  }
-
-  console.log(`📥 Guardando ${fixtures.length} partidos en Render...`);
-  
-  for (const f of fixtures) {
-    const isHome = f.teams.home.id === RIVER_PLATE_TEAM_ID;
-    
-    // Traducimos el estado de la API a nuestro esquema base
-    let dbStatus = 'scheduled';
-    if (f.fixture.status.short === 'FT') dbStatus = 'finished';
-    if (['1H', '2H', 'HT', 'ET', 'P'].includes(f.fixture.status.short)) dbStatus = 'live';
-
-    await prisma.match.create({
-      data: {
-        homeTeam: f.teams.home.name,
-        awayTeam: f.teams.away.name,
-        homeScore: f.goals.home ?? 0,
-        awayScore: f.goals.away ?? 0,
-        minute: f.fixture.status.elapsed ?? 0,
-        status: dbStatus,
-        matchDate: new Date(f.fixture.date), // <-- ¡Esta es la corrección clave! Cambiamos 'createdAt' por 'matchDate'
-      },
-    });
-  }
-  console.log('✅ ¡Sincronización de fixture completada con éxito!');
-}
-
 async function main() {
   if (!API_KEY) {
     throw new Error('❌ No se encontró la variable API_FOOTBALL_KEY en el archivo .env');
   }
 
-  // 1. Sincroniza jugadores reales
+  // 1. Sincroniza jugadores reales (Esto se hace una vez por temporada)
   await syncPlayers(API_KEY);
   console.log('----------------------------------------------------');
   
-  // 2. Sincroniza partidos reales
-  await syncFixture(API_KEY);
-  console.log('----------------------------------------------------');
-
-  // 3. ¡LLAMA AL ROBOT PERIODISTA PARA QUE CONSIGA LA NOTICIA DE LA PLATAFORMA DE FORMA AUTÓNOMA!
-  console.log('📰 3. Despertando al robot Periodista IA para extraer novedades de la plataforma...');
-  const { NewsAiService } = require('../src/news/news-ai.service');
-  const newsAi = new NewsAiService(prisma);
-  await newsAi.generateAndSaveNews();
-  
-  console.log('🎉 [ÉXITO TOTAL] ¡Tu base de datos tiene todo el plantel, el fixture y la prensa del día de forma 100% autónoma!');
+  console.log('🎉 [ÉXITO TOTAL] ¡Plantel sincronizado! El Fixture y las Noticias ahora se actualizan solos de fondo al prender el servidor.');
 }
 
 main()

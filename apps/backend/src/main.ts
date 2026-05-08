@@ -6,6 +6,7 @@ import { ValidationPipe } from '@nestjs/common';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.enableCors();
 
   // Habilitar validaciones automáticas de datos en los endpoints
   app.useGlobalPipes(new ValidationPipe({

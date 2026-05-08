@@ -1,22 +1,17 @@
-// apps/backend/src/app.module.ts
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './prisma/prisma.module';
-import { AuthModule } from './auth/auth.module';
 import { MatchesModule } from './matches/matches.module';
-import { PlayersModule } from './players/players.module';
-import { NewsModule } from './news/news.module';
-import { FormationsModule } from './formations/formations.module';
+import { NewsModule } from './news/news.module';       // 👈 ¡Faltaba esto!
+import { PlayersModule } from './players/players.module'; // 👈 ¡Faltaba esto! (O SquadModule, según cómo lo llamaste)
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }), // Carga las variables de tu .env
-    PrismaModule, // Conexión global a la base de datos de Render
-    AuthModule,
+    PrismaModule,
     MatchesModule,
-    PlayersModule,
-    NewsModule,
-    FormationsModule,
+    NewsModule,     // 👈 ¡Enchufamos las noticias!
+    PlayersModule,  // 👈 ¡Enchufamos el plantel!
   ],
+  controllers: [],
+  providers: [],
 })
 export class AppModule {}
