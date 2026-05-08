@@ -2,25 +2,29 @@
 import { useState } from 'react';
 import { login } from '../services/auth.service'; // Importamos el servicio
 
-export default function Login() {
+export default function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
+  // Declaramos los estados necesarios para controlar el formulario
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Función que se ejecuta al presionar "Entrar a la Cancha"
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
 
     try {
-      // Llamamos a la función de login conectada al backend
+      // Llamamos al servicio que se conecta con tu NestJS en Render
       const data = await login(email, password);
       console.log('¡Ingreso exitoso! Token guardado:', data.access_token);
       alert('¡Bienvenido a la River App! Entrando a la cancha...');
-      // Más adelante, aquí redireccionaremos al Home
+      
+      // Ejecutamos la función que nos cambia la pantalla al Home
+      onLoginSuccess();
     } catch (err: any) {
-      // Si la contraseña o el mail están mal, lo mostramos en pantalla
+      // Si el backend rebota las credenciales, mostramos el error en pantalla
       setError(err.message);
     } finally {
       setLoading(false);
@@ -82,7 +86,7 @@ export default function Login() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-riverRed hover:bg-red-700 disabled:bg-neutral-800 text-white font-bold py-3 px-4 rounded-xl transition-all duration-300 shadow-lg shadow-red-900/30 active:scale-[0.98] mt-2 flex items-center justify-center"
+            className="w-full bg-riverRed hover:bg-red-700 disabled:bg-neutral-800 text-white font-bold py-3 px-4 rounded-xl transition-all duration-300 shadow-lg shadow-red-900/30 active:scale-[0.98] mt-2 flex items-center justify-center cursor-pointer"
           >
             {loading ? 'Validando pase...' : 'Entrar a la Cancha 🏟️'}
           </button>
