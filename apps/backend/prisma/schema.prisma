@@ -43,15 +43,15 @@ model Match {
 // TABLA DEL PLANTEL / JUGADORES
 // --------------------------------------------------
 model Player {
-  id            String   @id @default(uuid())
-  fullName      String
-  alias         String?
-  position      String   
-  jerseyNumber  Int
-  nationality   String
-  photoUrl      String?
-  status        String   @default("active") 
-  marketValueUsd Float?
+  id          String   @id @default(uuid())
+  name        String
+  position    String   // 'Goalkeeper', 'Defender', 'Midfielder', 'Attacker'
+  number      Int?     // Dorsal del jugador
+  age         Int?     // Edad
+  photo       String?  // URL de la foto oficial de la API
+  nationality String?  // Nacionalidad
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 // --------------------------------------------------
