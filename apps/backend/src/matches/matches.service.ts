@@ -1,21 +1,80 @@
-// ...existing code...
+// matches.service.ts — versión con descubrimiento dinámico de IDs + fixes
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
-import * as cheerio from 'cheerio';
 import axios from 'axios';
+
+const RIVER_CANON = 'River Plate';
+const RIVER_NAMES = ['river plate', 'club atletico river plate', 'club atlético river plate'];
+
+const ESPN_LEAGUES = [
+  { code: 'arg.1',                 name: 'Liga Profesional Argentina' },
+  { code: 'conmebol.libertadores', name: 'Copa Libertadores' },
+  { code: 'conmebol.sudamericana', name: 'Copa Sudamericana' },
+];
+
+const AXIOS_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (compatible; RiverAppBot/2.0)',
+  Accept: 'application/json',
+};
+
+const normalizeStr = (s: string) =>
+  s.toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+
+const isRiverArgentina = (name?: string, country?: string): boolean => {
+  if (!name) return false;
+  const n = normalizeStr(name);
+  const hasRiver = RIVER_NAMES.some(r => n.includes(r));
+  if (!hasRiver) return false;
+  if (country) {
+    const c = normalizeStr(country);
+    if (c.includes('uruguay') || c.includes('brasil') || c.includes('chile')) return false;
+  }
+  return true;
+};
+
+const isRiver = (name?: string): boolean =>
+  !!name && RIVER_NAMES.some(r => normalizeStr(name).includes(r));
+
+function normalizeTeams(
+  homeTeam: string, awayTeam: string,
+  homeScore: number | null, awayScore: number | null,
+) {
+  if (isRiver(awayTeam) && !isRiver(homeTeam)) {
+    return { homeTeam: RIVER_CANON, awayTeam: homeTeam, homeScore: awayScore, awayScore: homeScore };
+  }
+  return {
+    homeTeam: isRiver(homeTeam) ? RIVER_CANON : homeTeam,
+    awayTeam: isRiver(awayTeam) ? RIVER_CANON : awayTeam,
+    homeScore,
+    awayScore,
+  };
+}
+
+function dedup(matches: any[]): any[] {
+  const seen = new Set<string>();
+  return matches.filter(m => {
+    try {
+      const key = `${new Date(m.date).toISOString()}|${normalizeStr(m.homeTeam)}|${normalizeStr(m.awayTeam)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    } catch { return true; }
+  });
+}
 
 @Injectable()
 export class MatchesService implements OnModuleInit {
   private readonly logger = new Logger(MatchesService.name);
 
+  private sportsDbTeamId: string | null = null;
+  private espnTeamId: string | null = null;
+
   constructor(private readonly prisma: PrismaService) {}
 
   async onModuleInit() {
-    this.logger.log('⚡ [Autónomo] Activando Engine de Fixture via MediaWiki API...');
-    setTimeout(async () => {
-      await this.syncMatches();
-    }, 4000);
+    this.logger.log('⚡ Motor de Fixture River Plate iniciando...');
+    setTimeout(() => this.syncMatches(), 3000);
   }
 
   @Cron(CronExpression.EVERY_10_MINUTES)
@@ -23,19 +82,18 @@ export class MatchesService implements OnModuleInit {
     await this.syncMatches();
   }
 
+  // ── Queries públicas ─────────────────────────────────────────────────────────
+
   async getUpcomingMatches(limit = 10) {
-    // ...existing code...
     const now = new Date();
+    // Margen de 3h hacia atrás para absorber diferencias de timezone de las APIs
+    const cutoff = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+
     return this.prisma.match.findMany({
       where: {
         OR: [
-          { status: 'live' }, // siempre incluir partidos en vivo
-          {
-            AND: [
-              { status: 'scheduled' }, // sólo programados en el futuro
-              { date: { gte: now } },
-            ],
-          },
+          { status: 'live' },
+          { AND: [{ status: 'scheduled' }, { date: { gte: cutoff } }] },
         ],
       },
       orderBy: { date: 'asc' },
@@ -45,415 +103,367 @@ export class MatchesService implements OnModuleInit {
 
   async getPastMatches(limit = 20) {
     return this.prisma.match.findMany({
-      where: { status: 'finished', date: { lt: new Date() } },
+      where: { status: 'finished' },
       orderBy: { date: 'desc' },
       take: limit,
     });
   }
 
   async getLatestMatch() {
-    let match = await this.prisma.match.findFirst({ where: { status: 'live' }, orderBy: { date: 'desc' } });
-    if (!match) match = await this.prisma.match.findFirst({ where: { type: 'NEXT' } });
-    if (!match) match = await this.prisma.match.findFirst({ where: { type: 'LATEST' } });
-    return match;
+    const now = new Date();
+
+    // 1. Partido en vivo
+    const live = await this.prisma.match.findFirst({
+      where: { status: 'live' },
+      orderBy: { date: 'desc' },
+    });
+    if (live) return live;
+
+    // 2. Próximo partido futuro
+    const next = await this.prisma.match.findFirst({
+      where: { status: 'scheduled', date: { gte: now } },
+      orderBy: { date: 'asc' },
+    });
+    if (next) return next;
+
+    // 3. Cualquier partido scheduled (aunque la fecha ya pasó — delay de API)
+    const anyScheduled = await this.prisma.match.findFirst({
+      where: { status: 'scheduled' },
+      orderBy: { date: 'asc' },
+    });
+    if (anyScheduled) return anyScheduled;
+
+    // 4. Último partido terminado
+    const latest = await this.prisma.match.findFirst({
+      where: { status: 'finished' },
+      orderBy: { date: 'desc' },
+    });
+    return latest ?? null;
   }
 
   async getAllGrouped() {
-    const upcoming = await this.getUpcomingMatches(50);
-    const past = await this.getPastMatches(200);
+    const [upcoming, past] = await Promise.all([
+      this.getUpcomingMatches(50),
+      this.getPastMatches(200),
+    ]);
     return { upcoming, past };
   }
 
-  // ...existing code...
-  // ...existing code...
-async syncMatches() {
-  try {
-    this.logger.log('📡 Consultando Wikipedia para el fixture de River Plate...');
-    const currentYear = new Date().getFullYear();
-    const pageTitle = `Anexo:Temporada_${currentYear}_del_Club_Atlético_River_Plate`;
-    const wikipediaApiUrl = `https://es.wikipedia.org/w/api.php?action=query&prop=revisions&rvprop=content&format=json&titles=${encodeURIComponent(
-      pageTitle,
-    )}&utf8=1`;
+  // ── Debug ────────────────────────────────────────────────────────────────────
 
-    let pageContent: string | null = null;
-    try {
-      const response = await axios.get(wikipediaApiUrl, {
-        headers: { 'User-Agent': 'RiverAppBot/1.0 (contacto@riverapp.com)' },
-        timeout: 8000,
-      });
-      const pages = response.data?.query?.pages;
-      const pageId = pages ? Object.keys(pages)[0] : null;
-      pageContent = pageId ? pages[pageId]?.revisions?.[0]?.['*'] : null;
-    } catch (err) {
-      this.logger.warn('⚠️ Error consultando Wikipedia (página principal): ' + (err?.message || err));
-    }
-
-    // 1) Intento parsear la página específica
-    let parsedMatches = pageContent ? this.parseWikiContent(pageContent, currentYear) : [];
-
-    // 2) Si no hay resultados, buscar en varias páginas relacionadas via MediaWiki search
-    if (!parsedMatches || parsedMatches.length === 0) {
-      this.logger.log('🔎 Buscando en otras páginas de Wikipedia relacionadas con River Plate...');
-      const searchMatches = await this.fetchMatchesFromWikiSearch(currentYear);
-      if (searchMatches && searchMatches.length > 0) {
-        parsedMatches = searchMatches;
-        this.logger.log(`🔁 Encontrados ${searchMatches.length} partidos desde búsqueda en Wiki.`);
-      } else {
-        this.logger.log('🔁 No se encontraron partidos con la búsqueda en Wiki.');
-      }
-    }
-
-    // 3) Si sigue vacío, fall back a API-Football
-    if (!parsedMatches || parsedMatches.length === 0) {
-      this.logger.log('🔁 Intentando API-Football como respaldo...');
-      const apiMatches = await this.fetchFixturesFromApiFootball();
-      if (apiMatches && apiMatches.length > 0) parsedMatches = apiMatches;
-    }
-
-    // 4) Si aún vacío, intentar scraping en ESPN (helper fetchFixturesFromEspn ya está en el archivo)
-    if (!parsedMatches || parsedMatches.length === 0) {
-      this.logger.log('🔁 Intentando scraping en ESPN como alternativa...');
-      const espnMatches = await this.fetchFixturesFromEspn();
-      if (espnMatches && espnMatches.length > 0) {
-        parsedMatches = espnMatches;
-        this.logger.log(`🔁 Encontrados ${espnMatches.length} partidos desde ESPN (scrape).`);
-      } else {
-        this.logger.log('🔁 ESPN no devolvió partidos.');
-      }
-    }
-
-    // 5) Si aún sigue vacío, usar fixture interno
-    if (!parsedMatches || parsedMatches.length === 0) {
-      this.logger.log('🔁 Usando fixture de respaldo interno.');
-      parsedMatches = this.parseWikiContent(this.getFallbackWikiContent(), currentYear);
-    }
-
-    await this.saveFixturesToDatabase(parsedMatches || []);
-  } catch (error: any) {
-    this.logger.error(`❌ Error en el engine de sincronización: ${error?.message || error}`);
+  async getDebugInfo() {
+    const all = await this.prisma.match.findMany({ orderBy: { date: 'asc' } });
+    return {
+      total: all.length,
+      byStatus: {
+        live:      all.filter(m => m.status === 'live').length,
+        scheduled: all.filter(m => m.status === 'scheduled').length,
+        finished:  all.filter(m => m.status === 'finished').length,
+      },
+      types: [...new Set(all.map(m => m.type))],
+      sample: all.slice(0, 5).map(m => ({
+        type:        m.type,
+        status:      m.status,
+        date:        m.date,
+        home:        m.homeTeam,
+        away:        m.awayTeam,
+        competition: m.competition,
+      })),
+      upcoming: all
+        .filter(m => m.status === 'scheduled')
+        .slice(0, 3)
+        .map(m => ({ date: m.date, home: m.homeTeam, away: m.awayTeam, status: m.status })),
+    };
   }
-}
-// ...existing code...
 
-  // Helper: buscar páginas relacionadas en MediaWiki y parsearlas
-  private async fetchMatchesFromWikiSearch(currentYear: number) {
+  // ── Motor de sincronización ──────────────────────────────────────────────────
+
+  async syncMatches() {
     try {
-      const searchQuery = `"Ficha de partido" "River Plate" ${currentYear}`;
-      const searchUrl = `https://es.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
-        searchQuery,
-      )}&utf8=1&format=json&srlimit=8`;
+      this.logger.log('🔄 Sincronizando fixture River Plate...');
+      let matches: any[] = [];
 
-      const res = await axios.get(searchUrl, {
-        headers: { 'User-Agent': 'RiverAppBot/1.0 (contacto@riverapp.com)' },
-        timeout: 8000,
-      });
+      if (!matches.length) {
+        this.logger.log('📡 [1/4] TheSportsDB...');
+        matches = await this.fetchFromTheSportsDB();
+        this.logger.log(matches.length ? `✅ TheSportsDB: ${matches.length} partidos.` : '❌ TheSportsDB: 0 partidos.');
+      }
 
-      const hits = res.data?.query?.search || [];
-      if (!Array.isArray(hits) || hits.length === 0) return [];
+      if (!matches.length) {
+        this.logger.log('📡 [2/4] ESPN API...');
+        matches = await this.fetchFromEspnApi();
+        this.logger.log(matches.length ? `✅ ESPN: ${matches.length} partidos.` : '❌ ESPN: 0 partidos.');
+      }
 
-      // Obtener contenidos de hasta 5 páginas relevantes
-      const titles = hits.slice(0, 6).map((h: any) => h.title);
-      const fetchPromises = titles.map((t: string) =>
-        axios.get(
-          `https://es.wikipedia.org/w/api.php?action=query&prop=revisions&rvprop=content&format=json&titles=${encodeURIComponent(
-            t,
-          )}&utf8=1`,
-          { headers: { 'User-Agent': 'RiverAppBot/1.0 (contacto@riverapp.com)' }, timeout: 8000 },
-        ).then(r => {
-          const pages = r.data?.query?.pages;
-          const pageId = pages ? Object.keys(pages)[0] : null;
-          return pageId ? pages[pageId]?.revisions?.[0]?.['*'] : null;
-        }).catch(e => {
-          this.logger.warn('⚠️ Error al obtener página ' + t + ': ' + (e?.message || e));
-          return null;
-        }),
+      if (!matches.length) {
+        this.logger.log('📡 [3/4] API-Football...');
+        matches = await this.fetchFromApiFootball();
+        this.logger.log(matches.length ? `✅ API-Football: ${matches.length} partidos.` : '❌ API-Football: 0 partidos.');
+      }
+
+      if (!matches.length) {
+        this.logger.log('📡 [4/4] Wikipedia...');
+        matches = await this.fetchFromWikipedia();
+        this.logger.log(matches.length ? `✅ Wikipedia: ${matches.length} partidos.` : '❌ Wikipedia: 0 partidos.');
+      }
+
+      if (!matches.length) {
+        this.logger.warn('⚠️ Todas las fuentes fallaron. Usando fixture interno.');
+        matches = this.getFallbackFixture();
+      }
+
+      const deduped = dedup(matches);
+      this.logger.log(
+        `📊 Total tras dedup: ${deduped.length} partidos ` +
+        `(scheduled: ${deduped.filter(m => m.status === 'scheduled').length}, ` +
+        `finished: ${deduped.filter(m => m.status === 'finished').length})`
       );
+      await this.saveToDatabase(deduped);
+    } catch (error: any) {
+      this.logger.error(`❌ Error crítico: ${error?.message}`);
+    }
+  }
 
-      const contents = await Promise.all(fetchPromises);
-      let allMatches: any[] = [];
-      for (const c of contents) {
-        if (c && typeof c === 'string') {
-          const parsed = this.parseWikiContent(c, currentYear);
-          if (parsed && parsed.length > 0) allMatches = allMatches.concat(parsed);
+  // ── Descubrimiento TheSportsDB ID ────────────────────────────────────────────
+
+  private async resolveTheSportsDbId(): Promise<string | null> {
+    if (this.sportsDbTeamId) return this.sportsDbTeamId;
+
+    try {
+      const url = 'https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=River+Plate';
+      const res = await axios.get(url, { headers: AXIOS_HEADERS, timeout: 10000 });
+      const teams: any[] = res.data?.teams || [];
+
+      this.logger.log(`TheSportsDB búsqueda "River Plate": ${teams.length} resultados`);
+
+      for (const t of teams) {
+        const country = (t.strCountry || '').toLowerCase();
+        const league  = (t.strLeague  || '').toLowerCase();
+        const name    = (t.strTeam    || '').toLowerCase();
+
+        this.logger.log(`  → ${t.strTeam} | País: ${t.strCountry} | Liga: ${t.strLeague} | ID: ${t.idTeam}`);
+
+        const isArgentina =
+          country.includes('argentina') ||
+          league.includes('primera') ||
+          league.includes('argentina');
+
+        if (isArgentina && name.includes('river plate')) {
+          this.sportsDbTeamId = t.idTeam;
+          this.logger.log(`✅ TheSportsDB ID encontrado: ${this.sportsDbTeamId} (${t.strTeam} - ${t.strCountry})`);
+          return this.sportsDbTeamId;
         }
       }
 
-      // Filtrar duplicados por fecha+equipos
-      const seen = new Set<string>();
-      const unique: any[] = [];
-      for (const m of allMatches) {
-        try {
-          const key = `${new Date(m.date).toISOString()}|${(m.homeTeam||'').toLowerCase()}|${(m.awayTeam||'').toLowerCase()}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            unique.push(m);
-          }
-        } catch {}
-      }
+      this.logger.warn('⚠️ TheSportsDB: no se encontró River Plate Argentina.');
+    } catch (e: any) {
+      this.logger.warn(`⚠️ TheSportsDB discovery falló: ${e?.message}`);
+    }
 
-      unique.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      return unique;
-    } catch (err: any) {
-      this.logger.warn('⚠️ Error en fetchMatchesFromWikiSearch: ' + (err?.message || err));
+    return null;
+  }
+
+  // ── Fuente 1: TheSportsDB ────────────────────────────────────────────────────
+
+  private async fetchFromTheSportsDB(): Promise<any[]> {
+    const teamId = await this.resolveTheSportsDbId();
+    if (!teamId) {
+      this.logger.warn('⚠️ TheSportsDB: no se pudo resolver el team ID.');
       return [];
     }
-  }
-// ...existing code...
 
-  // ...existing code...
-// ...existing code...
-private parseWikiContent(pageContent: string, currentYear: number) {
-  const parsedMatches: any[] = [];
-  const matchBlockRegex = /\{\{Ficha de partido[\s\S]*?\}\}/gi;
-  const blocks = pageContent.match(matchBlockRegex);
-  if (!blocks) return parsedMatches;
+    const allMatches: any[] = [];
+    const now = new Date();
 
-  const normalize = (s: string) =>
-    s
-      .toString()
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-  const RIVER_CANON = 'River Plate';
-  const riverNames = ['river plate', 'club atletico river plate', 'club atlético river plate', 'river'];
-
-  const isRiver = (s?: string) => {
-    if (!s) return false;
-    const n = normalize(s);
-    return riverNames.some(r => n.includes(r));
-  };
-
-  for (const block of blocks) {
-    const getValue = (keys: string[]) => {
-      for (const key of keys) {
-        const re = new RegExp(`${key}\\s*=\\s*([^|\\n\\}]+)`, 'i');
-        const m = block.match(re);
-        if (m && m[1]) return m[1].trim().replace(/\[\[|\]\]/g, '');
-      }
-      return null;
-    };
-
-    let a = getValue(['local', 'equipo_local', 'home', 'localia']);
-    let b = getValue(['visita', 'visitante', 'away']);
-    const scoreRaw = getValue(['resultado', 'score', 'result']);
-    const dateRaw = getValue(['fecha', 'date']);
-    const compRaw = getValue(['competicion', 'competencia', 'competition', 'torneo']);
-
-    if (!a || !b) continue;
-
-    // Normalizar y colapsar espacios
-    a = a.replace(/\s+/g, ' ').trim();
-    b = b.replace(/\s+/g, ' ').trim();
-
-    // Mapear score
-    let homeScore: number | null = null;
-    let awayScore: number | null = null;
-    let status = 'scheduled';
-    if (scoreRaw) {
-      const s = scoreRaw.replace(/\u2013|\u2014|–|—/g, '-').replace(/:/g, '-');
-      const mScore = s.match(/(\d+)\s*[-]\s*(\d+)/);
-      if (mScore) {
-        homeScore = parseInt(mScore[1], 10);
-        awayScore = parseInt(mScore[2], 10);
-        status = 'finished';
-      }
-    }
-
-    // Fecha
-    let matchDate = new Date();
-    if (dateRaw) {
-      const raw = dateRaw.replace(/\[\[|\]\]/g, '').trim();
-      const tryISO = new Date(raw);
-      if (!isNaN(tryISO.getTime())) {
-        matchDate = tryISO;
-      } else {
-        const parts = raw.split(' de ').map(p => p.trim());
-        if (parts.length >= 2) {
-          const day = parseInt(parts[0], 10);
-          const monthName = parts[1].toLowerCase();
-          const months: { [k: string]: number } = {
-            enero: 0, febrero: 1, marzo: 2, abril: 3, mayo: 4, junio: 5,
-            julio: 6, agosto: 7, septiembre: 8, octubre: 9, noviembre: 10, diciembre: 11,
-          };
-          const month = months[monthName] ?? 4;
-          matchDate = new Date(currentYear, month, isNaN(day) ? 1 : day, 18, 0, 0);
-        } else {
-          matchDate = new Date();
-        }
-      }
-    }
-
-    // Detectar River y forzar que River siempre quede como homeTeam
-    const aIsRiver = isRiver(a);
-    const bIsRiver = isRiver(b);
-
-    let homeTeam = a;
-    let awayTeam = b;
-
-    // Si aparece River en uno de los equipos, forzar homeTeam = River Plate
-    if (bIsRiver && !aIsRiver) {
-      homeTeam = RIVER_CANON;
-      awayTeam = a;
-      // swap scores
-      const tmp = homeScore;
-      homeScore = awayScore;
-      awayScore = tmp;
-    } else if (aIsRiver && !bIsRiver) {
-      homeTeam = RIVER_CANON;
-      awayTeam = b;
-    } else {
-      // ninguno o ambos contienen River: mantener orden original pero normalizar nombre River si aparece
-      if (aIsRiver) homeTeam = RIVER_CANON;
-      if (bIsRiver) awayTeam = RIVER_CANON;
-    }
-
-    parsedMatches.push({
-      homeTeam,
-      awayTeam,
-      homeScore,
-      awayScore,
-      status,
-      date: matchDate,
-      competition: compRaw || 'Torneo Oficial',
-    });
-  }
-
-  return parsedMatches;
-}
-// ...existing code...
-// ...existing code...
-  // ...existing code...
-private async fetchFixturesFromEspn() {
-  try {
-    const candidateUrls = [
-      'https://www.espn.com.ar/futbol/equipo/fixture/_/id/360/river-plate',
-      'https://www.espn.com/futbol/equipo/fixture/_/id/360/river-plate',
-    ];
-
-    const headers = {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0 Safari/537.36',
-      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Accept-Language': 'es-AR,es;q=0.9,en-US;q=0.8,en;q=0.7',
-      Referer: 'https://www.google.com/',
-    };
-
-    for (const url of candidateUrls) {
+    for (const [endpoint, key] of [
+      ['eventsnext.php', 'events'],
+      ['eventslast.php', 'results'],
+    ] as [string, string][]) {
       try {
-        const res = await axios.get(url, {
-          headers,
-          timeout: 15000,
-          maxRedirects: 10,
-          validateStatus: (status) => status >= 200 && status < 400,
-        });
+        const url = `https://www.thesportsdb.com/api/v1/json/3/${endpoint}?id=${teamId}`;
+        const res = await axios.get(url, { headers: AXIOS_HEADERS, timeout: 10000 });
+        const events: any[] = res.data?.[key] || [];
 
-        const html = res.data;
-        if (!html || typeof html !== 'string') continue;
+        for (const ev of events) {
+          const homeTeamRaw  = ev.strHomeTeam || '';
+          const awayTeamRaw  = ev.strAwayTeam || '';
+          const homeScoreRaw = ev.intHomeScore != null ? parseInt(ev.intHomeScore, 10) : null;
+          const awayScoreRaw = ev.intAwayScore != null ? parseInt(ev.intAwayScore, 10) : null;
 
-        if (!cheerio || typeof (cheerio as any).load !== 'function') {
-          this.logger.warn('⚠️ Cheerio no está disponible correctamente, omitiendo intento de scraping.');
-          continue;
+          const statusRaw = (ev.strStatus || '').toLowerCase();
+          let status = 'scheduled';
+          if (['match finished', 'ft', 'aet', 'pen', 'finished'].includes(statusRaw)) {
+            status = 'finished';
+          } else if (statusRaw.includes('live') || statusRaw.includes('progress')) {
+            status = 'live';
+          } else if (homeScoreRaw !== null && awayScoreRaw !== null) {
+            status = 'finished';
+          }
+
+          const dateStr = ev.dateEvent || null;
+          const timeStr = ev.strTime   || '20:00:00';
+          const date    = dateStr
+            ? new Date(`${dateStr}T${timeStr.length === 5 ? timeStr + ':00' : timeStr}`)
+            : new Date();
+
+          // Si la fecha ya pasó y sigue como scheduled, marcar como finished
+          if (status === 'scheduled' && date < now) {
+            status = 'finished';
+          }
+
+          const normalized = normalizeTeams(homeTeamRaw, awayTeamRaw, homeScoreRaw, awayScoreRaw);
+
+          if (!isRiver(normalized.homeTeam) && !isRiver(normalized.awayTeam)) {
+            this.logger.warn(`⚠️ Partido descartado (no involucra River): ${homeTeamRaw} vs ${awayTeamRaw}`);
+            continue;
+          }
+
+          allMatches.push({
+            ...normalized,
+            status,
+            date,
+            competition: ev.strLeague || ev.strSeason || 'Competición',
+          });
         }
-
-        const $ = (cheerio as any).load(html);
-        const items: any[] = [];
-
-        // Intento genérico: buscar bloques que contengan equipos y fecha/score
-        $('*').each((i, el) => {
-          try {
-            const text = $(el).text();
-            if (!text || !/river/i.test(text)) return;
-
-            const container = $(el).closest('section, .fixture, .match, .matchCard, .event, .scoreboard');
-            if (!container || container.length === 0) return;
-
-            const home =
-              container
-                .find('.team--home .team__name, .home .team-name, .team.home, .team-home')
-                .first()
-                .text()
-                .trim() ||
-              container.find('.home').first().text().trim();
-
-            const away =
-              container
-                .find('.team--away .team__name, .away .team-name, .team.away, .team-away')
-                .first()
-                .text()
-                .trim() ||
-              container.find('.away').first().text().trim();
-
-            const scoreText =
-              container.find('.score, .scoreboard__score, .final-score').first().text().trim() ||
-              container.find('.scoreText').first().text().trim();
-
-            let homeScore: number | null = null;
-            let awayScore: number | null = null;
-            if (/\d+\s*[:\-]\s*\d+/.test(scoreText)) {
-              const parts = scoreText.split(/[:\-]/).map((p) => parseInt(p.trim(), 10));
-              if (parts.length >= 2) {
-                homeScore = isNaN(parts[0]) ? null : parts[0];
-                awayScore = isNaN(parts[1]) ? null : parts[1];
-              }
-            }
-
-            const dateAttr =
-              container.find('time').first().attr('datetime') ||
-              container.find('time, .date, .match-date, .event__date').first().text().trim();
-            const date = dateAttr ? new Date(dateAttr) : null;
-
-            if (home || away) {
-              items.push({
-                homeTeam: home || 'River Plate',
-                awayTeam: away || 'Rival',
-                homeScore,
-                awayScore,
-                status: homeScore !== null && awayScore !== null ? 'finished' : 'scheduled',
-                date: date || new Date(),
-                competition: container.find('.competition, .league').first().text().trim() || 'ESPN',
-              });
-            }
-          } catch {
-            // silenciar errores por cada elemento
-          }
-        });
-
-        // deduplicar por fecha+equipos
-        const seen = new Set<string>();
-        const unique = items.filter((m) => {
-          try {
-            const key = `${new Date(m.date).toISOString()}|${(m.homeTeam || '').toLowerCase()}|${(m.awayTeam || '').toLowerCase()}`;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-          } catch {
-            return false;
-          }
-        });
-
-        if (unique.length > 0) return unique;
-      } catch (innerErr: any) {
-        this.logger.warn(`⚠️ fetchFixturesFromEspn attempt failed for ${url}: ${innerErr?.message || innerErr}`);
-        continue;
+      } catch (e: any) {
+        this.logger.warn(`⚠️ TheSportsDB [${endpoint}] falló: ${e?.message}`);
       }
     }
 
-    return [];
-  } catch (err: any) {
-    this.logger.warn('⚠️ fetchFixturesFromEspn failed: ' + (err?.message || err));
-    return [];
+    return allMatches;
   }
-}
-// ...existing code...
 
-  private async fetchFixturesFromApiFootball() {
+  // ── Descubrimiento ESPN team ID ──────────────────────────────────────────────
+
+  private async resolveEspnTeamId(): Promise<string | null> {
+    if (this.espnTeamId) return this.espnTeamId;
+
+    try {
+      const url = 'https://site.api.espn.com/apis/site/v2/sports/soccer/arg.1/teams?limit=100';
+      const res = await axios.get(url, { headers: AXIOS_HEADERS, timeout: 10000 });
+
+      const sportsArr: any[] = res.data?.sports || [];
+      let teams: any[] = [];
+
+      if (sportsArr.length > 0) {
+        teams = sportsArr[0]?.leagues?.[0]?.teams || [];
+      } else {
+        teams = res.data?.teams || [];
+      }
+
+      this.logger.log(`ESPN equipos en arg.1: ${teams.length}`);
+
+      for (const entry of teams) {
+        const t    = entry.team || entry;
+        const name = (t.displayName || t.name || '').toLowerCase();
+        this.logger.log(`  → ${t.displayName} | ID: ${t.id}`);
+
+        if (name.includes('river plate') || name === 'river') {
+          this.espnTeamId = String(t.id);
+          this.logger.log(`✅ ESPN team ID encontrado: ${this.espnTeamId} (${t.displayName})`);
+          return this.espnTeamId;
+        }
+      }
+
+      this.logger.warn('⚠️ ESPN: River Plate no encontrado en la lista de arg.1');
+    } catch (e: any) {
+      this.logger.warn(`⚠️ ESPN discovery falló: ${e?.message}`);
+    }
+
+    return null;
+  }
+
+  // ── Fuente 2: ESPN JSON API ───────────────────────────────────────────────────
+
+  private async fetchFromEspnApi(): Promise<any[]> {
+    const teamId = await this.resolveEspnTeamId();
+    if (!teamId) return [];
+
+    const currentYear = new Date().getFullYear();
+    const now         = new Date();
+    const allMatches: any[] = [];
+
+    for (const league of ESPN_LEAGUES) {
+      try {
+        // Prueba season actual, anterior y sin filtro para capturar todos los partidos
+        const seasonsToTry = [currentYear, currentYear - 1, ''] as (number | string)[];
+        const eventMap = new Map<string, any>();
+
+        for (const season of seasonsToTry) {
+          try {
+            const seasonParam = season !== '' ? `?season=${season}` : '';
+            const url =
+              `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.code}` +
+              `/teams/${teamId}/schedule${seasonParam}`;
+
+            const res = await axios.get(url, { headers: AXIOS_HEADERS, timeout: 10000 });
+            const fetched: any[] = res.data?.events || [];
+
+            for (const ev of fetched) {
+              const id = ev.id || `${ev.date}-${league.code}`;
+              if (!eventMap.has(id)) eventMap.set(id, ev);
+            }
+          } catch { /* continuar con siguiente season */ }
+        }
+
+        const events = [...eventMap.values()];
+        this.logger.log(`ESPN [${league.code}]: ${events.length} eventos`);
+
+        for (const event of events) {
+          const comp = event.competitions?.[0];
+          if (!comp) continue;
+
+          const home = comp.competitors?.find((c: any) => c.homeAway === 'home');
+          const away = comp.competitors?.find((c: any) => c.homeAway === 'away');
+          if (!home || !away) continue;
+
+          const statusName: string = comp.status?.type?.name || '';
+          let status = 'scheduled';
+          if (statusName === 'STATUS_FINAL') status = 'finished';
+          else if (['STATUS_IN_PROGRESS', 'STATUS_HALFTIME'].includes(statusName)) status = 'live';
+
+          const eventDate = new Date(comp.date || event.date || Date.now());
+
+          // FIX: si la fecha ya pasó y ESPN sigue reportando scheduled, forzar finished
+          if (status === 'scheduled' && eventDate < now) {
+            status = 'finished';
+          }
+
+          const rawHomeScore = status !== 'scheduled' ? parseInt(home.score ?? '0', 10) : null;
+          const rawAwayScore = status !== 'scheduled' ? parseInt(away.score ?? '0', 10) : null;
+
+          const normalized = normalizeTeams(
+            home.team?.displayName || home.team?.name || '',
+            away.team?.displayName || away.team?.name || '',
+            rawHomeScore,
+            rawAwayScore,
+          );
+
+          if (!isRiver(normalized.homeTeam) && !isRiver(normalized.awayTeam)) continue;
+
+          allMatches.push({
+            ...normalized,
+            status,
+            date: eventDate,
+            competition: league.name,
+          });
+        }
+      } catch (e: any) {
+        this.logger.warn(`⚠️ ESPN [${league.code}] falló: ${e?.message}`);
+      }
+    }
+
+    return allMatches;
+  }
+
+  // ── Fuente 3: API-Football v3 ────────────────────────────────────────────────
+
+  private async fetchFromApiFootball(): Promise<any[]> {
     const apiKey = process.env.API_FOOTBALL_KEY;
-    const teamId = process.env.RIVER_PLATE_TEAM_ID || '268';
+    const teamId = process.env.RIVER_PLATE_TEAM_ID || '26';
+
     if (!apiKey) {
-      this.logger.warn('⚠️ No existe API_FOOTBALL_KEY en las variables de entorno. No se puede consultar API-Football.');
+      this.logger.warn('⚠️ API_FOOTBALL_KEY no configurada. Saltando.');
       return [];
     }
 
@@ -461,176 +471,233 @@ private async fetchFixturesFromEspn() {
       const [nextRes, pastRes] = await Promise.all([
         axios.get(`https://v3.football.api-sports.io/fixtures?team=${teamId}&next=20`, {
           headers: { 'x-apisports-key': apiKey },
-          timeout: 8000,
+          timeout: 10000,
         }),
         axios.get(`https://v3.football.api-sports.io/fixtures?team=${teamId}&last=40`, {
           headers: { 'x-apisports-key': apiKey },
-          timeout: 8000,
+          timeout: 10000,
         }),
       ]);
 
-      const raw = [...(nextRes.data?.response || []), ...(pastRes.data?.response || [])];
+      const raw = [
+        ...(nextRes.data?.response || []),
+        ...(pastRes.data?.response  || []),
+      ];
 
-      // ...existing code...
-// ...existing code...
-// ...existing code...
-// Reemplazar el mapeo "const parsed = raw.map((f: any) => { ... })" por este bloque:
-const parsed = raw.map((f: any) => {
-  const statusShort = f.fixture?.status?.short ?? '';
-  let status = 'scheduled';
-  if (statusShort === 'FT') status = 'finished';
-  else if (['1H', '2H', 'HT', 'LIVE'].includes(statusShort)) status = 'live';
+      const now = new Date();
 
-  const normalize = (s: string) =>
-    s
-      .toString()
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
+      return raw.map((f: any) => {
+        const short = f.fixture?.status?.short ?? '';
+        let status = 'scheduled';
+        if (short === 'FT') status = 'finished';
+        else if (['1H', '2H', 'HT', 'LIVE'].includes(short)) status = 'live';
 
-  const RIVER_CANON = 'River Plate';
-  const riverNames = ['river plate', 'club atletico river plate', 'club atlético river plate', 'river'];
-  const isRiver = (s?: string) => s ? riverNames.some(r => normalize(s).includes(r)) : false;
+        const date = new Date(f.fixture?.date || Date.now());
+        if (status === 'scheduled' && date < now) status = 'finished';
 
-  let homeName = (f.teams?.home?.name || 'Home').toString().trim();
-  let awayName = (f.teams?.away?.name || 'Away').toString().trim();
-  let homeG = f.goals?.home ?? null;
-  let awayG = f.goals?.away ?? null;
+        const normalized = normalizeTeams(
+          (f.teams?.home?.name || '').toString(),
+          (f.teams?.away?.name || '').toString(),
+          f.goals?.home ?? null,
+          f.goals?.away ?? null,
+        );
 
-  const homeIsRiver = isRiver(homeName);
-  const awayIsRiver = isRiver(awayName);
-
-  if (awayIsRiver && !homeIsRiver) {
-    // forzar River como home
-    const tmp = homeName;
-    homeName = RIVER_CANON;
-    awayName = tmp;
-
-    const tmpG = homeG;
-    homeG = awayG;
-    awayG = tmpG;
-  } else if (homeIsRiver && !awayIsRiver) {
-    homeName = RIVER_CANON;
-  } else {
-    if (homeIsRiver) homeName = RIVER_CANON;
-    if (awayIsRiver) awayName = RIVER_CANON;
-  }
-
-  return {
-    homeTeam: homeName,
-    awayTeam: awayName,
-    homeScore: homeG,
-    awayScore: awayG,
-    status,
-    date: new Date(f.fixture?.date || Date.now()),
-    competition: f.league?.name || 'Competición',
-  };
-});
-// ...existing code...
-// ...existing code...
-// ...existing code...
-      const seen = new Set<string>();
-      const unique: any[] = [];
-      for (const p of parsed) {
-        const key = `${new Date(p.date).toISOString()}|${p.homeTeam}|${p.awayTeam}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          unique.push(p);
-        }
-      }
-
-      unique.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      this.logger.log(`✅ API-Football devolvió ${unique.length} partidos como respaldo.`);
-      return unique;
-    } catch (err: any) {
-      this.logger.error('❌ Error consultando API-Football como fallback: ' + (err?.message || err));
+        return { ...normalized, status, date, competition: f.league?.name || 'Competición' };
+      });
+    } catch (e: any) {
+      this.logger.warn(`⚠️ API-Football falló: ${e?.message}`);
       return [];
     }
   }
 
-  // ...existing code...
-private async saveFixturesToDatabase(fixtures: any[]) {
-  if (!fixtures || fixtures.length === 0) {
-    this.logger.log('ℹ️ No hay partidos para sincronizar.');
-    return;
-  }
+  // ── Fuente 4: Wikipedia ──────────────────────────────────────────────────────
 
-  fixtures.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  await this.prisma.match.deleteMany();
+  private async fetchFromWikipedia(): Promise<any[]> {
+    const currentYear = new Date().getFullYear();
+    const pageTitles = [
+      `Anexo:Temporada_${currentYear}_del_Club_Atlético_River_Plate`,
+      `Club_Atlético_River_Plate_en_${currentYear}`,
+    ];
+    const allMatches: any[] = [];
 
-  let nextAssigned = false;
-  for (let i = 0; i < fixtures.length; i++) {
-    const m = fixtures[i];
-
-    // Asegurar que River quede como homeTeam si aparece en alguno de los equipos
-    const normalize = (s: string) =>
-      s.toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
-    const riverNames = ['river plate', 'club atletico river plate', 'club atlético river plate', 'river'];
-    const homeIsRiver = riverNames.some(r => normalize(m.homeTeam || '').includes(r));
-    const awayIsRiver = riverNames.some(r => normalize(m.awayTeam || '').includes(r));
-
-    let homeTeam = m.homeTeam;
-    let awayTeam = m.awayTeam;
-    let homeScore = m.homeScore ?? 0;
-    let awayScore = m.awayScore ?? 0;
-
-    if (awayIsRiver && !homeIsRiver) {
-      // swap para que River quede como home
-      const tmpTeam = homeTeam;
-      homeTeam = m.awayTeam;
-      awayTeam = tmpTeam;
-
-      const tmpScore = homeScore;
-      homeScore = awayScore;
-      awayScore = tmpScore;
-    }
-
-    const status = (m.status || 'scheduled').toString().toLowerCase();
-
-    let type = `FUTURE_${i}`;
-    if (status === 'finished') {
-      const finishedList = fixtures.filter(x => (x.status || '').toString().toLowerCase() === 'finished');
-      const isLatest = finishedList.length > 0 && m === finishedList[finishedList.length - 1];
-      type = isLatest ? 'LATEST' : `PAST_${i}`;
-    } else {
-      if (!nextAssigned && new Date(m.date) > new Date()) {
-        type = 'NEXT';
-        nextAssigned = true;
-      } else {
-        type = `FUTURE_${i}`;
+    for (const title of pageTitles) {
+      try {
+        const url =
+          `https://es.wikipedia.org/w/api.php?action=query&prop=revisions&rvprop=content` +
+          `&format=json&titles=${encodeURIComponent(title)}&utf8=1`;
+        const res = await axios.get(url, { headers: AXIOS_HEADERS, timeout: 10000 });
+        const pages   = res.data?.query?.pages || {};
+        const pageId  = Object.keys(pages)[0];
+        const content = pages[pageId]?.revisions?.[0]?.['*'];
+        if (content) allMatches.push(...this.parseWikiContent(content, currentYear));
+      } catch (e: any) {
+        this.logger.warn(`⚠️ Wikipedia [${title}] falló: ${e?.message}`);
       }
     }
 
-    await this.prisma.match.create({
-      data: {
+    return allMatches;
+  }
+
+  private parseWikiContent(content: string, currentYear: number): any[] {
+    const matches: any[] = [];
+    const startRegex = /\{\{Ficha de partido/gi;
+    let match: RegExpExecArray | null;
+
+    while ((match = startRegex.exec(content)) !== null) {
+      let depth = 0;
+      const start = match.index;
+      let end = start;
+
+      for (let i = start; i < content.length - 1; i++) {
+        if (content[i] === '{' && content[i + 1] === '{') { depth++; i++; }
+        else if (content[i] === '}' && content[i + 1] === '}') {
+          depth--;
+          if (depth === 0) { end = i + 2; break; }
+          i++;
+        }
+      }
+
+      if (end <= start) continue;
+      const block = content.slice(start, end);
+
+      const getValue = (...keys: string[]) => {
+        for (const key of keys) {
+          const re = new RegExp(`\\|\\s*${key}\\s*=\\s*([^|\\n\\}]+)`, 'i');
+          const m  = block.match(re);
+          if (m?.[1]) return m[1].trim().replace(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g, '$1').trim();
+        }
+        return null;
+      };
+
+      const homeRaw  = getValue('local', 'equipo_local', 'home');
+      const awayRaw  = getValue('visita', 'visitante', 'away');
+      const scoreRaw = getValue('resultado', 'score', 'result');
+      const dateRaw  = getValue('fecha', 'date');
+      const comp     = getValue('competicion', 'competencia', 'competition', 'torneo') || 'Torneo Oficial';
+
+      if (!homeRaw || !awayRaw) continue;
+      if (!isRiver(homeRaw) && !isRiver(awayRaw)) continue;
+
+      let homeScore: number | null = null;
+      let awayScore: number | null = null;
+      let status = 'scheduled';
+
+      if (scoreRaw) {
+        const s  = scoreRaw.replace(/[\u2013\u2014–—]/g, '-').replace(':', '-');
+        const sm = s.match(/(\d+)\s*-\s*(\d+)/);
+        if (sm) {
+          homeScore = parseInt(sm[1], 10);
+          awayScore = parseInt(sm[2], 10);
+          status = 'finished';
+        }
+      }
+
+      let date = new Date();
+      if (dateRaw) {
+        const iso = new Date(dateRaw);
+        if (!isNaN(iso.getTime())) {
+          date = iso;
+        } else {
+          const MONTHS: Record<string, number> = {
+            enero: 0, febrero: 1, marzo: 2, abril: 3, mayo: 4, junio: 5,
+            julio: 6, agosto: 7, septiembre: 8, octubre: 9, noviembre: 10, diciembre: 11,
+          };
+          const parts = dateRaw.split(' de ').map((p: string) => p.trim().toLowerCase());
+          const day   = parseInt(parts[0], 10);
+          const month = MONTHS[parts[1]] ?? 0;
+          const year  = parts[2] ? parseInt(parts[2], 10) : currentYear;
+          date = new Date(year, month, isNaN(day) ? 1 : day, 20, 0, 0);
+        }
+      }
+
+      // Si la fecha ya pasó y no tiene score, marcar como finished igual
+      if (status === 'scheduled' && date < new Date()) {
+        status = 'finished';
+      }
+
+      const normalized = normalizeTeams(homeRaw, awayRaw, homeScore, awayScore);
+      matches.push({ ...normalized, status, date, competition: comp });
+    }
+
+    return matches;
+  }
+
+  // ── Persistencia ─────────────────────────────────────────────────────────────
+
+  private async saveToDatabase(fixtures: any[]) {
+    if (!fixtures.length) {
+      this.logger.warn('⚠️ No hay partidos para guardar.');
+      return;
+    }
+
+    fixtures.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    const now            = new Date();
+    let nextAssigned     = false;
+    const finished       = fixtures.filter(f => f.status === 'finished');
+    const latestFinished = finished[finished.length - 1];
+
+    const records = fixtures.map((m, i) => {
+      const status = (m.status || 'scheduled').toLowerCase();
+
+      let type: string;
+      if (status === 'live') {
+        type = 'LIVE';
+      } else if (status === 'finished') {
+        type = m === latestFinished ? 'LATEST' : `PAST_${i}`;
+      } else {
+        if (!nextAssigned && new Date(m.date) > now) {
+          type = 'NEXT';
+          nextAssigned = true;
+        } else {
+          type = `FUTURE_${i}`;
+        }
+      }
+
+      return {
         type,
-        homeTeam,
-        awayTeam,
-        homeScore,
-        awayScore,
+        homeTeam:    m.homeTeam,
+        awayTeam:    m.awayTeam,
+        homeScore:   m.homeScore  ?? 0,
+        awayScore:   m.awayScore  ?? 0,
         status,
-        minute: status === 'finished' ? 90 : (m.minute ?? 0),
-        date: new Date(m.date),
-        competition: m.competition,
-      },
+        minute:      status === 'live' ? (m.minute ?? 0) : status === 'finished' ? 90 : 0,
+        date:        new Date(m.date),
+        competition: m.competition || 'Competición',
+      };
     });
+
+    // Si NEXT no se asignó, asignarlo al primer scheduled disponible
+    if (!nextAssigned) {
+      const firstScheduled = records.find(r => r.status === 'scheduled');
+      if (firstScheduled) {
+        firstScheduled.type = 'NEXT';
+        this.logger.warn('⚠️ NEXT asignado por fallback (partido scheduled con fecha pasada).');
+      }
+    }
+
+    try {
+      // FIX: usar createMany en vez de loop de creates para evitar transaction timeout
+      await this.prisma.$transaction([
+        this.prisma.match.deleteMany(),
+        this.prisma.match.createMany({ data: records }),
+      ]);
+      this.logger.log(`🎉 Sincronizados ${fixtures.length} partidos.`);
+    } catch (err: any) {
+      this.logger.error(`❌ Error guardando en BD: ${err?.message}`);
+    }
   }
 
-  this.logger.log(`🎉 [ÉXITO] ¡Sincronizados ${fixtures.length} partidos del fixture real de forma autónoma!`);
-}
-// ...existing code...
+  // ── Fixture interno de respaldo ───────────────────────────────────────────────
 
-  private getFallbackWikiContent(): string {
-    return `
-      {{Ficha de partido | local = River Plate | visita = Independiente | resultado = 2 - 0 | fecha = 12 de abril | competicion = Torneo Apertura 2026 }}
-      {{Ficha de partido | local = Boca Juniors | visita = River Plate | resultado = 1 - 1 | fecha = 19 de abril | competicion = Torneo Apertura 2026 }}
-      {{Ficha de partido | local = Carabobo F.C. | visita = River Plate | resultado = 1 - 2 | fecha = 7 de mayo | competicion = Copa Sudamericana 2026 }}
-      {{Ficha de partido | local = River Plate | visita = San Lorenzo | resultado = | fecha = 10 de mayo | competicion = Torneo Apertura 2026 }}
-      {{Ficha de partido | local = River Plate | visita = Carabobo F.C. | resultado = | fecha = 14 de mayo | competicion = Copa Sudamericana 2026 }}
-      {{Ficha de partido | local = Racing Club | visita = River Plate | resultado = | fecha = 17 de mayo | competicion = Torneo Apertura 2026 }}
-    `;
+  private getFallbackFixture(): any[] {
+    const y = new Date().getFullYear();
+    return [
+      { homeTeam: RIVER_CANON,    awayTeam: 'Independiente', homeScore: 2,    awayScore: 0,    status: 'finished',  date: new Date(`${y}-04-12T20:00:00`), competition: 'Liga Profesional' },
+      { homeTeam: 'Boca Juniors', awayTeam: RIVER_CANON,     homeScore: 1,    awayScore: 1,    status: 'finished',  date: new Date(`${y}-04-19T20:00:00`), competition: 'Liga Profesional' },
+      { homeTeam: RIVER_CANON,    awayTeam: 'San Lorenzo',   homeScore: null, awayScore: null, status: 'scheduled', date: new Date(`${y}-05-10T20:00:00`), competition: 'Liga Profesional' },
+      { homeTeam: RIVER_CANON,    awayTeam: 'Carabobo FC',   homeScore: null, awayScore: null, status: 'scheduled', date: new Date(`${y}-05-14T19:00:00`), competition: 'Copa Sudamericana' },
+      { homeTeam: 'Racing Club',  awayTeam: RIVER_CANON,     homeScore: null, awayScore: null, status: 'scheduled', date: new Date(`${y}-05-17T20:00:00`), competition: 'Liga Profesional' },
+    ];
   }
 }
-// ...existing code...

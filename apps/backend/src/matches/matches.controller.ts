@@ -5,6 +5,11 @@ import { MatchesService } from './matches.service';
 export class MatchesController {
   constructor(private readonly matchesService: MatchesService) {}
 
+  @Get('debug')
+  async debug() {
+    return this.matchesService.getDebugInfo();
+  }
+
   @Get('latest')
   async getLatestMatch() {
     return this.matchesService.getLatestMatch();
