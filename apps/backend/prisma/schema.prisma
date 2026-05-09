@@ -16,27 +16,9 @@ model User {
   password_hash String
   display_name  String
   avatar_url    String?
-  role          String   @default("user") 
+  role          String   @default("user")
   created_at    DateTime @default(now())
-  news          News[]   // Relación: Un usuario puede escribir varias noticias
-}
-
-// --------------------------------------------------
-// TABLA DE PARTIDOS
-// --------------------------------------------------
-model Match {
-  id          String   @id @default(uuid())
-  matchDate   DateTime
-  homeTeam    String
-  awayTeam    String
-  homeScore   Int      @default(0)
-  awayScore   Int      @default(0)
-  status      String   @default("scheduled")
-  stadium     String?
-  referee     String?
-  minute      Int?
-  createdAt   DateTime @default(now())
-  formations  Formation[] // Relación: Un partido tiene formaciones
+  news          News[] // Relación: Un usuario puede escribir varias noticias
 }
 
 // --------------------------------------------------
@@ -45,11 +27,11 @@ model Match {
 model Player {
   id          String   @id @default(uuid())
   name        String
-  position    String   // 'Goalkeeper', 'Defender', 'Midfielder', 'Attacker'
-  number      Int?     // Dorsal del jugador
-  age         Int?     // Edad
-  photo       String?  // URL de la foto oficial de la API
-  nationality String?  // Nacionalidad
+  position    String // 'Goalkeeper', 'Defender', 'Midfielder', 'Attacker'
+  number      Int? // Dorsal del jugador
+  age         Int? // Edad
+  photo       String? // URL de la foto oficial de la API
+  nationality String? // Nacionalidad
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -58,27 +40,46 @@ model Player {
 // TABLA DE FORMACIONES TÁCTICAS
 // --------------------------------------------------
 model Formation {
-  id        String  @id @default(uuid())
-  matchId   String
-  match     Match   @relation(fields: [matchId], references: [id])
-  scheme    String  // ej: 4-3-3
-  isLineup  Boolean @default(true)
+  id       String  @id @default(uuid())
+  matchId  String
+  match    Match   @relation(fields: [matchId], references: [id])
+  scheme   String // ej: 4-3-3
+  isLineup Boolean @default(true)
 }
 
 // --------------------------------------------------
 // TABLA DE NOTICIAS
 // --------------------------------------------------
 model News {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   title       String
   body        String
   category    String
-  slug        String   @unique
-  url         String?  // 👈 AGREGAR ESTA LÍNEA (con el ? para que sea opcional y no rompa lo anterior)
-  status      String   @default("draft")
+  slug        String    @unique
+  url         String? // 👈 AGREGAR ESTA LÍNEA (con el ? para que sea opcional y no rompa lo anterior)
+  status      String    @default("draft")
   publishedAt DateTime?
   authorId    String
-  author      User     @relation(fields: [authorId], references: [id])
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  author      User      @relation(fields: [authorId], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// --------------------------------------------------
+// TABLA DE PARTIDOS
+// --------------------------------------------------
+
+model Match {
+  id          String      @id @default(uuid())
+  type        String      @unique // Identificador para saber si es "LATEST" (Último) o "NEXT" (Próximo)
+  homeTeam    String
+  awayTeam    String
+  homeScore   Int?
+  awayScore   Int?
+  status      String // "FINISHED", "LIVE", "SCHEDULED"
+  minute      Int?
+  date        DateTime
+  competition String? // Ej: "Liga Profesional", "Copa Libertadores"
+  updatedAt   DateTime    @updatedAt
+  Formation   Formation[]
 }

@@ -1,6 +1,6 @@
-// apps/frontend/src/pages/Home.tsx
+// ...existing code...
 import { useState, useEffect } from 'react';
-import { getLatestMatch } from '../services/matches.service';
+import { getLatestMatch, getUpcomingMatches } from '../services/matches.service';
 import { getNews } from '../services/news.service';
 import Plantel from './Plantel'; 
 
@@ -11,6 +11,7 @@ interface HomeProps {
 export default function Home({ onLogout }: HomeProps) {
   const [activeTab, setActiveTab] = useState<'inicio' | 'plantel'>('inicio'); 
   const [match, setMatch] = useState<any>(null);
+  const [upcoming, setUpcoming] = useState<any[]>([]);
   const [news, setNews] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -19,27 +20,32 @@ export default function Home({ onLogout }: HomeProps) {
       setLoading(true);
       try {
         console.log('📡 Consultando partidos y noticias al backend...');
-        const [latestMatch, newsList] = await Promise.all([
+        const [latestMatch, newsList, upcomingList] = await Promise.all([
           getLatestMatch(),
-          getNews()
+          getNews(),
+          getUpcomingMatches(10),
         ]);
         
         console.log('⚽ Partido recibido del backend:', latestMatch);
+        console.log('🗓 Próximos partidos:', upcomingList);
         console.log('📰 Noticias recibidas del backend:', newsList);
 
+        setUpcoming(Array.isArray(upcomingList) ? upcomingList : []);
+        setNews(Array.isArray(newsList) ? newsList : []);
+
+        // Preferir partido "latest" (live/next/latest). Si no hay, usar primer upcoming.
         if (latestMatch) {
           setMatch(latestMatch);
+        } else if (Array.isArray(upcomingList) && upcomingList.length > 0) {
+          setMatch(upcomingList[0]);
         } else {
           setMatch(null);
         }
-        
-        if (Array.isArray(newsList)) {
-          setNews(newsList);
-        } else {
-          setNews([]);
-        }
       } catch (err) {
         console.error('❌ Error cargando datos en el Home:', err);
+        setMatch(null);
+        setUpcoming([]);
+        setNews([]);
       } finally {
         setLoading(false);
       }
@@ -113,7 +119,7 @@ export default function Home({ onLogout }: HomeProps) {
               <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 relative overflow-hidden shadow-xl">
                 {match && match.status === 'live' && (
                   <div className="absolute top-4 right-4 bg-red-600 text-white text-xs font-bold px-2.5 py-1 rounded-full animate-pulse uppercase tracking-wider">
-                    En Vivo • {match.minute}'
+                    En Vivo • {match.minute || 0}'
                   </div>
                 )}
                 <h3 className="text-xs font-semibold text-neutral-400 uppercase tracking-widest mb-4">
@@ -141,6 +147,31 @@ export default function Home({ onLogout }: HomeProps) {
                 ) : (
                   <div className="text-center py-4 text-neutral-500 text-sm">
                     No hay partidos registrados en el fixture todavía.
+                  </div>
+                )}
+              </section>
+
+              {/* CARRUSEL DE PRÓXIMOS PARTIDOS */}
+              <section className="bg-transparent">
+                <h4 className="text-sm text-neutral-400 uppercase tracking-wider mb-3">Próximos partidos</h4>
+                {upcoming.length === 0 ? (
+                  <div className="text-neutral-500 text-sm">No hay próximos partidos en el fixture.</div>
+                ) : (
+                  <div className="flex gap-4 overflow-x-auto pb-3 snap-x">
+                    {upcoming.map((m) => (
+                      <div key={m.id} className="min-w-[220px] bg-neutral-900 border border-neutral-800 rounded-xl p-4 flex-shrink-0 snap-start">
+                        <div className="text-xs text-neutral-400">{m.competition}</div>
+                        <div className="mt-2 font-bold text-lg truncate">
+                          {new Date(m.date).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}
+                        </div>
+                        <div className="flex items-center justify-between mt-3">
+                          <div className="text-sm truncate">{m.homeTeam}</div>
+                          <div className="text-xl font-black">{m.homeScore ?? 0} : {m.awayScore ?? 0}</div>
+                          <div className="text-sm text-right truncate">{m.awayTeam}</div>
+                        </div>
+                        <div className="mt-2 text-xs text-neutral-500">Estado: {m.status}</div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </section>
@@ -208,3 +239,4 @@ export default function Home({ onLogout }: HomeProps) {
     </div>
   );
 }
+// ...existing code...

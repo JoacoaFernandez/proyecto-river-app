@@ -1,14 +1,12 @@
-// apps/backend/src/matches/matches.module.ts
 import { Module } from '@nestjs/common';
-import { MatchesService } from './matches.service';
 import { MatchesController } from './matches.controller';
-import { SyncService } from './sync.service'; // Importamos el robot de sincronización
-import { HttpModule } from '@nestjs/axios';    // Importamos el módulo HTTP de NestJS
+import { MatchesService } from './matches.service';
+import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
-  imports: [HttpModule], // Habilita Axios para hacer consultas a la API externa
+  imports: [PrismaModule],
   controllers: [MatchesController],
-  providers: [MatchesService, SyncService], // Registramos ambos servicios
+  providers: [MatchesService],
   exports: [MatchesService],
 })
 export class MatchesModule {}

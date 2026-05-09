@@ -1,26 +1,31 @@
-// apps/frontend/src/services/matches.service.ts
 import axios from 'axios';
-
-const API_URL = 'http://localhost:3000/matches';
 
 export const getLatestMatch = async () => {
   try {
-    const token = localStorage.getItem('river_app_token');
-    const response = await axios.get(API_URL, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-    
-    if (response.data && response.data.length > 0) {
-      // Intentamos buscar un partido que esté "live" (en vivo) o "finished" (terminado)
-      const activeMatch = response.data.find((m: any) => m.status === 'live' || m.status === 'finished');
-      // Si no hay ninguno jugado, devolvemos el primero programado que encontremos
-      return activeMatch || response.data[0];
-    }
+    const res = await axios.get('http://localhost:3000/matches/latest');
+    return res.data;
+  } catch (err) {
+    console.error('Error getLatestMatch', err);
     return null;
-  } catch (error) {
-    console.error('Error al obtener el partido:', error);
-    return null;
+  }
+};
+
+export const getUpcomingMatches = async (limit = 10) => {
+  try {
+    const res = await axios.get(`http://localhost:3000/matches/upcoming?limit=${limit}`);
+    return res.data || [];
+  } catch (err) {
+    console.error('Error getUpcomingMatches', err);
+    return [];
+  }
+};
+
+export const getPastMatches = async (limit = 20) => {
+  try {
+    const res = await axios.get(`http://localhost:3000/matches/past?limit=${limit}`);
+    return res.data || [];
+  } catch (err) {
+    console.error('Error getPastMatches', err);
+    return [];
   }
 };
