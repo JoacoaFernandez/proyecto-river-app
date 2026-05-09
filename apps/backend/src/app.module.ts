@@ -1,15 +1,17 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from './prisma/prisma.module';
 import { MatchesModule } from './matches/matches.module';
-import { NewsModule } from './news/news.module';       // 👈 ¡Faltaba esto!
-import { PlayersModule } from './players/players.module'; // 👈 ¡Faltaba esto! (O SquadModule, según cómo lo llamaste)
+import { NewsModule } from './news/news.module';
+import { PlayersModule } from './players/players.module';
+import { LiveApiModule } from './live-api.module';
 
 @Module({
   imports: [
     PrismaModule,
     MatchesModule,
-    NewsModule,     // 👈 ¡Enchufamos las noticias!
-    PlayersModule,  // 👈 ¡Enchufamos el plantel!
+    NewsModule,
+    PlayersModule,
+    LiveApiModule,
   ],
   controllers: [],
   providers: [],
