@@ -41,3 +41,24 @@ export const getNewsById = async (id: string): Promise<NewsItem | null> => {
     return null;
   }
 };
+
+export interface CreateNewsInput {
+  title: string;
+  body: string;
+  category?: string;
+  status?: 'draft' | 'published';
+}
+
+export const createNews = async (input: CreateNewsInput): Promise<NewsItem> => {
+  const response = await api.post<NewsItem>('/news', input);
+  return response.data;
+};
+
+export const deleteNews = async (id: string): Promise<void> => {
+  await api.delete(`/news/${id}`);
+};
+
+export const triggerAiNews = async (): Promise<unknown> => {
+  const response = await api.post('/news/trigger-ai');
+  return response.data;
+};

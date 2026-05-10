@@ -1,7 +1,7 @@
 // apps/frontend/src/components/RequireAuth.tsx
 import { useEffect, useState, type ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { api } from '../services/api';
+import { clearCurrentUser, getCurrentUser } from '../services/me.service';
 
 interface Props {
   children: ReactNode;
@@ -20,13 +20,15 @@ export default function RequireAuth({ children }: Props) {
       return;
     }
 
-    api
-      .get('/auth/me')
-      .then(() => setStatus('ok'))
-      .catch(() => {
+    getCurrentUser(true).then((user) => {
+      if (user) {
+        setStatus('ok');
+      } else {
         localStorage.removeItem('river_app_token');
+        clearCurrentUser();
         setStatus('forbidden');
-      });
+      }
+    });
   }, []);
 
   if (status === 'checking') {

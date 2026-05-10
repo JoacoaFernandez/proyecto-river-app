@@ -30,3 +30,7 @@ export const getPlayer = async (id: string): Promise<Player | null> => {
     return null;
   }
 };
+
+export const deletePlayer = async (id: string): Promise<void> => {
+  await api.delete(`/players/${id}`);
+};
