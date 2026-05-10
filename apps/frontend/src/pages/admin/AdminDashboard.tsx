@@ -78,6 +78,15 @@ export default function AdminDashboard() {
         <h2 className="text-lg font-bold mb-4">Acciones rápidas</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Link
+            to="/admin/partidos"
+            className="bg-neutral-900 border border-neutral-800 hover:border-riverRed rounded-2xl p-5 transition-all group"
+          >
+            <div className="text-3xl mb-2">⚽</div>
+            <div className="font-bold mb-1 group-hover:text-riverRed transition-colors">Gestionar partidos</div>
+            <div className="text-xs text-neutral-500">Crear, editar estado y resultado de partidos.</div>
+          </Link>
+
+          <Link
             to="/admin/noticias"
             className="bg-neutral-900 border border-neutral-800 hover:border-riverRed rounded-2xl p-5 transition-all group"
           >

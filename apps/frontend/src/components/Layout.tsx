@@ -1,7 +1,8 @@
 // apps/frontend/src/components/Layout.tsx
-import { useEffect, useState } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { clearCurrentUser, getCurrentUser } from '../services/me.service';
+import type { CurrentUser } from '../services/me.service';
 import { useMatchNotifications } from '../hooks/useMatchNotifications';
 
 const baseNavItems = [
@@ -16,13 +17,26 @@ const adminNavItem = { to: '/admin', label: 'Admin', icon: '⚙️', end: false 
 
 export default function Layout() {
   const navigate = useNavigate();
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [user, setUser] = useState<CurrentUser | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const { supported: notifSupported, permission, requestPermission } = useMatchNotifications();
 
   useEffect(() => {
-    getCurrentUser().then((u) => setIsAdmin(u?.role === 'admin'));
+    getCurrentUser().then(setUser);
   }, []);
 
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const isAdmin = user?.role === 'admin';
   const navItems = isAdmin ? [...baseNavItems, adminNavItem] : baseNavItems;
 
   const handleLogout = () => {
@@ -30,6 +44,13 @@ export default function Layout() {
     clearCurrentUser();
     navigate('/login', { replace: true });
   };
+
+  const initials = user?.display_name
+    .split(' ')
+    .filter((w) => w.length > 0)
+    .slice(0, 2)
+    .map((w) => w[0].toUpperCase())
+    .join('') ?? '?';
 
   return (
     <div className="min-h-screen bg-neutral-950 text-white pb-20 md:pb-12">
@@ -82,12 +103,48 @@ export default function Layout() {
                 {permission === 'granted' ? '🔔' : '🔕'}
               </button>
             )}
-            <button
-              onClick={handleLogout}
-              className="bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 hover:border-riverRed text-xs sm:text-sm px-4 py-2 rounded-xl transition-all duration-300 cursor-pointer"
-            >
-              Cerrar Sesión 🚪
-            </button>
+            {/* Avatar dropdown */}
+            <div className="relative" ref={menuRef}>
+              <button
+                onClick={() => setMenuOpen((o) => !o)}
+                className="w-9 h-9 rounded-full bg-riverRed border-2 border-neutral-800 hover:border-riverRed flex items-center justify-center text-xs font-black text-white transition-all overflow-hidden"
+              >
+                {user?.avatar_url ? (
+                  <img
+                    src={user.avatar_url}
+                    alt=""
+                    className="w-full h-full object-cover"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
+                ) : (
+                  initials
+                )}
+              </button>
+
+              {menuOpen && (
+                <div className="fixed right-4 top-16 w-48 bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl overflow-hidden z-[200]">
+                  {user && (
+                    <div className="px-4 py-3 border-b border-neutral-800">
+                      <div className="text-sm font-semibold truncate">{user.display_name}</div>
+                      <div className="text-[11px] text-neutral-500 truncate">{user.email}</div>
+                    </div>
+                  )}
+                  <Link
+                    to="/perfil"
+                    onClick={() => setMenuOpen(false)}
+                    className="block text-sm px-4 py-2.5 hover:bg-neutral-800 transition-colors"
+                  >
+                    Mi perfil
+                  </Link>
+                  <button
+                    onClick={handleLogout}
+                    className="w-full text-left text-sm px-4 py-2.5 hover:bg-red-950/40 text-neutral-300 hover:text-riverRed transition-colors border-t border-neutral-800"
+                  >
+                    Cerrar sesión
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </nav>
@@ -96,12 +153,12 @@ export default function Layout() {
 
       {/* Navegación Mobile Bottom */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-neutral-950 border-t border-neutral-900 flex justify-around p-2 z-50 pb-safe">
-        {navItems.map((item) => (
+        {[...navItems, { to: '/perfil', label: 'Perfil', icon: '👤', end: false }].map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             end={item.end}
-            className="flex flex-col items-center justify-center p-2 w-16"
+            className="flex flex-col items-center justify-center p-2 w-14"
           >
             {({ isActive }) => (
               <>

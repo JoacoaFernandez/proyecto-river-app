@@ -139,8 +139,14 @@ export default function Noticias() {
               className="block bg-neutral-900 border border-neutral-800 hover:border-riverRed rounded-2xl overflow-hidden mb-6 group transition-all"
             >
               <div className="md:flex">
-                <div className="md:w-1/2 aspect-video md:aspect-auto bg-gradient-to-br from-red-950/40 to-neutral-950 flex items-center justify-center">
-                  <span className="text-7xl opacity-30">📰</span>
+                <div className="md:w-1/2 aspect-video md:aspect-auto overflow-hidden">
+                  {featured.imageUrl ? (
+                    <img src={featured.imageUrl} alt={featured.title} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-red-950/40 to-neutral-950 flex items-center justify-center">
+                      <span className="text-7xl opacity-30">📰</span>
+                    </div>
+                  )}
                 </div>
                 <div className="md:w-1/2 p-6 md:p-8 flex flex-col justify-center">
                   <div className="flex items-center gap-2 mb-3">
@@ -170,8 +176,14 @@ export default function Noticias() {
                 to={`/noticias/${n.id}`}
                 className="bg-neutral-900 border border-neutral-800 hover:border-riverRed rounded-2xl overflow-hidden group transition-all flex flex-col"
               >
-                <div className="aspect-video bg-gradient-to-br from-neutral-800 to-neutral-950 flex items-center justify-center border-b border-neutral-800">
-                  <span className="text-5xl opacity-30 group-hover:opacity-50 transition-opacity">📰</span>
+                <div className="aspect-video overflow-hidden border-b border-neutral-800">
+                  {n.imageUrl ? (
+                    <img src={n.imageUrl} alt={n.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-neutral-800 to-neutral-950 flex items-center justify-center">
+                      <span className="text-5xl opacity-30 group-hover:opacity-50 transition-opacity">📰</span>
+                    </div>
+                  )}
                 </div>
                 <div className="p-4 flex flex-col flex-1">
                   <div className="flex items-center justify-between mb-2">

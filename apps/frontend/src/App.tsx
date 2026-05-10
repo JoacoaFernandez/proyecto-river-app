@@ -12,9 +12,11 @@ import NoticiaDetalle from './pages/NoticiaDetalle';
 import Estadisticas from './pages/Estadisticas';
 import Competiciones from './pages/Competiciones';
 import Historia from './pages/Historia';
+import Perfil from './pages/Perfil';
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminNoticias from './pages/admin/AdminNoticias';
+import AdminPartidos from './pages/admin/AdminPartidos';
 import AdminPlantel from './pages/admin/AdminPlantel';
 import Layout from './components/Layout';
 import RequireAuth from './components/RequireAuth';
@@ -55,6 +57,7 @@ export default function App() {
           <Route path="estadisticas" element={<Estadisticas />} />
           <Route path="competiciones" element={<Competiciones />} />
           <Route path="historia" element={<Historia />} />
+          <Route path="perfil" element={<Perfil />} />
           <Route path="mas" element={<ComingSoon title="Más" />} />
         </Route>
 
@@ -70,6 +73,7 @@ export default function App() {
           }
         >
           <Route index element={<AdminDashboard />} />
+          <Route path="partidos" element={<AdminPartidos />} />
           <Route path="noticias" element={<AdminNoticias />} />
           <Route path="plantel" element={<AdminPlantel />} />
         </Route>
