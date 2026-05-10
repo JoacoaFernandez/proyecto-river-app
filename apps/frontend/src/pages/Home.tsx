@@ -304,6 +304,13 @@ export default function Home() {
                     <span className="font-bold text-green-400 text-xs uppercase tracking-wider">{stats.streak}</span>
                   </div>
                 </div>
+
+                <Link
+                  to="/estadisticas"
+                  className="block text-center w-full mt-4 bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 hover:border-riverRed text-white font-semibold text-xs py-2.5 rounded-xl transition-all"
+                >
+                  Ver estadísticas completas →
+                </Link>
               </div>
             ) : (
               <div className="text-center text-sm text-neutral-500 py-8">Las estadísticas no están disponibles.</div>

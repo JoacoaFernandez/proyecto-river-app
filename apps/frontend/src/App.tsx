@@ -8,6 +8,7 @@ import Partidos from './pages/Partidos';
 import ProximoPartido from './pages/ProximoPartido';
 import Noticias from './pages/Noticias';
 import NoticiaDetalle from './pages/NoticiaDetalle';
+import Estadisticas from './pages/Estadisticas';
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminNoticias from './pages/admin/AdminNoticias';
@@ -47,6 +48,7 @@ export default function App() {
           <Route path="plantel/:id" element={<JugadorDetalle />} />
           <Route path="noticias" element={<Noticias />} />
           <Route path="noticias/:id" element={<NoticiaDetalle />} />
+          <Route path="estadisticas" element={<Estadisticas />} />
           <Route path="mas" element={<ComingSoon title="Más" />} />
         </Route>
 
