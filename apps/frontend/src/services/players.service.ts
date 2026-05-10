@@ -11,6 +11,23 @@ export interface Player {
   nationality: string | null;
 }
 
+export interface PlayerStats {
+  height: string | null;
+  weight: string | null;
+  birthDate: string | null;
+  birthPlace: string | null;
+  birthCountry: string | null;
+  appearances: number;
+  lineups: number;
+  minutes: number;
+  rating: string | null;
+  goals: number;
+  assists: number;
+  yellowCards: number;
+  redCards: number;
+  season: number;
+}
+
 export const getPlayers = async (): Promise<Player[]> => {
   try {
     const response = await api.get<Player[]>('/players');
@@ -27,6 +44,15 @@ export const getPlayer = async (id: string): Promise<Player | null> => {
     return response.data ?? null;
   } catch (error) {
     console.error('Error al obtener el jugador:', error);
+    return null;
+  }
+};
+
+export const getPlayerStats = async (id: string): Promise<PlayerStats | null> => {
+  try {
+    const response = await api.get<PlayerStats>(`/players/${id}/stats`);
+    return response.data ?? null;
+  } catch {
     return null;
   }
 };

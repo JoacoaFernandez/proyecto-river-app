@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { clearCurrentUser, getCurrentUser } from '../services/me.service';
+import { useMatchNotifications } from '../hooks/useMatchNotifications';
 
 const baseNavItems = [
   { to: '/', label: 'Inicio', icon: '🏟️', end: true },
@@ -16,6 +17,7 @@ const adminNavItem = { to: '/admin', label: 'Admin', icon: '⚙️', end: false 
 export default function Layout() {
   const navigate = useNavigate();
   const [isAdmin, setIsAdmin] = useState(false);
+  const { supported: notifSupported, permission, requestPermission } = useMatchNotifications();
 
   useEffect(() => {
     getCurrentUser().then((u) => setIsAdmin(u?.role === 'admin'));
@@ -62,12 +64,31 @@ export default function Layout() {
             </div>
           </div>
 
-          <button
-            onClick={handleLogout}
-            className="bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 hover:border-riverRed text-xs sm:text-sm px-4 py-2 rounded-xl transition-all duration-300 cursor-pointer"
-          >
-            Cerrar Sesión 🚪
-          </button>
+          <div className="flex items-center gap-2">
+            {notifSupported && permission !== 'denied' && (
+              <button
+                onClick={permission === 'granted' ? undefined : requestPermission}
+                title={
+                  permission === 'granted'
+                    ? 'Notificaciones de partido activas'
+                    : 'Activar notificaciones cuando River juegue'
+                }
+                className={`p-2 rounded-xl border text-sm transition-all duration-200 ${
+                  permission === 'granted'
+                    ? 'border-green-800/50 text-green-500 bg-green-950/20 cursor-default'
+                    : 'border-neutral-800 text-neutral-400 hover:text-white hover:border-neutral-600 cursor-pointer'
+                }`}
+              >
+                {permission === 'granted' ? '🔔' : '🔕'}
+              </button>
+            )}
+            <button
+              onClick={handleLogout}
+              className="bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 hover:border-riverRed text-xs sm:text-sm px-4 py-2 rounded-xl transition-all duration-300 cursor-pointer"
+            >
+              Cerrar Sesión 🚪
+            </button>
+          </div>
         </div>
       </nav>
 
