@@ -35,6 +35,12 @@ export class PlayersController {
     return this.playersService.findOne(id);
   }
 
+  @Get(':id/stats')
+  @ApiOperation({ summary: 'Estadísticas de temporada del jugador desde API-Football' })
+  getStats(@Param('id') id: string) {
+    return this.playersService.getPlayerStats(id);
+  }
+
   @Patch(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('editor', 'admin')
