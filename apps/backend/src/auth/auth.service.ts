@@ -42,6 +42,16 @@ export class AuthService {
     return userWithoutPassword;
   }
 
+  // PERFIL DEL USUARIO LOGUEADO
+  async getProfile(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new UnauthorizedException('Usuario no encontrado.');
+    }
+    const { password_hash: _, ...safe } = user;
+    return safe;
+  }
+
   // INICIO DE SESIÓN (LOGIN)
   async login(loginDto: LoginDto) {
     const { email, password } = loginDto;

@@ -36,9 +36,6 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
 
-  // Configurar CORS para permitir que tu futuro Frontend se conecte
-  app.enableCors();
-
   // El servidor escuchará en el puerto 3000 por defecto
   await app.listen(3000);
   console.log('🏁 Servidor corriendo en: http://localhost:3000');
