@@ -1,9 +1,12 @@
 // apps/backend/src/news/news.controller.ts
-import { Controller, Get, Post, Body, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Delete, UseGuards } from '@nestjs/common';
 import { NewsService } from './news.service';
 import { NewsAiService } from './news-ai.service';
 import { CreateNewsDto } from './dto/create-news.dto';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 
 @ApiTags('News')
 @Controller('news')
@@ -14,14 +17,19 @@ export class NewsController {
   ) {}
 
   @Post()
-  @ApiOperation({ summary: 'Crear una noticia manualmente' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('editor', 'admin')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Crear una noticia manualmente (editor/admin)' })
   create(@Body() createNewsDto: CreateNewsDto) {
     return this.newsService.create(createNewsDto);
   }
 
-  // NUEVO ENDPOINT: http://localhost:3000/news/trigger-ai
   @Post('trigger-ai')
-  @ApiOperation({ summary: 'Forzar al robot de Gemini a redactar una noticia real de River ahora mismo' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Forzar al redactor con IA a generar una noticia ahora (admin)' })
   async triggerAiNews() {
     return this.newsAiService.generateAndSaveNews();
   }
@@ -39,7 +47,10 @@ export class NewsController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Eliminar una noticia' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Eliminar una noticia (admin)' })
   remove(@Param('id') id: string) {
     return this.newsService.remove(id);
   }

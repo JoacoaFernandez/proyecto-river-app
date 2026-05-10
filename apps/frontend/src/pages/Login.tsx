@@ -1,30 +1,27 @@
 // apps/frontend/src/pages/Login.tsx
 import { useState } from 'react';
-import { login } from '../services/auth.service'; // Importamos el servicio
+import { useLocation, useNavigate } from 'react-router-dom';
+import { login } from '../services/auth.service';
 
-export default function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
-  // Declaramos los estados necesarios para controlar el formulario
+export default function Login() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const from = (location.state as any)?.from?.pathname ?? '/';
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Función que se ejecuta al presionar "Entrar a la Cancha"
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
 
     try {
-      // Llamamos al servicio que se conecta con tu NestJS en Render
-      const data = await login(email, password);
-      console.log('¡Ingreso exitoso! Token guardado:', data.access_token);
-      alert('¡Bienvenido a la River App! Entrando a la cancha...');
-      
-      // Ejecutamos la función que nos cambia la pantalla al Home
-      onLoginSuccess();
+      await login(email, password);
+      navigate(from, { replace: true });
     } catch (err: any) {
-      // Si el backend rebota las credenciales, mostramos el error en pantalla
       setError(err.message);
     } finally {
       setLoading(false);

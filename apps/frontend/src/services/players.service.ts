@@ -1,19 +1,32 @@
 // apps/frontend/src/services/players.service.ts
-import axios from 'axios';
+import { api } from './api';
 
-const API_URL = 'http://localhost:3000/players';
+export interface Player {
+  id: string;
+  name: string;
+  position: string;
+  number: number | null;
+  age: number | null;
+  photo: string | null;
+  nationality: string | null;
+}
 
-export const getPlayers = async () => {
+export const getPlayers = async (): Promise<Player[]> => {
   try {
-    const token = localStorage.getItem('river_app_token');
-    const response = await axios.get(API_URL, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-    return response.data; // Retorna la lista de jugadores reales desde Render
+    const response = await api.get<Player[]>('/players');
+    return Array.isArray(response.data) ? response.data : [];
   } catch (error) {
     console.error('Error al obtener el plantel:', error);
     return [];
+  }
+};
+
+export const getPlayer = async (id: string): Promise<Player | null> => {
+  try {
+    const response = await api.get<Player>(`/players/${id}`);
+    return response.data ?? null;
+  } catch (error) {
+    console.error('Error al obtener el jugador:', error);
+    return null;
   }
 };

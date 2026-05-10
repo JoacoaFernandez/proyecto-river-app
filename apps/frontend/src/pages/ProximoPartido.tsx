@@ -1,0 +1,230 @@
+// apps/frontend/src/pages/ProximoPartido.tsx
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { getLiveDashboard } from '../services/live.service';
+
+type Pred = 'home' | 'draw' | 'away' | null;
+
+export default function ProximoPartido() {
+  const [match, setMatch] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [countdown, setCountdown] = useState<{ d: number; h: number; m: number; s: number } | null>(null);
+  const [prediction, setPrediction] = useState<Pred>(null);
+  const [predStored, setPredStored] = useState<Pred>(null);
+
+  useEffect(() => {
+    getLiveDashboard()
+      .then((d) => setMatch(d?.nextMatch ?? null))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (!match) return;
+
+    const tick = () => {
+      const distance = new Date(match.date).getTime() - Date.now();
+      if (distance <= 0) {
+        setCountdown({ d: 0, h: 0, m: 0, s: 0 });
+        return;
+      }
+      setCountdown({
+        d: Math.floor(distance / (1000 * 60 * 60 * 24)),
+        h: Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
+        m: Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60)),
+        s: Math.floor((distance % (1000 * 60)) / 1000),
+      });
+    };
+    tick();
+    const i = setInterval(tick, 1000);
+    return () => clearInterval(i);
+  }, [match]);
+
+  useEffect(() => {
+    if (!match) return;
+    const stored = localStorage.getItem(`river_pred_${match.id}`) as Pred;
+    if (stored) setPredStored(stored);
+  }, [match]);
+
+  const handlePredict = (p: Pred) => {
+    if (!match || predStored) return;
+    setPrediction(p);
+    localStorage.setItem(`river_pred_${match.id}`, p as string);
+    setPredStored(p);
+  };
+
+  if (loading) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 mt-12 text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-riverRed mx-auto mb-4"></div>
+        <p className="text-neutral-400">Cargando próximo partido…</p>
+      </div>
+    );
+  }
+
+  if (!match) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 mt-12 text-center">
+        <div className="text-6xl mb-4">📭</div>
+        <h2 className="text-xl font-bold mb-2">No hay próximo partido programado</h2>
+        <p className="text-neutral-400 mb-6">Volvé pronto, ya viene el siguiente.</p>
+        <Link to="/" className="text-riverRed font-semibold hover:underline">
+          ← Volver al inicio
+        </Link>
+      </div>
+    );
+  }
+
+  const matchDate = new Date(match.date);
+  const dayName = matchDate.toLocaleDateString('es-AR', { weekday: 'long' });
+  const dayDate = matchDate.toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' });
+  const time = matchDate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+
+  const isHome = /river/i.test(match.homeTeam);
+  const rival = isHome ? match.awayTeam : match.homeTeam;
+
+  return (
+    <div className="max-w-5xl mx-auto px-4 mt-8 space-y-6">
+      {/* Breadcrumb */}
+      <div className="text-sm text-neutral-500">
+        <Link to="/partidos" className="hover:text-white">Partidos</Link>
+        <span className="mx-2">/</span>
+        <span className="text-white">Próximo</span>
+      </div>
+
+      {/* Card principal del partido */}
+      <section className="bg-gradient-to-br from-neutral-900 to-neutral-950 border border-neutral-800 rounded-3xl p-8 shadow-2xl">
+        <div className="text-center mb-6">
+          <div className="inline-block bg-red-950/40 text-riverRed border border-red-900/50 px-4 py-1 rounded-full text-xs font-bold uppercase tracking-widest mb-2">
+            Próximo partido
+          </div>
+          <h1 className="text-2xl md:text-3xl font-black mt-2">
+            {isHome ? 'River Plate' : rival} <span className="text-neutral-600 mx-2">vs</span> {isHome ? rival : 'River Plate'}
+          </h1>
+          <p className="text-sm text-neutral-400 mt-1 capitalize">
+            {dayName}, {dayDate} • {time} hs
+          </p>
+          <p className="text-xs text-neutral-500 mt-1">{match.competition}</p>
+        </div>
+
+        {/* Cuenta regresiva */}
+        {countdown && (
+          <div className="grid grid-cols-4 gap-2 max-w-2xl mx-auto mb-8">
+            {[
+              { label: 'Días', value: countdown.d },
+              { label: 'Horas', value: countdown.h },
+              { label: 'Min', value: countdown.m },
+              { label: 'Seg', value: countdown.s },
+            ].map((u) => (
+              <div key={u.label} className="bg-neutral-950 border border-neutral-800 rounded-2xl py-4 text-center">
+                <div className="text-3xl md:text-4xl font-black text-riverRed tabular-nums">
+                  {String(u.value).padStart(2, '0')}
+                </div>
+                <div className="text-[10px] uppercase tracking-widest text-neutral-500 font-bold mt-1">{u.label}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Equipos */}
+        <div className="flex items-center justify-between max-w-3xl mx-auto">
+          <div className="text-center w-1/3">
+            <div className="w-20 h-20 mx-auto bg-white rounded-full flex items-center justify-center mb-3 shadow-inner">
+              <span className="text-riverRed font-black text-base">
+                {match.homeTeam.substring(0, 3).toUpperCase()}
+              </span>
+            </div>
+            <div className="font-bold text-sm">{match.homeTeam}</div>
+            <div className="text-xs text-neutral-500 mt-1">Local</div>
+          </div>
+          <div className="text-3xl text-neutral-700 font-black">VS</div>
+          <div className="text-center w-1/3">
+            <div className="w-20 h-20 mx-auto bg-neutral-800 border border-neutral-700 rounded-full flex items-center justify-center mb-3">
+              <span className="text-neutral-400 font-black text-base">
+                {match.awayTeam.substring(0, 3).toUpperCase()}
+              </span>
+            </div>
+            <div className="font-bold text-sm">{match.awayTeam}</div>
+            <div className="text-xs text-neutral-500 mt-1">Visitante</div>
+          </div>
+        </div>
+      </section>
+
+      {/* Datos del partido */}
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
+          <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-3">Datos del partido</h3>
+          <ul className="space-y-2 text-sm">
+            <li className="flex justify-between border-b border-neutral-800/50 pb-2">
+              <span className="text-neutral-400">Estadio</span>
+              <span className="font-semibold">{isHome ? 'Monumental' : 'Por confirmar'}</span>
+            </li>
+            <li className="flex justify-between border-b border-neutral-800/50 pb-2">
+              <span className="text-neutral-400">Competición</span>
+              <span className="font-semibold">{match.competition}</span>
+            </li>
+            <li className="flex justify-between border-b border-neutral-800/50 pb-2">
+              <span className="text-neutral-400">Fecha</span>
+              <span className="font-semibold capitalize">{dayName} {dayDate.split(',')[0]}</span>
+            </li>
+            <li className="flex justify-between">
+              <span className="text-neutral-400">Hora</span>
+              <span className="font-semibold">{time} hs</span>
+            </li>
+          </ul>
+        </div>
+
+        {/* Predicción */}
+        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
+          <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-3">Tu predicción</h3>
+          {predStored ? (
+            <div className="text-center py-4">
+              <div className="text-3xl mb-2">✅</div>
+              <p className="text-sm text-neutral-300">
+                Apostaste por:{' '}
+                <span className="font-bold text-riverRed">
+                  {predStored === 'home' ? match.homeTeam : predStored === 'away' ? match.awayTeam : 'Empate'}
+                </span>
+              </p>
+              <p className="text-xs text-neutral-500 mt-1">Tu voto se guarda hasta el partido.</p>
+            </div>
+          ) : (
+            <>
+              <p className="text-xs text-neutral-500 mb-3">¿Quién gana?</p>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { key: 'home' as const, label: match.homeTeam.substring(0, 8), sub: 'Gana local' },
+                  { key: 'draw' as const, label: 'Empate', sub: 'X' },
+                  { key: 'away' as const, label: match.awayTeam.substring(0, 8), sub: 'Gana visit.' },
+                ].map((opt) => (
+                  <button
+                    key={opt.key}
+                    onClick={() => handlePredict(opt.key)}
+                    className={`border rounded-xl py-3 text-center text-xs font-bold transition-all ${
+                      prediction === opt.key
+                        ? 'bg-red-950/40 text-riverRed border-red-900'
+                        : 'bg-neutral-950 text-neutral-300 border-neutral-800 hover:border-riverRed hover:text-white'
+                    }`}
+                  >
+                    <div className="truncate">{opt.label}</div>
+                    <div className="text-[9px] text-neutral-500 mt-1 uppercase tracking-wider">{opt.sub}</div>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </section>
+
+      {/* Placeholders de secciones que vendrán */}
+      <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 opacity-60">
+        <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-2">Formación probable</h3>
+        <p className="text-sm text-neutral-500">🚧 Próximamente: la cancha interactiva con la alineación.</p>
+      </section>
+
+      <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 opacity-60">
+        <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-2">Historial vs {rival}</h3>
+        <p className="text-sm text-neutral-500">🚧 Próximamente: últimos enfrentamientos cara a cara.</p>
+      </section>
+    </div>
+  );
+}

@@ -273,7 +273,6 @@ export class MatchesService implements OnModuleInit {
     }
 
     const allMatches: any[] = [];
-    const now = new Date();
 
     for (const [endpoint, key] of [
       ['eventsnext.php', 'events'],
@@ -305,11 +304,6 @@ export class MatchesService implements OnModuleInit {
           const date    = dateStr
             ? new Date(`${dateStr}T${timeStr.length === 5 ? timeStr + ':00' : timeStr}`)
             : new Date();
-
-          // Si la fecha ya pasó y sigue como scheduled, marcar como finished
-          if (status === 'scheduled' && date < now) {
-            status = 'finished';
-          }
 
           const normalized = normalizeTeams(homeTeamRaw, awayTeamRaw, homeScoreRaw, awayScoreRaw);
 
@@ -373,6 +367,33 @@ export class MatchesService implements OnModuleInit {
     return null;
   }
 
+  // ── Mapeo de status ESPN unificado ───────────────────────────────────────────
+
+  private mapEspnStatus(statusName: string): 'scheduled' | 'live' | 'finished' {
+    const finishedStates = ['STATUS_FINAL', 'STATUS_FULL_TIME', 'STATUS_POSTPONED', 'STATUS_CANCELED'];
+    const liveStates = ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_FIRST_HALF', 'STATUS_SECOND_HALF'];
+    if (finishedStates.includes(statusName)) return 'finished';
+    if (liveStates.includes(statusName)) return 'live';
+    return 'scheduled';
+  }
+
+  // Score puede venir como objeto o string en distintos endpoints de ESPN
+  private extractScore(scoreField: any): number | null {
+    if (scoreField == null) return null;
+    if (typeof scoreField === 'number') return scoreField;
+    if (typeof scoreField === 'string') {
+      const n = parseInt(scoreField, 10);
+      return Number.isNaN(n) ? null : n;
+    }
+    if (typeof scoreField === 'object') {
+      const candidate = scoreField.value ?? scoreField.displayValue;
+      if (candidate == null) return null;
+      const n = parseInt(String(candidate), 10);
+      return Number.isNaN(n) ? null : n;
+    }
+    return null;
+  }
+
   // ── Fuente 2: ESPN JSON API ───────────────────────────────────────────────────
 
   private async fetchFromEspnApi(): Promise<any[]> {
@@ -380,15 +401,14 @@ export class MatchesService implements OnModuleInit {
     if (!teamId) return [];
 
     const currentYear = new Date().getFullYear();
-    const now         = new Date();
     const allMatches: any[] = [];
 
     for (const league of ESPN_LEAGUES) {
       try {
-        // Prueba season actual, anterior y sin filtro para capturar todos los partidos
-        const seasonsToTry = [currentYear, currentYear - 1, ''] as (number | string)[];
         const eventMap = new Map<string, any>();
 
+        // 1. Schedule por temporada (trae partidos pasados y a veces futuros)
+        const seasonsToTry = [currentYear, currentYear - 1, ''] as (number | string)[];
         for (const season of seasonsToTry) {
           try {
             const seasonParam = season !== '' ? `?season=${season}` : '';
@@ -406,8 +426,24 @@ export class MatchesService implements OnModuleInit {
           } catch { /* continuar con siguiente season */ }
         }
 
+        // 2. Próximos eventos del equipo (esto trae el partido más cercano programado)
+        try {
+          const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.code}/teams/${teamId}`;
+          const res = await axios.get(url, { headers: AXIOS_HEADERS, timeout: 10000 });
+          const nextEvents: any[] = res.data?.team?.nextEvent || [];
+          for (const ev of nextEvents) {
+            const id = ev.id || `${ev.date}-${league.code}`;
+            if (!eventMap.has(id)) eventMap.set(id, ev);
+          }
+          if (nextEvents.length) {
+            this.logger.log(`ESPN [${league.code}]: +${nextEvents.length} nextEvent(s)`);
+          }
+        } catch (e: any) {
+          this.logger.warn(`⚠️ ESPN nextEvent [${league.code}] falló: ${e?.message}`);
+        }
+
         const events = [...eventMap.values()];
-        this.logger.log(`ESPN [${league.code}]: ${events.length} eventos`);
+        this.logger.log(`ESPN [${league.code}]: ${events.length} eventos totales`);
 
         for (const event of events) {
           const comp = event.competitions?.[0];
@@ -418,19 +454,11 @@ export class MatchesService implements OnModuleInit {
           if (!home || !away) continue;
 
           const statusName: string = comp.status?.type?.name || '';
-          let status = 'scheduled';
-          if (statusName === 'STATUS_FINAL') status = 'finished';
-          else if (['STATUS_IN_PROGRESS', 'STATUS_HALFTIME'].includes(statusName)) status = 'live';
-
+          const status = this.mapEspnStatus(statusName);
           const eventDate = new Date(comp.date || event.date || Date.now());
 
-          // FIX: si la fecha ya pasó y ESPN sigue reportando scheduled, forzar finished
-          if (status === 'scheduled' && eventDate < now) {
-            status = 'finished';
-          }
-
-          const rawHomeScore = status !== 'scheduled' ? parseInt(home.score ?? '0', 10) : null;
-          const rawAwayScore = status !== 'scheduled' ? parseInt(away.score ?? '0', 10) : null;
+          const rawHomeScore = status === 'scheduled' ? null : this.extractScore(home.score);
+          const rawAwayScore = status === 'scheduled' ? null : this.extractScore(away.score);
 
           const normalized = normalizeTeams(
             home.team?.displayName || home.team?.name || '',
@@ -446,6 +474,7 @@ export class MatchesService implements OnModuleInit {
             status,
             date: eventDate,
             competition: league.name,
+            minute: comp.status?.displayClock ? parseInt(comp.status.displayClock, 10) || null : null,
           });
         }
       } catch (e: any) {
@@ -484,8 +513,6 @@ export class MatchesService implements OnModuleInit {
         ...(pastRes.data?.response  || []),
       ];
 
-      const now = new Date();
-
       return raw.map((f: any) => {
         const short = f.fixture?.status?.short ?? '';
         let status = 'scheduled';
@@ -493,7 +520,6 @@ export class MatchesService implements OnModuleInit {
         else if (['1H', '2H', 'HT', 'LIVE'].includes(short)) status = 'live';
 
         const date = new Date(f.fixture?.date || Date.now());
-        if (status === 'scheduled' && date < now) status = 'finished';
 
         const normalized = normalizeTeams(
           (f.teams?.home?.name || '').toString(),

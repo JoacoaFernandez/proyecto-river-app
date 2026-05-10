@@ -1,16 +1,11 @@
-// ...existing code...
+// apps/frontend/src/pages/Home.tsx
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { getNews } from '../services/news.service';
 import { getLiveDashboard } from '../services/live.service';
-import Plantel from './Plantel';
-import FixtureCarousel from '../components/FixtureCarousel';
+import { timeAgo } from '../utils/time';
 
-interface HomeProps {
-  onLogout: () => void;
-}
-
-export default function Home({ onLogout }: HomeProps) {
-  const [activeTab, setActiveTab] = useState<'inicio' | 'partidos' | 'plantel' | 'noticias' | 'mas'>('inicio'); 
+export default function Home() {
   const [nextMatch, setNextMatch] = useState<any>(null);
   const [lastMatch, setLastMatch] = useState<any>(null);
   const [table, setTable] = useState<any[]>([]);
@@ -23,11 +18,8 @@ export default function Home({ onLogout }: HomeProps) {
     const loadData = async () => {
       setLoading(true);
       try {
-        const [dashboard, newsList] = await Promise.all([
-          getLiveDashboard(),
-          getNews(),
-        ]);
-        
+        const [dashboard, newsList] = await Promise.all([getLiveDashboard(), getNews()]);
+
         setNews(Array.isArray(newsList) ? newsList : []);
 
         if (dashboard) {
@@ -70,337 +62,254 @@ export default function Home({ onLogout }: HomeProps) {
       const days = Math.floor(distance / (1000 * 60 * 60 * 24));
       const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
       const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-      
+
       setCountdown(`${days}d ${hours}h ${minutes}m`);
     }, 1000);
 
     return () => clearInterval(interval);
   }, [nextMatch]);
 
-  const navItems = [
-    { id: 'inicio', label: 'Inicio', icon: '🏟️' },
-    { id: 'partidos', label: 'Partidos', icon: '⚽' },
-    { id: 'plantel', label: 'Plantel', icon: '🏃‍♂️' },
-    { id: 'noticias', label: 'Noticias', icon: '📰' },
-    { id: 'mas', label: 'Más', icon: '≡' },
-  ];
+  if (loading) {
+    return (
+      <div className="max-w-6xl mx-auto px-4 mt-8">
+        <div className="text-center py-12">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-riverRed mx-auto mb-4"></div>
+          <p className="text-neutral-400">Abriendo las puertas del Monumental...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-white pb-20 md:pb-12">
-      {/* Navegación Desktop */}
-      <nav className="bg-neutral-900 border-b border-neutral-800 px-6 py-4 sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveTab('inicio')}>
-              <div className="w-10 h-10 rounded-full bg-white text-riverRed font-black flex items-center justify-center border border-riverRed text-lg">
-                CARP
-              </div>
-              <span className="font-bold text-lg tracking-wide hidden sm:block">River App</span>
+    <div className="max-w-6xl mx-auto px-4 mt-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-6">
+          {/* 1. Próximo Partido */}
+          <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 relative shadow-xl">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xs font-semibold text-neutral-400 uppercase tracking-widest">Próximo Partido</h2>
+              {countdown && (
+                <span className="bg-red-950/40 text-riverRed border border-red-900/50 px-3 py-1 rounded-full text-xs font-bold animate-pulse">
+                  Faltan: {countdown}
+                </span>
+              )}
             </div>
-            
-            <div className="hidden md:flex items-center gap-6">
-              {navItems.map(item => (
-                <button
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id as any)}
-                  className={`text-sm font-semibold transition-colors flex items-center gap-1 ${activeTab === item.id ? 'text-riverRed border-b-2 border-riverRed pb-1' : 'text-neutral-400 hover:text-white'}`}
-                >
-                  {item.label} {item.icon}
-                </button>
-              ))}
-            </div>
-          </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={onLogout}
-              className="bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 hover:border-riverRed text-xs sm:text-sm px-4 py-2 rounded-xl transition-all duration-300 cursor-pointer"
-            >
-              Cerrar Sesión 🚪
-            </button>
-          </div>
-        </div>
-      </nav>
+            {nextMatch ? (
+              <div className="flex flex-col items-center">
+                <div className="text-xs text-neutral-400 mb-4">{nextMatch.competition} • Estadio Monumental</div>
 
-      {activeTab === 'plantel' && <Plantel />}
-
-      {activeTab === 'partidos' && (
-        <div className="max-w-6xl mx-auto px-4 mt-8">
-          <h2 className="text-2xl font-black mb-6 border-b border-neutral-800 pb-2">Fixture</h2>
-          <FixtureCarousel />
-        </div>
-      )}
-      
-      {activeTab === 'inicio' && (
-        <div className="max-w-6xl mx-auto px-4 mt-8">
-          {loading ? (
-            <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-riverRed mx-auto mb-4"></div>
-              <p className="text-neutral-400">Abriendo las puertas del Monumental...</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              
-              {/* COLUMNA PRINCIPAL */}
-              <div className="lg:col-span-2 space-y-6">
-                
-                {/* 1. Próximo Partido */}
-                <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 relative shadow-xl">
-                  <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-xs font-semibold text-neutral-400 uppercase tracking-widest">Próximo Partido</h2>
-                    {countdown && (
-                      <span className="bg-red-950/40 text-riverRed border border-red-900/50 px-3 py-1 rounded-full text-xs font-bold animate-pulse">
-                        Faltan: {countdown}
+                <div className="flex items-center justify-between w-full mb-6">
+                  <div className="text-center w-1/3">
+                    <div className="w-14 h-14 mx-auto bg-white rounded-full flex items-center justify-center mb-2 shadow-inner">
+                      <span className="text-riverRed font-black text-sm">
+                        {nextMatch.homeTeam.substring(0, 3).toUpperCase()}
                       </span>
-                    )}
+                    </div>
+                    <span className="block font-bold truncate">{nextMatch.homeTeam}</span>
                   </div>
-                  
-                  {nextMatch ? (
-                    <div className="flex flex-col items-center">
-                      <div className="text-xs text-neutral-400 mb-4">{nextMatch.competition} • Estadio Monumental</div>
-                      
-                      <div className="flex items-center justify-between w-full mb-6">
-                        <div className="text-center w-1/3">
-                          <div className="w-14 h-14 mx-auto bg-white rounded-full flex items-center justify-center mb-2 shadow-inner">
-                            <span className="text-riverRed font-black text-sm">{nextMatch.homeTeam.substring(0,3).toUpperCase()}</span>
-                          </div>
-                          <span className="block font-bold truncate">{nextMatch.homeTeam}</span>
-                        </div>
-                        
-                        <div className="text-center w-1/3 flex flex-col items-center">
-                          <div className="text-2xl font-black text-white">
-                            {new Date(nextMatch.date).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
-                          </div>
-                          <div className="text-sm text-neutral-500 font-medium">
-                            {new Date(nextMatch.date).toLocaleDateString('es-AR', { day: 'numeric', month: 'long' })}
-                          </div>
-                        </div>
-                        
-                        <div className="text-center w-1/3">
-                          <div className="w-14 h-14 mx-auto bg-neutral-800 border border-neutral-700 rounded-full flex items-center justify-center mb-2">
-                            <span className="text-neutral-400 font-black text-sm">{nextMatch.awayTeam.substring(0,3).toUpperCase()}</span>
-                          </div>
-                          <span className="block font-bold truncate">{nextMatch.awayTeam}</span>
-                        </div>
-                      </div>
-                      
-                      <button className="w-full bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 hover:border-riverRed text-white font-semibold text-sm py-3 rounded-xl transition-all shadow-md active:scale-[0.98]">
-                        Ver formación probable
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="text-center py-8 text-neutral-500 text-sm">No hay próximo partido programado.</div>
-                  )}
-                </section>
 
-                {/* 2. Último Resultado */}
-                <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 relative shadow-xl">
-                  <h2 className="text-xs font-semibold text-neutral-400 uppercase tracking-widest mb-4">Último Resultado</h2>
-                  {lastMatch ? (
-                    <div className="flex flex-col">
-                      <div className="text-xs text-neutral-400 mb-4 text-center">
-                        {lastMatch.competition} • {new Date(lastMatch.date).toLocaleDateString('es-AR')}
-                      </div>
-                      
-                      <div className="flex items-center justify-between mb-5">
-                        <div className="text-center w-1/3">
-                          <span className="block font-bold truncate">{lastMatch.homeTeam}</span>
-                        </div>
-                        
-                        <div className="flex items-center gap-4 bg-neutral-950 px-4 py-2 rounded-xl border border-neutral-800">
-                          <span className={`text-3xl font-black ${lastMatch.homeScore > lastMatch.awayScore ? 'text-white' : 'text-neutral-500'}`}>
-                            {lastMatch.homeScore ?? 0}
-                          </span>
-                          <span className="text-neutral-600 font-bold">-</span>
-                          <span className={`text-3xl font-black ${lastMatch.awayScore > lastMatch.homeScore ? 'text-white' : 'text-neutral-500'}`}>
-                            {lastMatch.awayScore ?? 0}
-                          </span>
-                        </div>
-                        
-                        <div className="text-center w-1/3">
-                          <span className="block font-bold truncate">{lastMatch.awayTeam}</span>
-                        </div>
-                      </div>
-                      
-                      <div className="bg-neutral-950 border border-neutral-800 rounded-xl p-3 text-xs text-neutral-400 text-center mb-5 flex justify-center gap-2 items-center">
-                        <span className="text-white">⚽ Goles:</span> Borja 23', Aliendro 67'
-                      </div>
-                      
-                      <button className="w-full bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 hover:border-riverRed text-white font-semibold text-sm py-3 rounded-xl transition-all shadow-md active:scale-[0.98]">
-                        Ver estadísticas del partido
-                      </button>
+                  <div className="text-center w-1/3 flex flex-col items-center">
+                    <div className="text-2xl font-black text-white">
+                      {new Date(nextMatch.date).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
                     </div>
-                  ) : (
-                    <div className="text-center py-8 text-neutral-500 text-sm">No hay resultados recientes.</div>
-                  )}
-                </section>
+                    <div className="text-sm text-neutral-500 font-medium">
+                      {new Date(nextMatch.date).toLocaleDateString('es-AR', { day: 'numeric', month: 'long' })}
+                    </div>
+                  </div>
 
-                {/* 3. Noticias Destacadas */}
-                <section className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-lg font-bold tracking-wide">Noticias Destacadas</h2>
-                    <span 
-                      onClick={() => setActiveTab('noticias')} 
-                      className="text-xs text-riverRed font-semibold cursor-pointer hover:underline"
+                  <div className="text-center w-1/3">
+                    <div className="w-14 h-14 mx-auto bg-neutral-800 border border-neutral-700 rounded-full flex items-center justify-center mb-2">
+                      <span className="text-neutral-400 font-black text-sm">
+                        {nextMatch.awayTeam.substring(0, 3).toUpperCase()}
+                      </span>
+                    </div>
+                    <span className="block font-bold truncate">{nextMatch.awayTeam}</span>
+                  </div>
+                </div>
+
+                <Link
+                  to="/partidos/proximo"
+                  className="w-full bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 hover:border-riverRed text-white font-semibold text-sm py-3 rounded-xl transition-all shadow-md active:scale-[0.98] text-center"
+                >
+                  Ver detalle del partido →
+                </Link>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-neutral-500 text-sm">No hay próximo partido programado.</div>
+            )}
+          </section>
+
+          {/* 2. Último Resultado */}
+          <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 relative shadow-xl">
+            <h2 className="text-xs font-semibold text-neutral-400 uppercase tracking-widest mb-4">Último Resultado</h2>
+            {lastMatch ? (
+              <div className="flex flex-col">
+                <div className="text-xs text-neutral-400 mb-4 text-center">
+                  {lastMatch.competition} • {new Date(lastMatch.date).toLocaleDateString('es-AR')}
+                </div>
+
+                <div className="flex items-center justify-between mb-5">
+                  <div className="text-center w-1/3">
+                    <span className="block font-bold truncate">{lastMatch.homeTeam}</span>
+                  </div>
+
+                  <div className="flex items-center gap-4 bg-neutral-950 px-4 py-2 rounded-xl border border-neutral-800">
+                    <span
+                      className={`text-3xl font-black ${
+                        lastMatch.homeScore > lastMatch.awayScore ? 'text-white' : 'text-neutral-500'
+                      }`}
                     >
-                      Ver todas ↗
+                      {lastMatch.homeScore ?? 0}
+                    </span>
+                    <span className="text-neutral-600 font-bold">-</span>
+                    <span
+                      className={`text-3xl font-black ${
+                        lastMatch.awayScore > lastMatch.homeScore ? 'text-white' : 'text-neutral-500'
+                      }`}
+                    >
+                      {lastMatch.awayScore ?? 0}
                     </span>
                   </div>
-                  
-                  {news.length > 0 ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      {news.slice(0, 3).map(item => (
-                        <a 
-                          key={item.id} 
-                          href={item.url || '#'} 
-                          target="_blank" 
-                          rel="noopener noreferrer" 
-                          className="bg-neutral-900 border border-neutral-800 hover:border-riverRed rounded-2xl p-4 transition-all duration-300 group flex flex-col justify-between shadow-lg h-full"
-                        >
-                          <div>
-                            <div className="w-full h-32 bg-neutral-950 border border-neutral-800 rounded-xl mb-4 flex items-center justify-center overflow-hidden group-hover:border-riverRed/50 transition-colors">
-                              <span className="text-4xl opacity-50">📰</span>
-                            </div>
-                            <div className="flex justify-between items-center mb-2">
-                              <span className="text-[10px] font-bold text-riverRed uppercase tracking-wider bg-red-950/30 border border-red-900/30 px-2 py-0.5 rounded-full">
-                                {item.category || 'Actualidad'}
-                              </span>
-                              <span className="text-[10px] text-neutral-500 font-medium">Hace 2h</span>
-                            </div>
-                            <h3 className="text-sm font-bold text-white group-hover:text-riverRed transition-colors line-clamp-3">
-                              {item.title}
-                            </h3>
-                          </div>
-                        </a>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-8 bg-neutral-900 border border-neutral-800 rounded-2xl text-neutral-500 text-sm">
-                      Buscando primicias... ✍️
-                    </div>
-                  )}
-                </section>
 
-              </div>
-
-              {/* COLUMNA LATERAL */}
-              <div className="space-y-6">
-                
-                {/* 4. Tabla de Posiciones */}
-                <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl">
-                  <h2 className="text-xs font-semibold text-neutral-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                    <span>🏆</span> Liga Profesional
-                  </h2>
-                  <div className="w-full text-sm">
-                    <div className="flex text-neutral-500 border-b border-neutral-800 pb-2 mb-2 font-semibold text-xs uppercase tracking-wider">
-                      <div className="w-6 text-center">#</div>
-                      <div className="flex-1 px-2">Equipo</div>
-                      <div className="w-8 text-center">Pts</div>
-                      <div className="w-8 text-center">PJ</div>
-                    </div>
-                    {table.slice(0, 10).map(row => (
-                      <div 
-                        key={row.pos} 
-                        className={`flex py-2.5 items-center border-b border-neutral-800/50 last:border-0 ${row.team.includes('River Plate') ? 'bg-red-950/20 rounded-lg font-bold text-white' : 'text-neutral-300'}`}
-                      >
-                        <div className={`w-6 text-center text-xs ${row.team.includes('River Plate') ? 'text-riverRed' : 'text-neutral-500'}`}>
-                          {row.pos}
-                        </div>
-                        <div className="flex-1 px-2 truncate">
-                          {row.team}
-                        </div>
-                        <div className={`w-8 text-center ${row.team.includes('River Plate') ? 'text-riverRed' : ''}`}>
-                          {row.pts}
-                        </div>
-                        <div className="w-8 text-center text-neutral-500">{row.pj}</div>
-                      </div>
-                    ))}
+                  <div className="text-center w-1/3">
+                    <span className="block font-bold truncate">{lastMatch.awayTeam}</span>
                   </div>
-                  <button className="w-full mt-5 bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 text-white font-semibold text-xs py-2.5 rounded-xl transition-all">
-                    Ver tabla completa
-                  </button>
-                </section>
-
-                {/* 5. Estadísticas Rápidas */}
-                <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl">
-                  <h2 className="text-xs font-semibold text-neutral-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                    <span>📊</span> Estadísticas de Temporada
-                  </h2>
-                  {stats ? (
-                  <div className="space-y-5">
-                    <div className="grid grid-cols-4 gap-2 text-center bg-neutral-950 border border-neutral-800 p-3 rounded-xl">
-                      <div>
-                        <div className="text-lg font-black text-white">{stats.pj}</div>
-                        <div className="text-[10px] text-neutral-500 uppercase font-bold">PJ</div>
-                      </div>
-                      <div>
-                        <div className="text-lg font-black text-green-500">{stats.pg}</div>
-                        <div className="text-[10px] text-neutral-500 uppercase font-bold">G</div>
-                      </div>
-                      <div>
-                        <div className="text-lg font-black text-yellow-500">{stats.pe}</div>
-                        <div className="text-[10px] text-neutral-500 uppercase font-bold">E</div>
-                      </div>
-                      <div>
-                        <div className="text-lg font-black text-red-500">{stats.pp}</div>
-                        <div className="text-[10px] text-neutral-500 uppercase font-bold">P</div>
-                      </div>
-                    </div>
-                    
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center text-sm border-b border-neutral-800/50 pb-2">
-                        <span className="text-neutral-400">Goles a favor</span>
-                        <span className="font-bold text-white bg-neutral-800 px-2 py-0.5 rounded-md">{stats.gf}</span>
-                      </div>
-                      <div className="flex justify-between items-center text-sm border-b border-neutral-800/50 pb-2">
-                        <span className="text-neutral-400">Goles en contra</span>
-                        <span className="font-bold text-white bg-neutral-800 px-2 py-0.5 rounded-md">{stats.gc}</span>
-                      </div>
-                      <div className="flex justify-between items-center text-sm border-b border-neutral-800/50 pb-2">
-                        <span className="text-neutral-400">Racha actual</span>
-                        <span className="font-bold text-green-400 text-xs uppercase tracking-wider">{stats.streak}</span>
-                      </div>
-                      <div className="flex justify-between items-center text-sm pt-1">
-                        <span className="text-neutral-400">Goleador</span>
-                        <span className="font-bold text-white text-xs">{stats.topScorer}</span>
-                      </div>
-                    </div>
-                  </div>
-                  ) : (
-                    <div className="text-center text-sm text-neutral-500 py-8">Las estadísticas no están disponibles.</div>
-                  )}
-                </section>
-
+                </div>
               </div>
+            ) : (
+              <div className="text-center py-8 text-neutral-500 text-sm">No hay resultados recientes.</div>
+            )}
+          </section>
+
+          {/* 3. Noticias Destacadas */}
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold tracking-wide">Noticias Destacadas</h2>
+              <Link to="/noticias" className="text-xs text-riverRed font-semibold cursor-pointer hover:underline">
+                Ver todas ↗
+              </Link>
             </div>
-          )}
-        </div>
-      )}
 
-      {['noticias', 'mas'].includes(activeTab) && (
-        <div className="max-w-6xl mx-auto px-4 mt-16 text-center">
-          <div className="text-6xl mb-4">🚧</div>
-          <h2 className="text-xl font-bold mb-2">Sección en construcción</h2>
-          <p className="text-neutral-400">El equipo técnico de River App está trabajando en esta área.</p>
+            {news.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {news.slice(0, 3).map((item) => (
+                  <Link
+                    key={item.id}
+                    to={`/noticias/${item.id}`}
+                    className="bg-neutral-900 border border-neutral-800 hover:border-riverRed rounded-2xl p-4 transition-all duration-300 group flex flex-col justify-between shadow-lg h-full"
+                  >
+                    <div>
+                      <div className="w-full h-32 bg-neutral-950 border border-neutral-800 rounded-xl mb-4 flex items-center justify-center overflow-hidden group-hover:border-riverRed/50 transition-colors">
+                        <span className="text-4xl opacity-50">📰</span>
+                      </div>
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-[10px] font-bold text-riverRed uppercase tracking-wider bg-red-950/30 border border-red-900/30 px-2 py-0.5 rounded-full">
+                          {item.category || 'Actualidad'}
+                        </span>
+                        <span className="text-[10px] text-neutral-500 font-medium">
+                          {timeAgo(item.publishedAt ?? item.createdAt)}
+                        </span>
+                      </div>
+                      <h3 className="text-sm font-bold text-white group-hover:text-riverRed transition-colors line-clamp-3">
+                        {item.title}
+                      </h3>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 bg-neutral-900 border border-neutral-800 rounded-2xl text-neutral-500 text-sm">
+                Buscando primicias... ✍️
+              </div>
+            )}
+          </section>
         </div>
-      )}
 
-      {/* Navegación Mobile Bottom */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-neutral-950 border-t border-neutral-900 flex justify-around p-2 z-50 pb-safe">
-        {navItems.map(item => (
-          <button
-            key={item.id}
-            onClick={() => setActiveTab(item.id as any)}
-            className="flex flex-col items-center justify-center p-2 w-16"
-          >
-            <span className={`text-xl mb-1 transition-transform ${activeTab === item.id ? 'scale-110' : 'opacity-50'}`}>
-              {item.icon}
-            </span>
-            <span className={`text-[9px] font-bold uppercase tracking-wider ${activeTab === item.id ? 'text-riverRed' : 'text-neutral-500'}`}>
-              {item.label}
-            </span>
-          </button>
-        ))}
+        {/* COLUMNA LATERAL */}
+        <div className="space-y-6">
+          {/* 4. Tabla de Posiciones */}
+          <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl">
+            <h2 className="text-xs font-semibold text-neutral-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+              <span>🏆</span> Liga Profesional
+            </h2>
+            <div className="w-full text-sm">
+              <div className="flex text-neutral-500 border-b border-neutral-800 pb-2 mb-2 font-semibold text-xs uppercase tracking-wider">
+                <div className="w-6 text-center">#</div>
+                <div className="flex-1 px-2">Equipo</div>
+                <div className="w-8 text-center">Pts</div>
+                <div className="w-8 text-center">PJ</div>
+              </div>
+              {table.slice(0, 10).map((row) => (
+                <div
+                  key={row.pos}
+                  className={`flex py-2.5 items-center border-b border-neutral-800/50 last:border-0 ${
+                    row.team.includes('River Plate') ? 'bg-red-950/20 rounded-lg font-bold text-white' : 'text-neutral-300'
+                  }`}
+                >
+                  <div
+                    className={`w-6 text-center text-xs ${
+                      row.team.includes('River Plate') ? 'text-riverRed' : 'text-neutral-500'
+                    }`}
+                  >
+                    {row.pos}
+                  </div>
+                  <div className="flex-1 px-2 truncate">{row.team}</div>
+                  <div className={`w-8 text-center ${row.team.includes('River Plate') ? 'text-riverRed' : ''}`}>
+                    {row.pts}
+                  </div>
+                  <div className="w-8 text-center text-neutral-500">{row.pj}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* 5. Estadísticas Rápidas */}
+          <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl">
+            <h2 className="text-xs font-semibold text-neutral-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+              <span>📊</span> Estadísticas de Temporada
+            </h2>
+            {stats ? (
+              <div className="space-y-5">
+                <div className="grid grid-cols-4 gap-2 text-center bg-neutral-950 border border-neutral-800 p-3 rounded-xl">
+                  <div>
+                    <div className="text-lg font-black text-white">{stats.pj}</div>
+                    <div className="text-[10px] text-neutral-500 uppercase font-bold">PJ</div>
+                  </div>
+                  <div>
+                    <div className="text-lg font-black text-green-500">{stats.pg}</div>
+                    <div className="text-[10px] text-neutral-500 uppercase font-bold">G</div>
+                  </div>
+                  <div>
+                    <div className="text-lg font-black text-yellow-500">{stats.pe}</div>
+                    <div className="text-[10px] text-neutral-500 uppercase font-bold">E</div>
+                  </div>
+                  <div>
+                    <div className="text-lg font-black text-red-500">{stats.pp}</div>
+                    <div className="text-[10px] text-neutral-500 uppercase font-bold">P</div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center text-sm border-b border-neutral-800/50 pb-2">
+                    <span className="text-neutral-400">Goles a favor</span>
+                    <span className="font-bold text-white bg-neutral-800 px-2 py-0.5 rounded-md">{stats.gf}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm border-b border-neutral-800/50 pb-2">
+                    <span className="text-neutral-400">Goles en contra</span>
+                    <span className="font-bold text-white bg-neutral-800 px-2 py-0.5 rounded-md">{stats.gc}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm border-b border-neutral-800/50 pb-2">
+                    <span className="text-neutral-400">Racha actual</span>
+                    <span className="font-bold text-green-400 text-xs uppercase tracking-wider">{stats.streak}</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center text-sm text-neutral-500 py-8">Las estadísticas no están disponibles.</div>
+            )}
+          </section>
+        </div>
       </div>
     </div>
   );

@@ -1,0 +1,3728 @@
+
+
+=================================================================
+// ARCHIVO: apps\backend\prisma\seed.ts
+=================================================================
+
+// apps/backend/prisma/seed.ts
+import { PrismaClient } from '@prisma/client';
+import axios from 'axios';
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
+const prisma = new PrismaClient();
+
+const RIVER_PLATE_TEAM_ID = 435; // ID oficial de River Plate
+const API_KEY = process.env.API_FOOTBALL_KEY;
+
+async function syncPlayers(apiKey: string) {
+  console.log('📡 1. Descargando plantel real de River desde API-Football...');
+  await prisma.player.deleteMany();
+
+  const response = await axios.get('https://v3.football.api-sports.io/players/squads', {
+    params: { team: RIVER_PLATE_TEAM_ID },
+    headers: {
+      'x-rapidapi-key': apiKey,
+      'x-rapidapi-host': 'v3.football.api-sports.io',
+    },
+  });
+
+  const squad = response.data.response?.[0]?.players;
+  if (!squad || squad.length === 0) {
+    console.log('⚠️ No se encontraron jugadores en la API.');
+    return;
+  }
+
+  console.log(`📥 Guardando ${squad.length} jugadores en Render...`);
+  for (const p of squad) {
+    let dbPosition = 'Midfielder';
+    if (p.position === 'Goalkeeper') dbPosition = 'Goalkeeper';
+    if (p.position === 'Defender') dbPosition = 'Defender';
+    if (p.position === 'Midfielder') dbPosition = 'Midfielder';
+    if (p.position === 'Attacker') dbPosition = 'Attacker';
+
+    await prisma.player.create({
+      data: {
+        name: p.name,
+        position: dbPosition,
+        number: p.number ?? 10,
+        age: p.age ?? 25,
+        photo: p.photo ?? null,
+        nationality: 'Argentino',
+      },
+    });
+  }
+  console.log('✅ ¡Sincronización de plantel completada!');
+}
+
+async function main() {
+  if (!API_KEY) {
+    throw new Error('❌ No se encontró la variable API_FOOTBALL_KEY en el archivo .env');
+  }
+
+  // 1. Sincroniza jugadores reales (Esto se hace una vez por temporada)
+  await syncPlayers(API_KEY);
+  console.log('----------------------------------------------------');
+  
+  console.log('🎉 [ÉXITO TOTAL] ¡Plantel sincronizado! El Fixture y las Noticias ahora se actualizan solos de fondo al prender el servidor.');
+}
+
+main()
+  .catch((e) => {
+    console.error('❌ Error en el seed automático:', e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
+
+=================================================================
+// ARCHIVO: apps\backend\src\app.controller.spec.ts
+=================================================================
+
+import { Test, TestingModule } from '@nestjs/testing';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
+
+describe('AppController', () => {
+  let appController: AppController;
+
+  beforeEach(async () => {
+    const app: TestingModule = await Test.createTestingModule({
+      controllers: [AppController],
+      providers: [AppService],
+    }).compile();
+
+    appController = app.get<AppController>(AppController);
+  });
+
+  describe('root', () => {
+    it('should return "Hello World!"', () => {
+      expect(appController.getHello()).toBe('Hello World!');
+    });
+  });
+});
+
+
+=================================================================
+// ARCHIVO: apps\backend\src\app.controller.ts
+=================================================================
+
+import { Controller, Get } from '@nestjs/common';
+import { AppService } from './app.service';
+
+@Controller()
+export class AppController {
+  constructor(private readonly appService: AppService) {}
+
+  @Get()
+  getHello(): string {
+    return this.appService.getHello();
+  }
+}
+
+
+=================================================================
+// ARCHIVO: apps\backend\src\app.module.ts
+=================================================================
+
+import { Module } from '@nestjs/common';
+import { PrismaModule } from './prisma/prisma.module';
+import { MatchesModule } from './matches/matches.module';
+import { NewsModule } from './news/news.module';
+import { PlayersModule } from './players/players.module';
+import { LiveApiModule } from './live-api.module';
+
+@Module({
+  imports: [
+    PrismaModule,
+    MatchesModule,
+    NewsModule,
+    PlayersModule,
+    LiveApiModule,
+  ],
+  controllers: [],
+  providers: [],
+})
+export class AppModule {}
+
+=================================================================
+// ARCHIVO: apps\backend\src\app.service.ts
+=================================================================
+
+import { Injectable } from '@nestjs/common';
+
+@Injectable()
+export class AppService {
+  getHello(): string {
+    return 'Hello World!';
+  }
+}
+
+
+=================================================================
+// ARCHIVO: apps\backend\src\auth\auth.controller.spec.ts
+=================================================================
+
+import { Test, TestingModule } from '@nestjs/testing';
+import { AuthController } from './auth.controller';
+
+describe('AuthController', () => {
+  let controller: AuthController;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [AuthController],
+    }).compile();
+
+    controller = module.get<AuthController>(AuthController);
+  });
+
+  it('should be defined', () => {
+    expect(controller).toBeDefined();
+  });
+});
+
+
+=================================================================
+// ARCHIVO: apps\backend\src\auth\auth.controller.ts
+=================================================================
+
+// apps/backend/src/auth/auth.controller.ts
+import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { AuthService } from './auth.service';
+import { RegisterDto } from './dto/register.dto';
+import { LoginDto } from './dto/login.dto';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+
+@ApiTags('Auth') // Agrupa este controlador bajo la etiqueta 'Auth' en Swagger
+@Controller('auth')
+export class AuthController {
+  constructor(private readonly authService: AuthService) {}
+
+  @Post('register')
+  @ApiOperation({ summary: 'Registrar un nuevo usuario/hincha' })
+  @ApiResponse({ status: 201, description: 'Usuario creado exitosamente.' })
+  @ApiResponse({ status: 400, description: 'El correo electrónico ya existe.' })
+  register(@Body() registerDto: RegisterDto) {
+    return this.authService.register(registerDto);
+  }
+
+  @Post('login')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Iniciar sesión para obtener el token JWT' })
+  @ApiResponse({ status: 200, description: 'Login exitoso, devuelve el token.' })
+  @ApiResponse({ status: 401, description: 'Credenciales inválidas.' })
+  login(@Body() loginDto: LoginDto) {
+    return this.authService.login(loginDto);
+  }
+}
+
+=================================================================
+// ARCHIVO: apps\backend\src\auth\auth.module.ts
+=================================================================
+
+// apps/backend/src/auth/auth.module.ts
+import { Module } from '@nestjs/common';
+import { AuthService } from './auth.service';
+import { AuthController } from './auth.controller';
+import { PrismaModule } from '../prisma/prisma.module'; // Import correcto a Prisma
+import { JwtModule } from '@nestjs/jwt';
+import { PassportModule } from '@nestjs/passport';
+
+@Module({
+  imports: [
+    PrismaModule,
+    PassportModule,
+    JwtModule.register({
+      secret: process.env.JWT_SECRET || 'secretKeyRiverApp2026', // Clave por defecto si no hay .env
+      signOptions: { expiresIn: '1d' }, // El token expira en 1 día
+    }),
+  ],
+  controllers: [AuthController],
+  providers: [AuthService],
+  exports: [AuthService],
+})
+export class AuthModule {}
+
+=================================================================
+// ARCHIVO: apps\backend\src\auth\auth.service.spec.ts
+=================================================================
+
+import { Test, TestingModule } from '@nestjs/testing';
+import { AuthService } from './auth.service';
+
+describe('AuthService', () => {
+  let service: AuthService;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [AuthService],
+    }).compile();
+
+    service = module.get<AuthService>(AuthService);
+  });
+
+  it('should be defined', () => {
+    expect(service).toBeDefined();
+  });
+});
+
+
+=================================================================
+// ARCHIVO: apps\backend\src\auth\auth.service.ts
+=================================================================
+
+// apps/backend/src/auth/auth.service.ts
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { RegisterDto } from './dto/register.dto';
+import { LoginDto } from './dto/login.dto';
+import * as bcrypt from 'bcrypt';
+import { JwtService } from '@nestjs/jwt';
+
+@Injectable()
+export class AuthService {
+  constructor(
+    private prisma: PrismaService,
+    private jwtService: JwtService,
+  ) {}
+
+  // REGISTRO DE USUARIOS
+  async register(registerDto: RegisterDto) {
+    const { email, password, display_name } = registerDto;
+
+    // Verificar si el email ya existe en la base de datos de Render
+    const userExists = await this.prisma.user.findUnique({ where: { email } });
+    if (userExists) {
+      throw new BadRequestException('El correo electrónico ya está registrado.');
+    }
+
+    // Encriptar la contraseña
+    const salt = await bcrypt.genSalt(10);
+    const password_hash = await bcrypt.hash(password, salt);
+
+    // Crear el nuevo usuario en la base de datos
+    const newUser = await this.prisma.user.create({
+      data: {
+        email,
+        password_hash,
+        display_name,
+        role: 'user', // Rol por defecto (hincha)
+      },
+    });
+
+    // Retornamos el usuario sin exponer la contraseña encriptada
+    const { password_hash: _, ...userWithoutPassword } = newUser;
+    return userWithoutPassword;
+  }
+
+  // INICIO DE SESIÓN (LOGIN)
+  async login(loginDto: LoginDto) {
+    const { email, password } = loginDto;
+
+    // Buscar el usuario
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      throw new UnauthorizedException('Credenciales incorrectas.');
+    }
+
+    // Verificar si la contraseña coincide con el hash guardado
+    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Credenciales incorrectas.');
+    }
+
+    // Generar el Token JWT
+    const payload = { sub: user.id, email: user.email, role: user.role };
+    return {
+      access_token: await this.jwtService.signAsync(payload),
+      user: {
+        id: user.id,
+        email: user.email,
+        display_name: user.display_name,
+        role: user.role,
+      },
+    };
+  }
+}
+
+=================================================================
+// ARCHIVO: apps\backend\src\auth\dto\login.dto.ts
+=================================================================
+
+// apps/backend/src/auth/dto/login.dto.ts
+import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+
+export class LoginDto {
+  @ApiProperty({ example: 'joaquin@example.com' })
+  @IsEmail()
+  @IsNotEmpty()
+  email: string;
+
+  @ApiProperty({ example: 'Millonario2026' })
+  @IsString()
+  @MinLength(6)
+  password: string;
+}
+
+=================================================================
+// ARCHIVO: apps\backend\src\auth\dto\register.dto.ts
+=================================================================
+
+// apps/backend/src/auth/dto/register.dto.ts
+import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+
+export class RegisterDto {
+  @ApiProperty({ example: 'joaquin@example.com', description: 'El correo electrónico del usuario' })
+  @IsEmail({}, { message: 'El formato del correo electrónico no es válido' })
+  @IsNotEmpty({ message: 'El correo electrónico es obligatorio' })
+  email: string;
+
+  @ApiProperty({ example: 'Millonario2026', description: 'La contraseña del usuario (mínimo 6 caracteres)' })
+  @IsString()
+  @MinLength(6, { message: 'La contraseña debe tener al menos 6 caracteres' })
+  password: string;
+
+  @ApiProperty({ example: 'Joaquín Carp', description: 'El nombre público del usuario' })
+  @IsString()
+  @IsNotEmpty({ message: 'El nombre público es obligatorio' })
+  display_name: string;
+}
+
+=================================================================
+// ARCHIVO: apps\backend\src\formations\dto\create-formation.dto.ts
+=================================================================
+
+// apps/backend/src/formations/dto/create-formation.dto.ts
+import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+
+export class CreateFormationDto {
+  @ApiProperty({ example: 'ccaa58f3-e543-4090-b06f-e2051aaff128', description: 'ID del partido asociado' })
+  @IsString()
+  @IsNotEmpty({ message: 'El ID del partido es obligatorio' })
+  matchId: string;
+
+  @ApiProperty({ example: '4-3-3', description: 'Esquema táctico de la formación' })
+  @IsString()
+  @IsNotEmpty({ message: 'El esquema táctico es obligatorio (ej: 4-3-3)' })
+  scheme: string;
+
+  @ApiProperty({ example: true, description: 'Define si es la alineación titular oficial', required: false })
+  @IsBoolean()
+  @IsOptional()
+  isLineup?: boolean;
+}
+
+=================================================================
+// ARCHIVO: apps\backend\src\formations\formations.controller.spec.ts
+=================================================================
+
+import { Test, TestingModule } from '@nestjs/testing';
+import { FormationsController } from './formations.controller';
+
+describe('FormationsController', () => {
+  let controller: FormationsController;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [FormationsController],
+    }).compile();
+
+    controller = module.get<FormationsController>(FormationsController);
+  });
+
+  it('should be defined', () => {
+    expect(controller).toBeDefined();
+  });
+});
+
+
+=================================================================
+// ARCHIVO: apps\backend\src\formations\formations.controller.ts
+=================================================================
+
+// apps/backend/src/formations/formations.controller.ts
+import { Controller, Get, Post, Body, Param, Delete } from '@nestjs/common';
+import { FormationsService } from './formations.service';
+import { CreateFormationDto } from './dto/create-formation.dto';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+
+@ApiTags('Formations') // Agrupa este controlador bajo 'Formations' en Swagger
+@Controller('formations')
+export class FormationsController {
+  constructor(private readonly formationsService: FormationsService) {}
+
+  @Post()
+  @ApiOperation({ summary: 'Asignar un esquema táctico a un partido' })
+  @ApiResponse({ status: 201, description: 'Formación creada con éxito.' })
+  create(@Body() createFormationDto: CreateFormationDto) {
+    return this.formationsService.create(createFormationDto);
+  }
+
+  @Get()
+  @ApiOperation({ summary: 'Obtener todas las formaciones tácticas registradas' })
+  findAll() {
+    return this.formationsService.findAll();
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Obtener los detalles de una formación específica' })
+  findOne(@Param('id') id: string) {
+    return this.formationsService.findOne(id);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Eliminar una formación' })
+  remove(@Param('id') id: string) {
+    return this.formationsService.remove(id);
+  }
+}
+
+=================================================================
+// ARCHIVO: apps\backend\src\formations\formations.module.ts
+=================================================================
+
+import { Module } from '@nestjs/common';
+import { FormationsController } from './formations.controller';
+import { FormationsService } from './formations.service';
+
+@Module({
+  controllers: [FormationsController],
+  providers: [FormationsService]
+})
+export class FormationsModule {}
+
+
+=================================================================
+// ARCHIVO: apps\backend\src\formations\formations.service.spec.ts
+=================================================================
+
+import { Test, TestingModule } from '@nestjs/testing';
+import { FormationsService } from './formations.service';
+
+describe('FormationsService', () => {
+  let service: FormationsService;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [FormationsService],
+    }).compile();
+
+    service = module.get<FormationsService>(FormationsService);
+  });
+
+  it('should be defined', () => {
+    expect(service).toBeDefined();
+  });
+});
+
+
+=================================================================
+// ARCHIVO: apps\backend\src\formations\formations.service.ts
+=================================================================
+
+// apps/backend/src/formations/formations.service.ts
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { CreateFormationDto } from './dto/create-formation.dto';
+
+@Injectable()
+export class FormationsService {
+  constructor(private prisma: PrismaService) {}
+
+  // ASIGNAR FORMACIÓN A UN PARTIDO
+  async create(createFormationDto: CreateFormationDto) {
+    const { matchId } = createFormationDto;
+
+    // Validar primero si el partido existe
+    const match = await this.prisma.match.findUnique({ where: { id: matchId } });
+    if (!match) {
+      throw new NotFoundException(`El partido con ID ${matchId} no existe.`);
+    }
+
+    return this.prisma.formation.create({
+      data: createFormationDto,
+    });
+  }
+
+  // OBTENER TODAS LAS FORMACIONES
+  async findAll() {
+    return this.prisma.formation.findMany({
+      include: {
+        match: true, // Trae la info del partido asociado
+      },
+    });
+  }
+
+  // BUSCAR UNA FORMACIÓN POR ID
+  async findOne(id: string) {
+    const formation = await this.prisma.formation.findUnique({
+      where: { id },
+      include: { match: true },
+    });
+    if (!formation) {
+      throw new NotFoundException(`La formación con ID ${id} no existe.`);
+    }
+    return formation;
+  }
+
+  // ELIMINAR FORMACIÓN
+  async remove(id: string) {
+    await this.findOne(id);
+    return this.prisma.formation.delete({
+      where: { id },
+    });
+  }
+}
+
+=================================================================
+// ARCHIVO: apps\backend\src\live-api.controller.ts
+=================================================================
+
+import { Controller, Get } from '@nestjs/common';
+import { LiveApiService } from './live-api.service';
+
+@Controller('live') // <- Dejamos esto igual para que el Frontend no se entere de nuestro cambio
+export class LiveApiController {
+  constructor(private readonly liveApiService: LiveApiService) {}
+
+  @Get('dashboard')
+  async getDashboard() {
+    return this.liveApiService.getDashboardData();
+  }
+}
+
+=================================================================
+// ARCHIVO: apps\backend\src\live-api.module.ts
+=================================================================
+
+import { Module } from '@nestjs/common';
+import { LiveApiController } from './live-api.controller';
+import { LiveApiService } from './live-api.service';
+
+@Module({
+  controllers: [LiveApiController],
+  providers: [LiveApiService],
+})
+export class LiveApiModule {}
+
+=================================================================
+// ARCHIVO: apps\backend\src\live-api.service.ts
+=================================================================
+
+import { Injectable, Logger } from '@nestjs/common';
+import axios from 'axios';
+
+@Injectable()
+export class LiveApiService {
+  private readonly logger = new Logger(LiveApiService.name);
+  private cache: any = null;
+  private lastFetch: number = 0;
+
+  async getDashboardData() {
+    // Retornamos caché si tiene menos de 15 minutos para no saturar la API gratuita
+    if (this.cache && Date.now() - this.lastFetch < 900000) {
+      return this.cache;
+    }
+
+    const apiKey = process.env.API_FOOTBALL_KEY;
+    const teamId = process.env.RIVER_PLATE_TEAM_ID || '435';
+    const currentYear = new Date().getFullYear();
+
+    if (!apiKey) throw new Error('API_FOOTBALL_KEY no configurada.');
+
+    try {
+      this.logger.log('🌐 Extrayendo datos 100% reales desde API-Football (LiveApi)...');
+      const headers = { 'x-apisports-key': apiKey };
+
+      // 1. Buscamos partidos
+      const [lastRes, nextRes] = await Promise.all([
+        axios.get(`https://v3.football.api-sports.io/fixtures?team=${teamId}&last=1`, { headers }),
+        axios.get(`https://v3.football.api-sports.io/fixtures?team=${teamId}&next=10`, { headers })
+      ]);
+
+      const lastMatch = lastRes.data.response?.[0];
+      const upcoming = nextRes.data.response || [];
+      const nextMatch = upcoming[0];
+
+      const formatMatch = (m: any) => {
+        if (!m) return null;
+        const short = m.fixture.status.short;
+        let status = 'scheduled';
+        if (['FT', 'AET', 'PEN'].includes(short)) status = 'finished';
+        else if (['1H', '2H', 'HT', 'LIVE'].includes(short)) status = 'live';
+
+        return {
+          id: m.fixture.id,
+          homeTeam: m.teams.home.name,
+          awayTeam: m.teams.away.name,
+          homeScore: m.goals.home,
+          awayScore: m.goals.away,
+          date: m.fixture.date,
+          status,
+          competition: m.league.name,
+          minute: m.fixture.status.elapsed
+        };
+      };
+
+      // 2. Buscamos Tabla de Posiciones
+      let standingsRes = await axios.get(`https://v3.football.api-sports.io/standings?season=${currentYear}&team=${teamId}`, { headers });
+      if (!standingsRes.data.response?.length) {
+        standingsRes = await axios.get(`https://v3.football.api-sports.io/standings?season=${currentYear - 1}&team=${teamId}`, { headers });
+      }
+
+      let table = [];
+      let stats = { pj: 0, pg: 0, pe: 0, pp: 0, gf: 0, gc: 0, streak: '-', topScorer: 'N/A' };
+
+      if (standingsRes.data.response?.length > 0) {
+        const league = standingsRes.data.response[0].league;
+        const allStandings = league.standings[0];
+
+        table = allStandings.map((row: any) => ({
+          pos: row.rank,
+          team: row.team.name,
+          pts: row.points,
+          pj: row.all.played,
+          dif: row.goalsDiff
+        }));
+
+        const riverRow = allStandings.find((r: any) => String(r.team.id) === String(teamId));
+        if (riverRow) {
+          stats = {
+            pj: riverRow.all.played,
+            pg: riverRow.all.win,
+            pe: riverRow.all.draw,
+            pp: riverRow.all.lose,
+            gf: riverRow.all.goals.for,
+            gc: riverRow.all.goals.against,
+            streak: this.parseForm(riverRow.form),
+            topScorer: 'N/A'
+          };
+        }
+      }
+
+      this.cache = {
+        lastMatch: formatMatch(lastMatch),
+        nextMatch: formatMatch(nextMatch),
+        upcomingMatches: upcoming.map(formatMatch),
+        standings: table,
+        stats
+      };
+      this.lastFetch = Date.now();
+      return this.cache;
+    } catch (e: any) {
+      this.logger.error('Error Live API: ' + e.message);
+      if (this.cache) return this.cache;
+      throw e;
+    }
+  }
+
+  private parseForm(form: string) {
+    if (!form) return 'N/A';
+    const l = form.slice(-5);
+    const w = (l.match(/W/g) || []).length;
+    if (w >= 3) return `${w} victorias en 5 PJ`;
+    if (l.includes('L')) return 'Irregular';
+    return 'Estable';
+  }
+}
+
+=================================================================
+// ARCHIVO: apps\backend\src\live.controller.ts
+=================================================================
+
+
+
+=================================================================
+// ARCHIVO: apps\backend\src\live.module.ts
+=================================================================
+
+
+
+=================================================================
+// ARCHIVO: apps\backend\src\live.service.ts
+=================================================================
+
+
+
+=================================================================
+// ARCHIVO: apps\backend\src\main.ts
+=================================================================
+
+// apps/backend/src/main.ts
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { ValidationPipe } from '@nestjs/common';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  app.enableCors();
+
+  // Habilitar validaciones automáticas de datos en los endpoints
+  app.useGlobalPipes(new ValidationPipe({
+    whitelist: true,
+    forbidNonWhitelisted: true,
+    transform: true,
+  }));
+
+  // Configuración de la documentación interactiva con Swagger
+  const config = new DocumentBuilder()
+    .setTitle('River Plate App - API')
+    .setDescription('Servidor API REST para la gestión de partidos, plantel, noticias y formaciones del Más Grande.')
+    .setVersion('1.0')
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        name: 'JWT',
+        description: 'Ingresa tu token JWT para acceder a las rutas protegidas',
+        in: 'header',
+      },
+      'JWT-auth', // Nombre de la referencia de seguridad
+    )
+    .build();
+
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api', app, document);
+
+  // Configurar CORS para permitir que tu futuro Frontend se conecte
+  app.enableCors();
+
+  // El servidor escuchará en el puerto 3000 por defecto
+  await app.listen(3000);
+  console.log('🏁 Servidor corriendo en: http://localhost:3000');
+  console.log('📖 Documentación de Swagger en: http://localhost:3000/api');
+}
+bootstrap();
+
+=================================================================
+// ARCHIVO: apps\backend\src\matches\dto\create-match.dto.ts
+=================================================================
+
+// apps/backend/src/matches/dto/create-match.dto.ts
+import { IsDateString, IsNotEmpty, IsOptional, IsString, IsInt, Min } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+
+export class CreateMatchDto {
+  @ApiProperty({ example: '2026-05-15T21:00:00.000Z', description: 'Fecha y hora del partido' })
+  @IsDateString({}, { message: 'La fecha debe ser un formato ISO válido' })
+  @IsNotEmpty()
+  matchDate: string;
+
+  @ApiProperty({ example: 'River Plate', description: 'Equipo local' })
+  @IsString()
+  @IsNotEmpty()
+  homeTeam: string;
+
+  @ApiProperty({ example: 'Boca Juniors', description: 'Equipo visitante' })
+  @IsString()
+  @IsNotEmpty()
+  awayTeam: string;
+
+  @ApiProperty({ example: 'Estadio Monumental', description: 'Estadio donde se juega', required: false })
+  @IsString()
+  @IsOptional()
+  stadium?: string;
+
+  @ApiProperty({ example: 'Facundo Tello', description: 'Árbitro del encuentro', required: false })
+  @IsString()
+  @IsOptional()
+  referee?: string;
+}
+
+=================================================================
+// ARCHIVO: apps\backend\src\matches\dto\update-match.dto.ts
+=================================================================
+
+// apps/backend/src/matches/dto/update-match.dto.ts
+import { IsOptional, IsString, IsInt, Min, Max } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+
+export class UpdateMatchDto {
+  @ApiProperty({ example: 2, description: 'Goles del local', required: false })
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  homeScore?: number;
+
+  @ApiProperty({ example: 0, description: 'Goles del visitante', required: false })
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  awayScore?: number;
+
+  @ApiProperty({ example: 'live', description: 'Estado: scheduled, live, finished', required: false })
+  @IsString()
+  @IsOptional()
+  status?: string;
+
+  @ApiProperty({ example: 45, description: 'Minuto actual del partido', required: false })
+  @IsInt()
+  @Min(0)
+  @Max(120)
+  @IsOptional()
+  minute?: number;
+}
+
+=================================================================
+// ARCHIVO: apps\backend\src\matches\matches.controller.spec.ts
+=================================================================
+
+import { Test, TestingModule } from '@nestjs/testing';
+import { MatchesController } from './matches.controller';
+
+describe('MatchesController', () => {
+  let controller: MatchesController;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [MatchesController],
+    }).compile();
+
+    controller = module.get<MatchesController>(MatchesController);
+  });
+
+  it('should be defined', () => {
+    expect(controller).toBeDefined();
+  });
+});
+
+
+=================================================================
+// ARCHIVO: apps\backend\src\matches\matches.controller.ts
+=================================================================
+
+import { Controller, Get, Query } from '@nestjs/common';
+import { MatchesService } from './matches.service';
+
+@Controller('matches')
+export class MatchesController {
+  constructor(private readonly matchesService: MatchesService) {}
+
+  @Get('debug')
+  async debug() {
+    return this.matchesService.getDebugInfo();
+  }
+
+  @Get('latest')
+  async getLatestMatch() {
+    return this.matchesService.getLatestMatch();
+  }
+
+  @Get('upcoming')
+  async getUpcoming(@Query('limit') limit = '10') {
+    const n = parseInt(limit as string, 10) || 10;
+    return this.matchesService.getUpcomingMatches(n);
+  }
+
+  @Get('past')
+  async getPast(@Query('limit') limit = '20') {
+    const n = parseInt(limit as string, 10) || 20;
+    return this.matchesService.getPastMatches(n);
+  }
+}
+
+=================================================================
+// ARCHIVO: apps\backend\src\matches\matches.module.ts
+=================================================================
+
+import { Module } from '@nestjs/common';
+import { MatchesController } from './matches.controller';
+import { MatchesService } from './matches.service';
+import { PrismaModule } from '../prisma/prisma.module';
+
+@Module({
+  imports: [PrismaModule],
+  controllers: [MatchesController],
+  providers: [MatchesService],
+  exports: [MatchesService],
+})
+export class MatchesModule {}
+
+=================================================================
+// ARCHIVO: apps\backend\src\matches\matches.service.spec.ts
+=================================================================
+
+import { Test, TestingModule } from '@nestjs/testing';
+import { MatchesService } from './matches.service';
+
+describe('MatchesService', () => {
+  let service: MatchesService;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [MatchesService],
+    }).compile();
+
+    service = module.get<MatchesService>(MatchesService);
+  });
+
+  it('should be defined', () => {
+    expect(service).toBeDefined();
+  });
+});
+
+
+=================================================================
+// ARCHIVO: apps\backend\src\matches\matches.service.ts
+=================================================================
+
+// matches.service.ts — versión con descubrimiento dinámico de IDs + fixes
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { PrismaService } from '../prisma/prisma.service';
+import axios from 'axios';
+
+const RIVER_CANON = 'River Plate';
+const RIVER_NAMES = ['river plate', 'club atletico river plate', 'club atlético river plate'];
+
+const ESPN_LEAGUES = [
+  { code: 'arg.1',                 name: 'Liga Profesional Argentina' },
+  { code: 'conmebol.libertadores', name: 'Copa Libertadores' },
+  { code: 'conmebol.sudamericana', name: 'Copa Sudamericana' },
+];
+
+const AXIOS_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (compatible; RiverAppBot/2.0)',
+  Accept: 'application/json',
+};
+
+const normalizeStr = (s: string) =>
+  s.toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+
+const isRiverArgentina = (name?: string, country?: string): boolean => {
+  if (!name) return false;
+  const n = normalizeStr(name);
+  const hasRiver = RIVER_NAMES.some(r => n.includes(r));
+  if (!hasRiver) return false;
+  if (country) {
+    const c = normalizeStr(country);
+    if (c.includes('uruguay') || c.includes('brasil') || c.includes('chile')) return false;
+  }
+  return true;
+};
+
+const isRiver = (name?: string): boolean =>
+  !!name && RIVER_NAMES.some(r => normalizeStr(name).includes(r));
+
+function normalizeTeams(
+  homeTeam: string, awayTeam: string,
+  homeScore: number | null, awayScore: number | null,
+) {
+  if (isRiver(awayTeam) && !isRiver(homeTeam)) {
+    return { homeTeam: RIVER_CANON, awayTeam: homeTeam, homeScore: awayScore, awayScore: homeScore };
+  }
+  return {
+    homeTeam: isRiver(homeTeam) ? RIVER_CANON : homeTeam,
+    awayTeam: isRiver(awayTeam) ? RIVER_CANON : awayTeam,
+    homeScore,
+    awayScore,
+  };
+}
+
+function dedup(matches: any[]): any[] {
+  const seen = new Set<string>();
+  return matches.filter(m => {
+    try {
+      const key = `${new Date(m.date).toISOString()}|${normalizeStr(m.homeTeam)}|${normalizeStr(m.awayTeam)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    } catch { return true; }
+  });
+}
+
+@Injectable()
+export class MatchesService implements OnModuleInit {
+  private readonly logger = new Logger(MatchesService.name);
+
+  private sportsDbTeamId: string | null = null;
+  private espnTeamId: string | null = null;
+
+  constructor(private readonly prisma: PrismaService) {}
+
+  async onModuleInit() {
+    this.logger.log('⚡ Motor de Fixture River Plate iniciando...');
+    setTimeout(() => this.syncMatches(), 3000);
+  }
+
+  @Cron(CronExpression.EVERY_10_MINUTES)
+  async handleCron() {
+    await this.syncMatches();
+  }
+
+  // ── Queries públicas ─────────────────────────────────────────────────────────
+
+  async getUpcomingMatches(limit = 10) {
+    const now = new Date();
+    // Margen de 3h hacia atrás para absorber diferencias de timezone de las APIs
+    const cutoff = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+
+    return this.prisma.match.findMany({
+      where: {
+        OR: [
+          { status: 'live' },
+          { AND: [{ status: 'scheduled' }, { date: { gte: cutoff } }] },
+        ],
+      },
+      orderBy: { date: 'asc' },
+      take: limit,
+    });
+  }
+
+  async getPastMatches(limit = 20) {
+    return this.prisma.match.findMany({
+      where: { status: 'finished' },
+      orderBy: { date: 'desc' },
+      take: limit,
+    });
+  }
+
+  async getLatestMatch() {
+    const now = new Date();
+
+    // 1. Partido en vivo
+    const live = await this.prisma.match.findFirst({
+      where: { status: 'live' },
+      orderBy: { date: 'desc' },
+    });
+    if (live) return live;
+
+    // 2. Próximo partido futuro
+    const next = await this.prisma.match.findFirst({
+      where: { status: 'scheduled', date: { gte: now } },
+      orderBy: { date: 'asc' },
+    });
+    if (next) return next;
+
+    // 3. Cualquier partido scheduled (aunque la fecha ya pasó — delay de API)
+    const anyScheduled = await this.prisma.match.findFirst({
+      where: { status: 'scheduled' },
+      orderBy: { date: 'asc' },
+    });
+    if (anyScheduled) return anyScheduled;
+
+    // 4. Último partido terminado
+    const latest = await this.prisma.match.findFirst({
+      where: { status: 'finished' },
+      orderBy: { date: 'desc' },
+    });
+    return latest ?? null;
+  }
+
+  async getAllGrouped() {
+    const [upcoming, past] = await Promise.all([
+      this.getUpcomingMatches(50),
+      this.getPastMatches(200),
+    ]);
+    return { upcoming, past };
+  }
+
+  // ── Debug ────────────────────────────────────────────────────────────────────
+
+  async getDebugInfo() {
+    const all = await this.prisma.match.findMany({ orderBy: { date: 'asc' } });
+    return {
+      total: all.length,
+      byStatus: {
+        live:      all.filter(m => m.status === 'live').length,
+        scheduled: all.filter(m => m.status === 'scheduled').length,
+        finished:  all.filter(m => m.status === 'finished').length,
+      },
+      types: [...new Set(all.map(m => m.type))],
+      sample: all.slice(0, 5).map(m => ({
+        type:        m.type,
+        status:      m.status,
+        date:        m.date,
+        home:        m.homeTeam,
+        away:        m.awayTeam,
+        competition: m.competition,
+      })),
+      upcoming: all
+        .filter(m => m.status === 'scheduled')
+        .slice(0, 3)
+        .map(m => ({ date: m.date, home: m.homeTeam, away: m.awayTeam, status: m.status })),
+    };
+  }
+
+  // ── Motor de sincronización ──────────────────────────────────────────────────
+
+  async syncMatches() {
+    try {
+      this.logger.log('🔄 Sincronizando fixture River Plate...');
+      let matches: any[] = [];
+
+      if (!matches.length) {
+        this.logger.log('📡 [1/4] TheSportsDB...');
+        matches = await this.fetchFromTheSportsDB();
+        this.logger.log(matches.length ? `✅ TheSportsDB: ${matches.length} partidos.` : '❌ TheSportsDB: 0 partidos.');
+      }
+
+      if (!matches.length) {
+        this.logger.log('📡 [2/4] ESPN API...');
+        matches = await this.fetchFromEspnApi();
+        this.logger.log(matches.length ? `✅ ESPN: ${matches.length} partidos.` : '❌ ESPN: 0 partidos.');
+      }
+
+      if (!matches.length) {
+        this.logger.log('📡 [3/4] API-Football...');
+        matches = await this.fetchFromApiFootball();
+        this.logger.log(matches.length ? `✅ API-Football: ${matches.length} partidos.` : '❌ API-Football: 0 partidos.');
+      }
+
+      if (!matches.length) {
+        this.logger.log('📡 [4/4] Wikipedia...');
+        matches = await this.fetchFromWikipedia();
+        this.logger.log(matches.length ? `✅ Wikipedia: ${matches.length} partidos.` : '❌ Wikipedia: 0 partidos.');
+      }
+
+      if (!matches.length) {
+        this.logger.warn('⚠️ Todas las fuentes fallaron. Usando fixture interno.');
+        matches = this.getFallbackFixture();
+      }
+
+      const deduped = dedup(matches);
+      this.logger.log(
+        `📊 Total tras dedup: ${deduped.length} partidos ` +
+        `(scheduled: ${deduped.filter(m => m.status === 'scheduled').length}, ` +
+        `finished: ${deduped.filter(m => m.status === 'finished').length})`
+      );
+      await this.saveToDatabase(deduped);
+    } catch (error: any) {
+      this.logger.error(`❌ Error crítico: ${error?.message}`);
+    }
+  }
+
+  // ── Descubrimiento TheSportsDB ID ────────────────────────────────────────────
+
+  private async resolveTheSportsDbId(): Promise<string | null> {
+    if (this.sportsDbTeamId) return this.sportsDbTeamId;
+
+    try {
+      const url = 'https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=River+Plate';
+      const res = await axios.get(url, { headers: AXIOS_HEADERS, timeout: 10000 });
+      const teams: any[] = res.data?.teams || [];
+
+      this.logger.log(`TheSportsDB búsqueda "River Plate": ${teams.length} resultados`);
+
+      for (const t of teams) {
+        const country = (t.strCountry || '').toLowerCase();
+        const league  = (t.strLeague  || '').toLowerCase();
+        const name    = (t.strTeam    || '').toLowerCase();
+
+        this.logger.log(`  → ${t.strTeam} | País: ${t.strCountry} | Liga: ${t.strLeague} | ID: ${t.idTeam}`);
+
+        const isArgentina =
+          country.includes('argentina') ||
+          league.includes('primera') ||
+          league.includes('argentina');
+
+        if (isArgentina && name.includes('river plate')) {
+          this.sportsDbTeamId = t.idTeam;
+          this.logger.log(`✅ TheSportsDB ID encontrado: ${this.sportsDbTeamId} (${t.strTeam} - ${t.strCountry})`);
+          return this.sportsDbTeamId;
+        }
+      }
+
+      this.logger.warn('⚠️ TheSportsDB: no se encontró River Plate Argentina.');
+    } catch (e: any) {
+      this.logger.warn(`⚠️ TheSportsDB discovery falló: ${e?.message}`);
+    }
+
+    return null;
+  }
+
+  // ── Fuente 1: TheSportsDB ────────────────────────────────────────────────────
+
+  private async fetchFromTheSportsDB(): Promise<any[]> {
+    const teamId = await this.resolveTheSportsDbId();
+    if (!teamId) {
+      this.logger.warn('⚠️ TheSportsDB: no se pudo resolver el team ID.');
+      return [];
+    }
+
+    const allMatches: any[] = [];
+    const now = new Date();
+
+    for (const [endpoint, key] of [
+      ['eventsnext.php', 'events'],
+      ['eventslast.php', 'results'],
+    ] as [string, string][]) {
+      try {
+        const url = `https://www.thesportsdb.com/api/v1/json/3/${endpoint}?id=${teamId}`;
+        const res = await axios.get(url, { headers: AXIOS_HEADERS, timeout: 10000 });
+        const events: any[] = res.data?.[key] || [];
+
+        for (const ev of events) {
+          const homeTeamRaw  = ev.strHomeTeam || '';
+          const awayTeamRaw  = ev.strAwayTeam || '';
+          const homeScoreRaw = ev.intHomeScore != null ? parseInt(ev.intHomeScore, 10) : null;
+          const awayScoreRaw = ev.intAwayScore != null ? parseInt(ev.intAwayScore, 10) : null;
+
+          const statusRaw = (ev.strStatus || '').toLowerCase();
+          let status = 'scheduled';
+          if (['match finished', 'ft', 'aet', 'pen', 'finished'].includes(statusRaw)) {
+            status = 'finished';
+          } else if (statusRaw.includes('live') || statusRaw.includes('progress')) {
+            status = 'live';
+          } else if (homeScoreRaw !== null && awayScoreRaw !== null) {
+            status = 'finished';
+          }
+
+          const dateStr = ev.dateEvent || null;
+          const timeStr = ev.strTime   || '20:00:00';
+          const date    = dateStr
+            ? new Date(`${dateStr}T${timeStr.length === 5 ? timeStr + ':00' : timeStr}`)
+            : new Date();
+
+          // Si la fecha ya pasó y sigue como scheduled, marcar como finished
+          if (status === 'scheduled' && date < now) {
+            status = 'finished';
+          }
+
+          const normalized = normalizeTeams(homeTeamRaw, awayTeamRaw, homeScoreRaw, awayScoreRaw);
+
+          if (!isRiver(normalized.homeTeam) && !isRiver(normalized.awayTeam)) {
+            this.logger.warn(`⚠️ Partido descartado (no involucra River): ${homeTeamRaw} vs ${awayTeamRaw}`);
+            continue;
+          }
+
+          allMatches.push({
+            ...normalized,
+            status,
+            date,
+            competition: ev.strLeague || ev.strSeason || 'Competición',
+          });
+        }
+      } catch (e: any) {
+        this.logger.warn(`⚠️ TheSportsDB [${endpoint}] falló: ${e?.message}`);
+      }
+    }
+
+    return allMatches;
+  }
+
+  // ── Descubrimiento ESPN team ID ──────────────────────────────────────────────
+
+  private async resolveEspnTeamId(): Promise<string | null> {
+    if (this.espnTeamId) return this.espnTeamId;
+
+    try {
+      const url = 'https://site.api.espn.com/apis/site/v2/sports/soccer/arg.1/teams?limit=100';
+      const res = await axios.get(url, { headers: AXIOS_HEADERS, timeout: 10000 });
+
+      const sportsArr: any[] = res.data?.sports || [];
+      let teams: any[] = [];
+
+      if (sportsArr.length > 0) {
+        teams = sportsArr[0]?.leagues?.[0]?.teams || [];
+      } else {
+        teams = res.data?.teams || [];
+      }
+
+      this.logger.log(`ESPN equipos en arg.1: ${teams.length}`);
+
+      for (const entry of teams) {
+        const t    = entry.team || entry;
+        const name = (t.displayName || t.name || '').toLowerCase();
+        this.logger.log(`  → ${t.displayName} | ID: ${t.id}`);
+
+        if (name.includes('river plate') || name === 'river') {
+          this.espnTeamId = String(t.id);
+          this.logger.log(`✅ ESPN team ID encontrado: ${this.espnTeamId} (${t.displayName})`);
+          return this.espnTeamId;
+        }
+      }
+
+      this.logger.warn('⚠️ ESPN: River Plate no encontrado en la lista de arg.1');
+    } catch (e: any) {
+      this.logger.warn(`⚠️ ESPN discovery falló: ${e?.message}`);
+    }
+
+    return null;
+  }
+
+  // ── Fuente 2: ESPN JSON API ───────────────────────────────────────────────────
+
+  private async fetchFromEspnApi(): Promise<any[]> {
+    const teamId = await this.resolveEspnTeamId();
+    if (!teamId) return [];
+
+    const currentYear = new Date().getFullYear();
+    const now         = new Date();
+    const allMatches: any[] = [];
+
+    for (const league of ESPN_LEAGUES) {
+      try {
+        // Prueba season actual, anterior y sin filtro para capturar todos los partidos
+        const seasonsToTry = [currentYear, currentYear - 1, ''] as (number | string)[];
+        const eventMap = new Map<string, any>();
+
+        for (const season of seasonsToTry) {
+          try {
+            const seasonParam = season !== '' ? `?season=${season}` : '';
+            const url =
+              `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.code}` +
+              `/teams/${teamId}/schedule${seasonParam}`;
+
+            const res = await axios.get(url, { headers: AXIOS_HEADERS, timeout: 10000 });
+            const fetched: any[] = res.data?.events || [];
+
+            for (const ev of fetched) {
+              const id = ev.id || `${ev.date}-${league.code}`;
+              if (!eventMap.has(id)) eventMap.set(id, ev);
+            }
+          } catch { /* continuar con siguiente season */ }
+        }
+
+        const events = [...eventMap.values()];
+        this.logger.log(`ESPN [${league.code}]: ${events.length} eventos`);
+
+        for (const event of events) {
+          const comp = event.competitions?.[0];
+          if (!comp) continue;
+
+          const home = comp.competitors?.find((c: any) => c.homeAway === 'home');
+          const away = comp.competitors?.find((c: any) => c.homeAway === 'away');
+          if (!home || !away) continue;
+
+          const statusName: string = comp.status?.type?.name || '';
+          let status = 'scheduled';
+          if (statusName === 'STATUS_FINAL') status = 'finished';
+          else if (['STATUS_IN_PROGRESS', 'STATUS_HALFTIME'].includes(statusName)) status = 'live';
+
+          const eventDate = new Date(comp.date || event.date || Date.now());
+
+          // FIX: si la fecha ya pasó y ESPN sigue reportando scheduled, forzar finished
+          if (status === 'scheduled' && eventDate < now) {
+            status = 'finished';
+          }
+
+          const rawHomeScore = status !== 'scheduled' ? parseInt(home.score ?? '0', 10) : null;
+          const rawAwayScore = status !== 'scheduled' ? parseInt(away.score ?? '0', 10) : null;
+
+          const normalized = normalizeTeams(
+            home.team?.displayName || home.team?.name || '',
+            away.team?.displayName || away.team?.name || '',
+            rawHomeScore,
+            rawAwayScore,
+          );
+
+          if (!isRiver(normalized.homeTeam) && !isRiver(normalized.awayTeam)) continue;
+
+          allMatches.push({
+            ...normalized,
+            status,
+            date: eventDate,
+            competition: league.name,
+          });
+        }
+      } catch (e: any) {
+        this.logger.warn(`⚠️ ESPN [${league.code}] falló: ${e?.message}`);
+      }
+    }
+
+    return allMatches;
+  }
+
+  // ── Fuente 3: API-Football v3 ────────────────────────────────────────────────
+
+  private async fetchFromApiFootball(): Promise<any[]> {
+    const apiKey = process.env.API_FOOTBALL_KEY;
+    const teamId = process.env.RIVER_PLATE_TEAM_ID || '26';
+
+    if (!apiKey) {
+      this.logger.warn('⚠️ API_FOOTBALL_KEY no configurada. Saltando.');
+      return [];
+    }
+
+    try {
+      const [nextRes, pastRes] = await Promise.all([
+        axios.get(`https://v3.football.api-sports.io/fixtures?team=${teamId}&next=20`, {
+          headers: { 'x-apisports-key': apiKey },
+          timeout: 10000,
+        }),
+        axios.get(`https://v3.football.api-sports.io/fixtures?team=${teamId}&last=40`, {
+          headers: { 'x-apisports-key': apiKey },
+          timeout: 10000,
+        }),
+      ]);
+
+      const raw = [
+        ...(nextRes.data?.response || []),
+        ...(pastRes.data?.response  || []),
+      ];
+
+      const now = new Date();
+
+      return raw.map((f: any) => {
+        const short = f.fixture?.status?.short ?? '';
+        let status = 'scheduled';
+        if (short === 'FT') status = 'finished';
+        else if (['1H', '2H', 'HT', 'LIVE'].includes(short)) status = 'live';
+
+        const date = new Date(f.fixture?.date || Date.now());
+        if (status === 'scheduled' && date < now) status = 'finished';
+
+        const normalized = normalizeTeams(
+          (f.teams?.home?.name || '').toString(),
+          (f.teams?.away?.name || '').toString(),
+          f.goals?.home ?? null,
+          f.goals?.away ?? null,
+        );
+
+        return { ...normalized, status, date, competition: f.league?.name || 'Competición' };
+      });
+    } catch (e: any) {
+      this.logger.warn(`⚠️ API-Football falló: ${e?.message}`);
+      return [];
+    }
+  }
+
+  // ── Fuente 4: Wikipedia ──────────────────────────────────────────────────────
+
+  private async fetchFromWikipedia(): Promise<any[]> {
+    const currentYear = new Date().getFullYear();
+    const pageTitles = [
+      `Anexo:Temporada_${currentYear}_del_Club_Atlético_River_Plate`,
+      `Club_Atlético_River_Plate_en_${currentYear}`,
+    ];
+    const allMatches: any[] = [];
+
+    for (const title of pageTitles) {
+      try {
+        const url =
+          `https://es.wikipedia.org/w/api.php?action=query&prop=revisions&rvprop=content` +
+          `&format=json&titles=${encodeURIComponent(title)}&utf8=1`;
+        const res = await axios.get(url, { headers: AXIOS_HEADERS, timeout: 10000 });
+        const pages   = res.data?.query?.pages || {};
+        const pageId  = Object.keys(pages)[0];
+        const content = pages[pageId]?.revisions?.[0]?.['*'];
+        if (content) allMatches.push(...this.parseWikiContent(content, currentYear));
+      } catch (e: any) {
+        this.logger.warn(`⚠️ Wikipedia [${title}] falló: ${e?.message}`);
+      }
+    }
+
+    return allMatches;
+  }
+
+  private parseWikiContent(content: string, currentYear: number): any[] {
+    const matches: any[] = [];
+    const startRegex = /\{\{Ficha de partido/gi;
+    let match: RegExpExecArray | null;
+
+    while ((match = startRegex.exec(content)) !== null) {
+      let depth = 0;
+      const start = match.index;
+      let end = start;
+
+      for (let i = start; i < content.length - 1; i++) {
+        if (content[i] === '{' && content[i + 1] === '{') { depth++; i++; }
+        else if (content[i] === '}' && content[i + 1] === '}') {
+          depth--;
+          if (depth === 0) { end = i + 2; break; }
+          i++;
+        }
+      }
+
+      if (end <= start) continue;
+      const block = content.slice(start, end);
+
+      const getValue = (...keys: string[]) => {
+        for (const key of keys) {
+          const re = new RegExp(`\\|\\s*${key}\\s*=\\s*([^|\\n\\}]+)`, 'i');
+          const m  = block.match(re);
+          if (m?.[1]) return m[1].trim().replace(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g, '$1').trim();
+        }
+        return null;
+      };
+
+      const homeRaw  = getValue('local', 'equipo_local', 'home');
+      const awayRaw  = getValue('visita', 'visitante', 'away');
+      const scoreRaw = getValue('resultado', 'score', 'result');
+      const dateRaw  = getValue('fecha', 'date');
+      const comp     = getValue('competicion', 'competencia', 'competition', 'torneo') || 'Torneo Oficial';
+
+      if (!homeRaw || !awayRaw) continue;
+      if (!isRiver(homeRaw) && !isRiver(awayRaw)) continue;
+
+      let homeScore: number | null = null;
+      let awayScore: number | null = null;
+      let status = 'scheduled';
+
+      if (scoreRaw) {
+        const s  = scoreRaw.replace(/[\u2013\u2014–—]/g, '-').replace(':', '-');
+        const sm = s.match(/(\d+)\s*-\s*(\d+)/);
+        if (sm) {
+          homeScore = parseInt(sm[1], 10);
+          awayScore = parseInt(sm[2], 10);
+          status = 'finished';
+        }
+      }
+
+      let date = new Date();
+      if (dateRaw) {
+        const iso = new Date(dateRaw);
+        if (!isNaN(iso.getTime())) {
+          date = iso;
+        } else {
+          const MONTHS: Record<string, number> = {
+            enero: 0, febrero: 1, marzo: 2, abril: 3, mayo: 4, junio: 5,
+            julio: 6, agosto: 7, septiembre: 8, octubre: 9, noviembre: 10, diciembre: 11,
+          };
+          const parts = dateRaw.split(' de ').map((p: string) => p.trim().toLowerCase());
+          const day   = parseInt(parts[0], 10);
+          const month = MONTHS[parts[1]] ?? 0;
+          const year  = parts[2] ? parseInt(parts[2], 10) : currentYear;
+          date = new Date(year, month, isNaN(day) ? 1 : day, 20, 0, 0);
+        }
+      }
+
+      // Si la fecha ya pasó y no tiene score, marcar como finished igual
+      if (status === 'scheduled' && date < new Date()) {
+        status = 'finished';
+      }
+
+      const normalized = normalizeTeams(homeRaw, awayRaw, homeScore, awayScore);
+      matches.push({ ...normalized, status, date, competition: comp });
+    }
+
+    return matches;
+  }
+
+  // ── Persistencia ─────────────────────────────────────────────────────────────
+
+  private async saveToDatabase(fixtures: any[]) {
+    if (!fixtures.length) {
+      this.logger.warn('⚠️ No hay partidos para guardar.');
+      return;
+    }
+
+    fixtures.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    const now            = new Date();
+    let nextAssigned     = false;
+    const finished       = fixtures.filter(f => f.status === 'finished');
+    const latestFinished = finished[finished.length - 1];
+
+    const records = fixtures.map((m, i) => {
+      const status = (m.status || 'scheduled').toLowerCase();
+
+      let type: string;
+      if (status === 'live') {
+        type = 'LIVE';
+      } else if (status === 'finished') {
+        type = m === latestFinished ? 'LATEST' : `PAST_${i}`;
+      } else {
+        if (!nextAssigned && new Date(m.date) > now) {
+          type = 'NEXT';
+          nextAssigned = true;
+        } else {
+          type = `FUTURE_${i}`;
+        }
+      }
+
+      return {
+        type,
+        homeTeam:    m.homeTeam,
+        awayTeam:    m.awayTeam,
+        homeScore:   m.homeScore  ?? 0,
+        awayScore:   m.awayScore  ?? 0,
+        status,
+        minute:      status === 'live' ? (m.minute ?? 0) : status === 'finished' ? 90 : 0,
+        date:        new Date(m.date),
+        competition: m.competition || 'Competición',
+      };
+    });
+
+    // Si NEXT no se asignó, asignarlo al primer scheduled disponible
+    if (!nextAssigned) {
+      const firstScheduled = records.find(r => r.status === 'scheduled');
+      if (firstScheduled) {
+        firstScheduled.type = 'NEXT';
+        this.logger.warn('⚠️ NEXT asignado por fallback (partido scheduled con fecha pasada).');
+      }
+    }
+
+    try {
+      // FIX: usar createMany en vez de loop de creates para evitar transaction timeout
+      await this.prisma.$transaction([
+        this.prisma.match.deleteMany(),
+        this.prisma.match.createMany({ data: records }),
+      ]);
+      this.logger.log(`🎉 Sincronizados ${fixtures.length} partidos.`);
+    } catch (err: any) {
+      this.logger.error(`❌ Error guardando en BD: ${err?.message}`);
+    }
+  }
+
+  // ── Fixture interno de respaldo ───────────────────────────────────────────────
+
+  private getFallbackFixture(): any[] {
+    const y = new Date().getFullYear();
+    return [
+      { homeTeam: RIVER_CANON,    awayTeam: 'Independiente', homeScore: 2,    awayScore: 0,    status: 'finished',  date: new Date(`${y}-04-12T20:00:00`), competition: 'Liga Profesional' },
+      { homeTeam: 'Boca Juniors', awayTeam: RIVER_CANON,     homeScore: 1,    awayScore: 1,    status: 'finished',  date: new Date(`${y}-04-19T20:00:00`), competition: 'Liga Profesional' },
+      { homeTeam: RIVER_CANON,    awayTeam: 'San Lorenzo',   homeScore: null, awayScore: null, status: 'scheduled', date: new Date(`${y}-05-10T20:00:00`), competition: 'Liga Profesional' },
+      { homeTeam: RIVER_CANON,    awayTeam: 'Carabobo FC',   homeScore: null, awayScore: null, status: 'scheduled', date: new Date(`${y}-05-14T19:00:00`), competition: 'Copa Sudamericana' },
+      { homeTeam: 'Racing Club',  awayTeam: RIVER_CANON,     homeScore: null, awayScore: null, status: 'scheduled', date: new Date(`${y}-05-17T20:00:00`), competition: 'Liga Profesional' },
+    ];
+  }
+}
+
+=================================================================
+// ARCHIVO: apps\backend\src\matches\sync.service.ts
+=================================================================
+
+// apps/backend/src/matches/sync.service.ts
+import { Injectable, Logger } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { HttpService } from '@nestjs/axios';
+import { PrismaService } from '../prisma/prisma.service';
+import { firstValueFrom } from 'rxjs';
+
+@Injectable()
+export class SyncService {
+  private readonly logger = new Logger(SyncService.name);
+
+  constructor(
+    private readonly httpService: HttpService,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  @Cron(CronExpression.EVERY_MINUTE) // Revisa la API de forma autónoma cada 1 minuto
+  async syncLiveMatch() {
+    this.logger.log('Iniciando sincronización automática con API-Football...');
+
+    const apiKey = process.env.API_FOOTBALL_KEY;
+    const teamId = process.env.RIVER_PLATE_TEAM_ID || '268';
+
+    if (!apiKey) {
+      this.logger.warn('No se encontró la API_FOOTBALL_KEY en las variables de entorno.');
+      return;
+    }
+
+    try {
+      // 1. Preguntarle a API-Football si River está jugando en vivo
+      const response = await firstValueFrom(
+        this.httpService.get(`https://v3.football.api-sports.io/fixtures?team=${teamId}&live=all`, {
+          headers: { 'x-apisports-key': apiKey },
+        })
+      );
+
+      const fixtures = response.data.response;
+
+      if (!fixtures || fixtures.length === 0) {
+        this.logger.log('River Plate no está jugando ningún partido en vivo en este momento.');
+        return;
+      }
+
+      const liveFixture = fixtures[0];
+      const homeTeamName = liveFixture.teams.home.name;
+      const awayTeamName = liveFixture.teams.away.name;
+      const homeGoals = liveFixture.goals.home ?? 0;
+      const awayGoals = liveFixture.goals.away ?? 0;
+      const elapsedMinute = liveFixture.fixture.status.elapsed ?? 0;
+      const matchStatus = liveFixture.fixture.status.short; // '1H', '2H', 'HT', 'FT'
+
+      this.logger.log(`¡Partido en vivo detectado! ${homeTeamName} ${homeGoals} - ${awayGoals} ${awayTeamName} (Minuto ${elapsedMinute})`);
+
+      // 2. Buscar si tenemos registrado este partido en la BD de Render
+      const dbMatch = await this.prisma.match.findFirst({
+        where: {
+          OR: [
+            { homeTeam: homeTeamName, status: 'live' },
+            { homeTeam: homeTeamName, status: 'scheduled' },
+            { awayTeam: awayTeamName, status: 'live' },
+            { awayTeam: awayTeamName, status: 'scheduled' }
+          ]
+        },
+      });
+
+      if (!dbMatch) {
+        this.logger.warn('El partido en vivo no está registrado en nuestra base de datos. Se omite.');
+        return;
+      }
+
+      let newStatus = 'live';
+      if (matchStatus === 'FT') {
+        newStatus = 'finished';
+      }
+
+      // 3. Impactar los datos en vivo en tu PostgreSQL de Render
+      await this.prisma.match.update({
+        where: { id: dbMatch.id },
+        data: {
+          homeScore: homeGoals,
+          awayScore: awayGoals,
+          minute: elapsedMinute,
+          status: newStatus,
+        },
+      });
+
+      this.logger.log(`Base de datos de Render sincronizada para el partido: ${dbMatch.id}`);
+
+    } catch (error) {
+      this.logger.error('Error al sincronizar con API-Football:', error.message);
+    }
+  }
+}
+
+=================================================================
+// ARCHIVO: apps\backend\src\news\dto\create-news.dto.ts
+=================================================================
+
+// apps/backend/src/news/dto/create-news.dto.ts
+import { IsString, IsNotEmpty, IsOptional, IsIn } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+
+export class CreateNewsDto {
+  @ApiProperty({ description: 'Título de la noticia' })
+  @IsString()
+  @IsNotEmpty()
+  title: string;
+
+  @ApiProperty({ description: 'Cuerpo o contenido detallado de la noticia' })
+  @IsString()
+  @IsNotEmpty()
+  body: string;
+
+  @ApiProperty({ description: 'Categoría de la noticia', required: false, default: 'Actualidad' })
+  @IsString()
+  @IsOptional()
+  category?: string;
+
+  @ApiProperty({ description: 'Slug único de la noticia (opcional, se autogenera si no se envía)', required: false })
+  @IsString()
+  @IsOptional()
+  slug?: string;
+
+  @ApiProperty({ description: 'Estado de la noticia', required: false, enum: ['draft', 'published'], default: 'draft' })
+  @IsString()
+  @IsOptional()
+  @IsIn(['draft', 'published'])
+  status?: string;
+
+  @ApiProperty({ description: 'ID del usuario autor de la noticia', required: false })
+  @IsString()
+  @IsOptional()
+  authorId?: string;
+}
+
+=================================================================
+// ARCHIVO: apps\backend\src\news\dto\update-news.dto.ts
+=================================================================
+
+// apps/backend/src/news/dto/update-news.dto.ts
+import { IsOptional, IsString } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+
+export class UpdateNewsDto {
+  @ApiProperty({ example: 'River Plate clasifica al Mundial de Clubes - Editado', required: false })
+  @IsString()
+  @IsOptional()
+  title?: string;
+
+  @ApiProperty({ example: 'El nuevo cuerpo editado...', required: false })
+  @IsString()
+  @IsOptional()
+  body?: string;
+
+  @ApiProperty({ example: 'published', description: 'Estado: draft, published', required: false })
+  @IsString()
+  @IsOptional()
+  status?: string;
+
+  @ApiProperty({ example: 'https://ejemplo.com/fotos/nueva-imagen.png', required: false })
+  @IsString()
+  @IsOptional()
+  featuredImageUrl?: string;
+
+  @ApiProperty({ example: 'Actualidad', required: false })
+  @IsString()
+  @IsOptional()
+  category?: string;
+}
+
+=================================================================
+// ARCHIVO: apps\backend\src\news\news-ai.service.ts
+=================================================================
+
+// apps/backend/src/news/news-ai.service.ts
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { PrismaService } from '../prisma/prisma.service';
+import Parser from 'rss-parser';
+
+@Injectable()
+export class NewsAiService implements OnModuleInit {
+  private readonly logger = new Logger(NewsAiService.name);
+  private readonly parser: Parser;
+
+  constructor(private readonly prisma: PrismaService) {
+    this.parser = new Parser();
+  }
+
+  async onModuleInit() {
+    this.logger.log('⚡ [Autónomo] Servidor encendido. Iniciando scraper múltiple con enlaces...');
+    setTimeout(async () => {
+      await this.generateAndSaveNews();
+    }, 5000);
+  }
+
+  private generateSlug(title: string): string {
+    return title
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+      .replace(/[^\w\s-]/g, '')
+      .replace(/[\s_-]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  @Cron(CronExpression.EVERY_8_HOURS)
+  async handleCron() {
+    this.logger.log('📰 [CRON] Sincronizando noticias y enlaces originales...');
+    await this.generateAndSaveNews();
+  }
+
+  async generateAndSaveNews() {
+    try {
+      let author = await this.prisma.user.findFirst({
+        where: { email: 'periodista.ia@riverapp.com' },
+      });
+
+      if (!author) {
+        author = await this.prisma.user.create({
+          data: {
+            email: 'periodista.ia@riverapp.com',
+            password_hash: '$2b$10$PlaceholderHashForSystemAccountOnly',
+            display_name: 'Prensa Millonaria',
+            role: 'ADMIN',
+          },
+        });
+      }
+
+      this.logger.log('📡 Conectando con Diario Olé para importar noticias y URLs...');
+      const feed = await this.parser.parseURL('https://www.ole.com.ar/rss/river-plate/');
+
+      if (!feed.items || feed.items.length === 0) {
+        this.logger.log('🤫 El feed de Olé no tiene artículos disponibles.');
+        return;
+      }
+
+      let nuevasImportadas = 0;
+
+      for (const item of feed.items) {
+        const title = item.title || '';
+        const rawBody = item.contentSnippet || item.content || '';
+        const body = rawBody.replace(/<[^>]*>/g, '').trim();
+        const articleUrl = item.link || null; // 👈 CAPTURAMOS EL LINK ORIGINAL DEL FEED
+        
+        if (!title || !body) continue;
+
+        const generatedSlug = this.generateSlug(title);
+
+        const exists = await this.prisma.news.findUnique({
+          where: { slug: generatedSlug },
+        });
+
+        // Si ya existe pero por alguna razón no tenía URL, se la actualizamos
+        if (exists) {
+          if (!exists.url && articleUrl) {
+            await this.prisma.news.update({
+              where: { id: exists.id },
+              data: { url: articleUrl }
+            });
+          }
+          continue;
+        }
+
+        // Guardamos la noticia incluyendo la URL original de Olé
+        await this.prisma.news.create({
+          data: {
+            title,
+            body,
+            category: 'Actualidad',
+            slug: generatedSlug,
+            url: articleUrl, // 👈 GUARDAMOS LA URL EN BASE DE DATOS
+            authorId: author.id,
+            status: 'published',
+            publishedAt: item.pubDate ? new Date(item.pubDate) : new Date(),
+          },
+        });
+
+        nuevasImportadas++;
+        this.logger.log(`📥 Importada con éxito: "${title}" -> Link: ${articleUrl}`);
+      }
+
+      if (nuevasImportadas > 0) {
+        this.logger.log(`🎉 [ÉXITO] Se han sincronizado ${nuevasImportadas} noticias con sus respectivos enlaces.`);
+      } else {
+        this.logger.log('✅ Base de datos al día con links originales.');
+      }
+
+    } catch (error: any) {
+      this.logger.error(`❌ Error en el importador de noticias con links: ${error.message}`);
+    }
+  }
+}
+
+=================================================================
+// ARCHIVO: apps\backend\src\news\news.controller.spec.ts
+=================================================================
+
+import { Test, TestingModule } from '@nestjs/testing';
+import { NewsController } from './news.controller';
+
+describe('NewsController', () => {
+  let controller: NewsController;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [NewsController],
+    }).compile();
+
+    controller = module.get<NewsController>(NewsController);
+  });
+
+  it('should be defined', () => {
+    expect(controller).toBeDefined();
+  });
+});
+
+
+=================================================================
+// ARCHIVO: apps\backend\src\news\news.controller.ts
+=================================================================
+
+// apps/backend/src/news/news.controller.ts
+import { Controller, Get, Post, Body, Param, Delete } from '@nestjs/common';
+import { NewsService } from './news.service';
+import { NewsAiService } from './news-ai.service';
+import { CreateNewsDto } from './dto/create-news.dto';
+import { ApiTags, ApiOperation } from '@nestjs/swagger';
+
+@ApiTags('News')
+@Controller('news')
+export class NewsController {
+  constructor(
+    private readonly newsService: NewsService,
+    private readonly newsAiService: NewsAiService
+  ) {}
+
+  @Post()
+  @ApiOperation({ summary: 'Crear una noticia manualmente' })
+  create(@Body() createNewsDto: CreateNewsDto) {
+    return this.newsService.create(createNewsDto);
+  }
+
+  // NUEVO ENDPOINT: http://localhost:3000/news/trigger-ai
+  @Post('trigger-ai')
+  @ApiOperation({ summary: 'Forzar al robot de Gemini a redactar una noticia real de River ahora mismo' })
+  async triggerAiNews() {
+    return this.newsAiService.generateAndSaveNews();
+  }
+
+  @Get()
+  @ApiOperation({ summary: 'Obtener todas las noticias' })
+  findAll() {
+    return this.newsService.findAll();
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Obtener una noticia por ID' })
+  findOne(@Param('id') id: string) {
+    return this.newsService.findOne(id);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Eliminar una noticia' })
+  remove(@Param('id') id: string) {
+    return this.newsService.remove(id);
+  }
+}
+
+=================================================================
+// ARCHIVO: apps\backend\src\news\news.module.ts
+=================================================================
+
+// apps/backend/src/news/news.module.ts
+import { Module } from '@nestjs/common';
+import { NewsService } from './news.service';
+import { NewsController } from './news.controller';
+import { NewsAiService } from './news-ai.service'; // Importamos el nuevo servicio de IA
+import { PrismaModule } from '../prisma/prisma.module';
+
+@Module({
+  imports: [PrismaModule],
+  controllers: [NewsController],
+  providers: [NewsService, NewsAiService], // Registramos ambos servicios en el backend
+  exports: [NewsService, NewsAiService],
+})
+export class NewsModule {}
+
+=================================================================
+// ARCHIVO: apps\backend\src\news\news.service.spec.ts
+=================================================================
+
+import { Test, TestingModule } from '@nestjs/testing';
+import { NewsService } from './news.service';
+
+describe('NewsService', () => {
+  let service: NewsService;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [NewsService],
+    }).compile();
+
+    service = module.get<NewsService>(NewsService);
+  });
+
+  it('should be defined', () => {
+    expect(service).toBeDefined();
+  });
+});
+
+
+=================================================================
+// ARCHIVO: apps\backend\src\news\news.service.ts
+=================================================================
+
+// apps/backend/src/news/news.service.ts
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { CreateNewsDto } from './dto/create-news.dto';
+import { UpdateNewsDto } from './dto/update-news.dto';
+
+@Injectable()
+export class NewsService {
+  constructor(private prisma: PrismaService) {}
+
+  // Generador automático de slugs limpios para los portales de origen
+  private generateSlug(title: string): string {
+    return title
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+      .replace(/[^\w\s-]/g, '')
+      .replace(/[\s_-]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  // CREACIÓN AUTÓNOMA DE NOTICIAS
+  async create(createNewsDto: CreateNewsDto) {
+    // 1. Buscamos de forma transparente al usuario "Periodista IA" para cumplir la relación obligatoria (fkey)
+    let author = await this.prisma.user.findFirst({
+      where: { email: 'periodista.ia@riverapp.com' },
+    });
+
+    // 2. Si no existe en tu base de Render (por ejemplo, base de datos limpia), lo creamos con tus columnas reales
+    if (!author) {
+      author = await this.prisma.user.create({
+        data: {
+          email: 'periodista.ia@riverapp.com',
+          password_hash: '$2b$10$PlaceholderHashForIASystemAccountOnly', // Tu columna obligatoria real
+          display_name: 'Periodista Millonario IA',                 // Tu columna obligatoria real
+          role: 'ADMIN',
+        },
+      });
+    }
+
+    // 3. Generamos el slug automático para que no lo tengas que definir vos
+    const slug = createNewsDto.slug || this.generateSlug(createNewsDto.title);
+
+    // 4. Evitamos duplicar noticias que ya hayamos extraído de las plataformas de origen
+    const slugExists = await this.prisma.news.findUnique({ where: { slug } });
+    if (slugExists) {
+      throw new BadRequestException('El slug de la noticia ya está en uso. Elige uno diferente.');
+    }
+
+    // 5. Guardamos en Render enlazando el ID del autor de forma transparente
+    return this.prisma.news.create({
+      data: {
+        title: createNewsDto.title,
+        body: createNewsDto.body,
+        category: createNewsDto.category || 'Actualidad',
+        status: createNewsDto.status || 'published',
+        slug,
+        authorId: createNewsDto.authorId || author.id, // <-- ¡Solución definitiva a la fkey obligatoria!
+      },
+    });
+  }
+
+  // OBTENER TODAS LAS NOTICIAS (Las más nuevas primero)
+  async findAll() {
+    return this.prisma.news.findMany({
+      orderBy: {
+        createdAt: 'desc',
+      },
+      include: {
+        author: {
+          select: {
+            id: true,
+            display_name: true,
+            avatar_url: true,
+          },
+        },
+      },
+    });
+  }
+
+  // BUSCAR NOTICIA POR ID
+  async findOne(id: string) {
+    const news = await this.prisma.news.findUnique({
+      where: { id },
+      include: {
+        author: {
+          select: {
+            id: true,
+            display_name: true,
+          },
+        },
+      },
+    });
+    if (!news) {
+      throw new NotFoundException(`La noticia con ID ${id} no existe.`);
+    }
+    return news;
+  }
+
+  // EDITAR NOTICIA
+  async update(id: string, updateNewsDto: UpdateNewsDto) {
+    await this.findOne(id);
+
+    const dataToUpdate: any = { ...updateNewsDto };
+    
+    if (updateNewsDto.status === 'published') {
+      dataToUpdate.publishedAt = new Date();
+    }
+
+    return this.prisma.news.update({
+      where: { id },
+      data: dataToUpdate,
+    });
+  }
+
+  // ELIMINAR NOTICIA
+  async remove(id: string) {
+    await this.findOne(id);
+    return this.prisma.news.delete({
+      where: { id },
+    });
+  }
+}
+
+=================================================================
+// ARCHIVO: apps\backend\src\players\dto\create-player.dto.ts
+=================================================================
+
+// apps/backend/src/players/dto/create-player.dto.ts
+import { IsString, IsInt, IsOptional, IsNotEmpty } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+
+export class CreatePlayerDto {
+  @ApiProperty({ description: 'Nombre completo del jugador' })
+  @IsString()
+  @IsNotEmpty()
+  name: string;
+
+  @ApiProperty({ description: 'Posición en la cancha' })
+  @IsString()
+  @IsNotEmpty()
+  position: string;
+
+  @ApiProperty({ description: 'Dorsal / Número de camiseta', required: false })
+  @IsInt()
+  @IsOptional()
+  number?: number;
+
+  @ApiProperty({ description: 'Edad del futbolista', required: false })
+  @IsInt()
+  @IsOptional()
+  age?: number;
+
+  @ApiProperty({ description: 'URL de la foto oficial', required: false })
+  @IsString()
+  @IsOptional()
+  photo?: string;
+
+  @ApiProperty({ description: 'Nacionalidad', required: false })
+  @IsString()
+  @IsOptional()
+  nationality?: string;
+}
+
+=================================================================
+// ARCHIVO: apps\backend\src\players\dto\update-player.dto.ts
+=================================================================
+
+// apps/backend/src/players/dto/update-player.dto.ts
+import { IsOptional, IsString, IsInt, Min, Max, IsNumber } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+
+export class UpdatePlayerDto {
+  @ApiProperty({ example: 'Franco Armani', required: false })
+  @IsString()
+  @IsOptional()
+  fullName?: string;
+
+  @ApiProperty({ example: 'Pulpo', required: false })
+  @IsString()
+  @IsOptional()
+  alias?: string;
+
+  @ApiProperty({ example: 'Arquero', required: false })
+  @IsString()
+  @IsOptional()
+  position?: string;
+
+  @ApiProperty({ example: 1, required: false })
+  @IsInt()
+  @Min(1)
+  @Max(99)
+  @IsOptional()
+  jerseyNumber?: number;
+
+  @ApiProperty({ example: 'Argentina', required: false })
+  @IsString()
+  @IsOptional()
+  nationality?: string;
+
+  @ApiProperty({ example: 'https://ejemplo.com/fotos/armani.png', required: false })
+  @IsString()
+  @IsOptional()
+  photoUrl?: string;
+
+  @ApiProperty({ example: 'active', required: false })
+  @IsString()
+  @IsOptional()
+  status?: string;
+
+  @ApiProperty({ example: 1200000.00, required: false })
+  @IsNumber()
+  @IsOptional()
+  marketValueUsd?: number;
+}
+
+=================================================================
+// ARCHIVO: apps\backend\src\players\players.controller.spec.ts
+=================================================================
+
+import { Test, TestingModule } from '@nestjs/testing';
+import { PlayersController } from './players.controller';
+
+describe('PlayersController', () => {
+  let controller: PlayersController;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [PlayersController],
+    }).compile();
+
+    controller = module.get<PlayersController>(PlayersController);
+  });
+
+  it('should be defined', () => {
+    expect(controller).toBeDefined();
+  });
+});
+
+
+=================================================================
+// ARCHIVO: apps\backend\src\players\players.controller.ts
+=================================================================
+
+// apps/backend/src/players/players.controller.ts
+import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { PlayersService } from './players.service';
+import { CreatePlayerDto } from './dto/create-player.dto';
+import { UpdatePlayerDto } from './dto/update-player.dto';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+
+@ApiTags('Players') // Agrupa este controlador bajo 'Players' en Swagger
+@Controller('players')
+export class PlayersController {
+  constructor(private readonly playersService: PlayersService) {}
+
+  @Post()
+  @ApiOperation({ summary: 'Agregar un nuevo jugador al plantel' })
+  @ApiResponse({ status: 201, description: 'Jugador creado exitosamente.' })
+  create(@Body() createPlayerDto: CreatePlayerDto) {
+    return this.playersService.create(createPlayerDto);
+  }
+
+  @Get()
+  @ApiOperation({ summary: 'Obtener la lista de todo el plantel de River' })
+  findAll() {
+    return this.playersService.findAll();
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Obtener ficha técnica de un jugador específico' })
+  findOne(@Param('id') id: string) {
+    return this.playersService.findOne(id);
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Actualizar datos de un jugador (posición, camiseta, etc.)' })
+  update(@Param('id') id: string, @Body() updatePlayerDto: UpdatePlayerDto) {
+    return this.playersService.update(id, updatePlayerDto);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Eliminar un jugador del plantel' })
+  remove(@Param('id') id: string) {
+    return this.playersService.remove(id);
+  }
+}
+
+=================================================================
+// ARCHIVO: apps\backend\src\players\players.module.ts
+=================================================================
+
+import { Module } from '@nestjs/common';
+import { PlayersController } from './players.controller';
+import { PlayersService } from './players.service';
+
+@Module({
+  controllers: [PlayersController],
+  providers: [PlayersService]
+})
+export class PlayersModule {}
+
+
+=================================================================
+// ARCHIVO: apps\backend\src\players\players.service.spec.ts
+=================================================================
+
+import { Test, TestingModule } from '@nestjs/testing';
+import { PlayersService } from './players.service';
+
+describe('PlayersService', () => {
+  let service: PlayersService;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [PlayersService],
+    }).compile();
+
+    service = module.get<PlayersService>(PlayersService);
+  });
+
+  it('should be defined', () => {
+    expect(service).toBeDefined();
+  });
+});
+
+
+=================================================================
+// ARCHIVO: apps\backend\src\players\players.service.ts
+=================================================================
+
+// apps/backend/src/players/players.service.ts
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { CreatePlayerDto } from './dto/create-player.dto';
+
+@Injectable()
+export class PlayersService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  // 1. Guardar un jugador de forma segura en Render
+  async create(createPlayerDto: CreatePlayerDto) {
+    return this.prisma.player.create({
+      data: createPlayerDto,
+    });
+  }
+
+  // 2. Traer todos los jugadores ordenados por su número de camiseta real
+  async findAll() {
+    return this.prisma.player.findMany({
+      orderBy: {
+        number: 'asc', // Corregido 'jerseyNumber'
+      },
+    });
+  }
+
+  // 3. Traer un solo jugador
+  async findOne(id: string) {
+    const player = await this.prisma.player.findUnique({
+      where: { id },
+    });
+    if (!player) {
+      throw new NotFoundException(`Jugador con ID ${id} no encontrado`);
+    }
+    return player;
+  }
+
+  // 4. Actualizar un jugador (La función que le faltaba a tu controlador)
+  async update(id: string, updatePlayerDto: any) {
+    await this.findOne(id);
+    return this.prisma.player.update({
+      where: { id },
+      data: updatePlayerDto,
+    });
+  }
+
+  // 5. Eliminar un jugador
+  async remove(id: string) {
+    await this.findOne(id);
+    return this.prisma.player.delete({
+      where: { id },
+    });
+  }
+}
+
+=================================================================
+// ARCHIVO: apps\backend\src\prisma\prisma.module.ts
+=================================================================
+
+import { Global, Module } from '@nestjs/common';
+import { PrismaService } from './prisma.service';
+
+@Global()
+@Module({
+  providers: [PrismaService],
+  exports: [PrismaService],
+})
+export class PrismaModule {}
+
+=================================================================
+// ARCHIVO: apps\backend\src\prisma\prisma.service.spec.ts
+=================================================================
+
+import { Test, TestingModule } from '@nestjs/testing';
+import { PrismaService } from './prisma.service';
+
+describe('PrismaService', () => {
+  let service: PrismaService;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [PrismaService],
+    }).compile();
+
+    service = module.get<PrismaService>(PrismaService);
+  });
+
+  it('should be defined', () => {
+    expect(service).toBeDefined();
+  });
+});
+
+
+=================================================================
+// ARCHIVO: apps\backend\src\prisma\prisma.service.ts
+=================================================================
+
+import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { PrismaClient } from '@prisma/client';
+
+@Injectable()
+export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+  async onModuleInit() {
+    await this.$connect();
+  }
+  async onModuleDestroy() {
+    await this.$disconnect();
+  }
+}
+
+=================================================================
+// ARCHIVO: apps\backend\test\app.e2e-spec.ts
+=================================================================
+
+import { Test, TestingModule } from '@nestjs/testing';
+import { INestApplication } from '@nestjs/common';
+import request from 'supertest';
+import { App } from 'supertest/types';
+import { AppModule } from './../src/app.module';
+
+describe('AppController (e2e)', () => {
+  let app: INestApplication<App>;
+
+  beforeEach(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    await app.init();
+  });
+
+  it('/ (GET)', () => {
+    return request(app.getHttpServer())
+      .get('/')
+      .expect(200)
+      .expect('Hello World!');
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+});
+
+
+=================================================================
+// ARCHIVO: apps\frontend\eslint.config.js
+=================================================================
+
+import js from '@eslint/js'
+import globals from 'globals'
+import reactHooks from 'eslint-plugin-react-hooks'
+import reactRefresh from 'eslint-plugin-react-refresh'
+import tseslint from 'typescript-eslint'
+import { defineConfig, globalIgnores } from 'eslint/config'
+
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{ts,tsx}'],
+    extends: [
+      js.configs.recommended,
+      tseslint.configs.recommended,
+      reactHooks.configs.flat.recommended,
+      reactRefresh.configs.vite,
+    ],
+    languageOptions: {
+      globals: globals.browser,
+    },
+  },
+])
+
+
+=================================================================
+// ARCHIVO: apps\frontend\index.html
+=================================================================
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>frontend</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
+
+=================================================================
+// ARCHIVO: apps\frontend\postcss.config.js
+=================================================================
+
+export default {
+  plugins: {
+    '@tailwindcss/postcss': {}, // Reemplazamos 'tailwindcss' por este nuevo conector
+    autoprefixer: {},
+  },
+}
+
+=================================================================
+// ARCHIVO: apps\frontend\src\App.tsx
+=================================================================
+
+// apps/frontend/src/App.tsx
+import { useState, useEffect } from 'react';
+import Login from './pages/Login';
+import Home from './pages/Home';
+
+function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  // Verificamos al arrancar si el usuario ya tenía su sesión guardada
+  useEffect(() => {
+    const token = localStorage.getItem('river_app_token');
+    if (token) {
+      setIsAuthenticated(true);
+    }
+  }, []);
+
+  const handleLoginSuccess = () => {
+    setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    // Limpiamos el token del navegador al salir
+    localStorage.removeItem('river_app_token');
+    setIsAuthenticated(false);
+  };
+
+  return (
+    <>
+      {isAuthenticated ? (
+        <Home onLogout={handleLogout} />
+      ) : (
+        <Login onLoginSuccess={handleLoginSuccess} />
+      )}
+    </>
+  );
+}
+
+export default App;
+
+=================================================================
+// ARCHIVO: apps\frontend\src\components\FixtureCarousel.tsx
+=================================================================
+
+import { useState, useEffect } from 'react';
+import { getLiveDashboard } from '../services/live.service';
+
+export default function FixtureCarousel() {
+  const [upcoming, setUpcoming] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchMatches = async () => {
+      try {
+        const dashboard = await getLiveDashboard();
+        setUpcoming(Array.isArray(dashboard?.upcomingMatches) ? dashboard.upcomingMatches : []);
+      } catch (error) {
+        console.error('Error fetching upcoming matches:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchMatches();
+  }, []);
+
+  if (loading) {
+    return <div className="text-neutral-400 text-center py-8">Cargando fixture...</div>;
+  }
+
+  if (upcoming.length === 0) {
+    return <div className="text-neutral-500 text-sm">No hay próximos partidos en el fixture.</div>;
+  }
+
+  return (
+    <div className="flex gap-4 overflow-x-auto pb-4 snap-x hide-scrollbar">
+      {upcoming.map((m) => (
+        <div key={m.id} className="min-w-[260px] bg-neutral-900 border border-neutral-800 hover:border-riverRed transition-colors rounded-xl p-5 flex-shrink-0 snap-start shadow-lg">
+          <div className="text-xs text-neutral-400 font-semibold mb-2 uppercase tracking-wider">{m.competition}</div>
+          <div className="mt-1 font-black text-xl truncate text-white">
+            {new Date(m.date).toLocaleDateString('es-AR', { day: 'numeric', month: 'long' })}
+          </div>
+          <div className="text-xs text-neutral-500 mb-5 font-medium">
+            {new Date(m.date).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hrs
+          </div>
+          
+          <div className="flex flex-col gap-3 mt-2 bg-neutral-950 rounded-lg p-3 border border-neutral-800">
+            <div className="flex justify-between items-center">
+              <span className={`text-sm font-bold truncate ${m.homeTeam.toLowerCase().includes('river') ? 'text-white' : 'text-neutral-400'}`}>
+                {m.homeTeam}
+              </span>
+            </div>
+            <div className="flex justify-between items-center border-t border-neutral-800 pt-2">
+              <span className={`text-sm font-bold truncate ${m.awayTeam.toLowerCase().includes('river') ? 'text-white' : 'text-neutral-400'}`}>
+                {m.awayTeam}
+              </span>
+            </div>
+          </div>
+          
+          <div className="mt-4 text-[10px] font-bold uppercase tracking-widest text-center text-neutral-500 bg-neutral-950 py-2 rounded-lg border border-neutral-800">
+            {m.status === 'live' ? 'En Vivo' : m.status === 'finished' ? 'Finalizado' : 'Programado'}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+=================================================================
+// ARCHIVO: apps\frontend\src\components\FixtureCarrouisel.tsx
+=================================================================
+
+'use client';
+
+import { useEffect, useState } from 'react';
+
+// Definimos cómo luce un partido según lo que manda tu backend
+interface Match {
+  id: number;
+  homeTeam: string;
+  awayTeam: string;
+  homeScore: number | null;
+  awayScore: number | null;
+  date: string;
+  competition: string;
+  status: string;
+  type: string;
+}
+
+export default function FixtureCarousel() {
+  const [matches, setMatches] = useState<Match[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Le pegamos al endpoint de tu backend (ajustá el puerto si tu back corre en otro)
+    const fetchMatches = async () => {
+      try {
+        const res = await fetch('http://localhost:3000/api/matches');
+        if (!res.ok) throw new Error('Error al cargar los partidos');
+        const data = await res.json();
+        setMatches(data);
+      } catch (error) {
+        console.error('Error fetching matches:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchMatches();
+  }, []);
+
+  if (loading) {
+    return <div className="flex justify-center p-8 font-bold text-gray-500">Cargando la pasión... ⏳</div>;
+  }
+
+  if (matches.length === 0) {
+    return <div className="text-center p-4 text-gray-500">No hay partidos programados.</div>;
+  }
+
+  return (
+    <div className="w-full overflow-x-auto pb-6 pt-4 hide-scrollbar">
+      {/* Contenedor flexible para el scroll horizontal */}
+      <div className="flex space-x-4 px-4 w-max snap-x">
+        {matches.map((match) => {
+          // Formateamos la fecha a formato local argentino
+          const dateObj = new Date(match.date);
+          const formattedDate = dateObj.toLocaleDateString('es-AR', {
+            weekday: 'short',
+            day: 'numeric',
+            month: 'short',
+          });
+          const formattedTime = dateObj.toLocaleTimeString('es-AR', {
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+
+          // Lógica de colores: si es el PRÓXIMO, lo pintamos de los colores de River
+          const isNext = match.type === 'NEXT';
+          const cardBg = isNext 
+            ? 'bg-red-700 text-white shadow-red-900/50' 
+            : 'bg-white text-gray-800 border border-gray-200 shadow-md';
+
+          return (
+            <div 
+              key={match.id} 
+              className={`flex flex-col justify-between w-72 rounded-2xl shadow-lg p-5 flex-shrink-0 snap-center ${cardBg}`}
+            >
+              {/* Torneo */}
+              <div className="text-xs font-black uppercase tracking-widest text-center mb-4 opacity-80">
+                {match.competition}
+              </div>
+
+              {/* Equipos y Resultado */}
+              <div className="flex justify-between items-center mb-5">
+                <div className="flex flex-col items-center w-1/3">
+                  <div className="w-12 h-12 bg-gray-100 rounded-full mb-2 flex items-center justify-center text-sm font-black text-gray-700 shadow-inner">
+                    {match.homeTeam.substring(0, 3).toUpperCase()}
+                  </div>
+                  <span className="text-xs text-center font-bold truncate w-full">{match.homeTeam}</span>
+                </div>
+
+                <div className="flex flex-col items-center justify-center w-1/3">
+                  {match.status === 'FINISHED' || match.status === 'LIVE' ? (
+                    <div className="text-3xl font-black tracking-tighter">
+                      {match.homeScore} - {match.awayScore}
+                    </div>
+                  ) : (
+                    <div className="text-sm font-black opacity-60">VS</div>
+                  )}
+                  
+                  {match.status === 'LIVE' && (
+                    <span className="mt-1 text-[10px] bg-red-500 text-white px-2 py-0.5 rounded-full animate-pulse font-bold">
+                      {match.minute}'
+                    </span>
+                  )}
+                  {match.status === 'FINISHED' && (
+                    <span className="mt-1 text-[10px] font-bold opacity-70">FINAL</span>
+                  )}
+                </div>
+
+                <div className="flex flex-col items-center w-1/3">
+                  <div className="w-12 h-12 bg-gray-100 rounded-full mb-2 flex items-center justify-center text-sm font-black text-gray-700 shadow-inner">
+                    {match.awayTeam.substring(0, 3).toUpperCase()}
+                  </div>
+                  <span className="text-xs text-center font-bold truncate w-full">{match.awayTeam}</span>
+                </div>
+              </div>
+
+              {/* Fecha y Hora */}
+              <div className={`text-xs text-center font-semibold mt-auto ${isNext ? 'text-red-100' : 'text-gray-500'}`}>
+                {formattedDate} • {formattedTime} hs
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+=================================================================
+// ARCHIVO: apps\frontend\src\index.css
+=================================================================
+
+@import "tailwindcss";
+/* Ocultar scrollbar para Chrome, Safari y Opera */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+/* Ocultar scrollbar para IE, Edge y Firefox */
+.hide-scrollbar {
+  -ms-overflow-style: none;  /* IE y Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+=================================================================
+// ARCHIVO: apps\frontend\src\main.tsx
+=================================================================
+
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import './index.css'
+import App from './App.tsx'
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)
+
+
+=================================================================
+// ARCHIVO: apps\frontend\src\pages\Home.tsx
+=================================================================
+
+// ...existing code...
+import { useState, useEffect } from 'react';
+import { getNews } from '../services/news.service';
+import { getLiveDashboard } from '../services/live.service';
+import Plantel from './Plantel';
+import FixtureCarousel from '../components/FixtureCarousel';
+
+interface HomeProps {
+  onLogout: () => void;
+}
+
+export default function Home({ onLogout }: HomeProps) {
+  const [activeTab, setActiveTab] = useState<'inicio' | 'partidos' | 'plantel' | 'noticias' | 'mas'>('inicio'); 
+  const [nextMatch, setNextMatch] = useState<any>(null);
+  const [lastMatch, setLastMatch] = useState<any>(null);
+  const [table, setTable] = useState<any[]>([]);
+  const [stats, setStats] = useState<any>(null);
+  const [news, setNews] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [countdown, setCountdown] = useState<string>('');
+
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        const [dashboard, newsList] = await Promise.all([
+          getLiveDashboard(),
+          getNews(),
+        ]);
+        
+        setNews(Array.isArray(newsList) ? newsList : []);
+
+        if (dashboard) {
+          setNextMatch(dashboard.nextMatch);
+          setLastMatch(dashboard.lastMatch);
+          setTable(dashboard.standings || []);
+          setStats(dashboard.stats || null);
+        }
+      } catch (err) {
+        console.error('❌ Error cargando datos en el Home:', err);
+        setNextMatch(null);
+        setLastMatch(null);
+        setTable([]);
+        setStats(null);
+        setNews([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+
+    const interval = setInterval(loadData, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (!nextMatch) return;
+    const interval = setInterval(() => {
+      const now = new Date().getTime();
+      const matchDate = new Date(nextMatch.date).getTime();
+      const distance = matchDate - now;
+
+      if (distance < 0) {
+        setCountdown('¡En juego!');
+        clearInterval(interval);
+        return;
+      }
+
+      const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+      
+      setCountdown(`${days}d ${hours}h ${minutes}m`);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [nextMatch]);
+
+  const navItems = [
+    { id: 'inicio', label: 'Inicio', icon: '🏟️' },
+    { id: 'partidos', label: 'Partidos', icon: '⚽' },
+    { id: 'plantel', label: 'Plantel', icon: '🏃‍♂️' },
+    { id: 'noticias', label: 'Noticias', icon: '📰' },
+    { id: 'mas', label: 'Más', icon: '≡' },
+  ];
+
+  return (
+    <div className="min-h-screen bg-neutral-950 text-white pb-20 md:pb-12">
+      {/* Navegación Desktop */}
+      <nav className="bg-neutral-900 border-b border-neutral-800 px-6 py-4 sticky top-0 z-50">
+        <div className="max-w-6xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveTab('inicio')}>
+              <div className="w-10 h-10 rounded-full bg-white text-riverRed font-black flex items-center justify-center border border-riverRed text-lg">
+                CARP
+              </div>
+              <span className="font-bold text-lg tracking-wide hidden sm:block">River App</span>
+            </div>
+            
+            <div className="hidden md:flex items-center gap-6">
+              {navItems.map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id as any)}
+                  className={`text-sm font-semibold transition-colors flex items-center gap-1 ${activeTab === item.id ? 'text-riverRed border-b-2 border-riverRed pb-1' : 'text-neutral-400 hover:text-white'}`}
+                >
+                  {item.label} {item.icon}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onLogout}
+              className="bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 hover:border-riverRed text-xs sm:text-sm px-4 py-2 rounded-xl transition-all duration-300 cursor-pointer"
+            >
+              Cerrar Sesión 🚪
+            </button>
+          </div>
+        </div>
+      </nav>
+
+      {activeTab === 'plantel' && <Plantel />}
+
+      {activeTab === 'partidos' && (
+        <div className="max-w-6xl mx-auto px-4 mt-8">
+          <h2 className="text-2xl font-black mb-6 border-b border-neutral-800 pb-2">Fixture</h2>
+          <FixtureCarousel />
+        </div>
+      )}
+      
+      {activeTab === 'inicio' && (
+        <div className="max-w-6xl mx-auto px-4 mt-8">
+          {loading ? (
+            <div className="text-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-riverRed mx-auto mb-4"></div>
+              <p className="text-neutral-400">Abriendo las puertas del Monumental...</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              
+              {/* COLUMNA PRINCIPAL */}
+              <div className="lg:col-span-2 space-y-6">
+                
+                {/* 1. Próximo Partido */}
+                <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 relative shadow-xl">
+                  <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-xs font-semibold text-neutral-400 uppercase tracking-widest">Próximo Partido</h2>
+                    {countdown && (
+                      <span className="bg-red-950/40 text-riverRed border border-red-900/50 px-3 py-1 rounded-full text-xs font-bold animate-pulse">
+                        Faltan: {countdown}
+                      </span>
+                    )}
+                  </div>
+                  
+                  {nextMatch ? (
+                    <div className="flex flex-col items-center">
+                      <div className="text-xs text-neutral-400 mb-4">{nextMatch.competition} • Estadio Monumental</div>
+                      
+                      <div className="flex items-center justify-between w-full mb-6">
+                        <div className="text-center w-1/3">
+                          <div className="w-14 h-14 mx-auto bg-white rounded-full flex items-center justify-center mb-2 shadow-inner">
+                            <span className="text-riverRed font-black text-sm">{nextMatch.homeTeam.substring(0,3).toUpperCase()}</span>
+                          </div>
+                          <span className="block font-bold truncate">{nextMatch.homeTeam}</span>
+                        </div>
+                        
+                        <div className="text-center w-1/3 flex flex-col items-center">
+                          <div className="text-2xl font-black text-white">
+                            {new Date(nextMatch.date).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                          <div className="text-sm text-neutral-500 font-medium">
+                            {new Date(nextMatch.date).toLocaleDateString('es-AR', { day: 'numeric', month: 'long' })}
+                          </div>
+                        </div>
+                        
+                        <div className="text-center w-1/3">
+                          <div className="w-14 h-14 mx-auto bg-neutral-800 border border-neutral-700 rounded-full flex items-center justify-center mb-2">
+                            <span className="text-neutral-400 font-black text-sm">{nextMatch.awayTeam.substring(0,3).toUpperCase()}</span>
+                          </div>
+                          <span className="block font-bold truncate">{nextMatch.awayTeam}</span>
+                        </div>
+                      </div>
+                      
+                      <button className="w-full bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 hover:border-riverRed text-white font-semibold text-sm py-3 rounded-xl transition-all shadow-md active:scale-[0.98]">
+                        Ver formación probable
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-neutral-500 text-sm">No hay próximo partido programado.</div>
+                  )}
+                </section>
+
+                {/* 2. Último Resultado */}
+                <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 relative shadow-xl">
+                  <h2 className="text-xs font-semibold text-neutral-400 uppercase tracking-widest mb-4">Último Resultado</h2>
+                  {lastMatch ? (
+                    <div className="flex flex-col">
+                      <div className="text-xs text-neutral-400 mb-4 text-center">
+                        {lastMatch.competition} • {new Date(lastMatch.date).toLocaleDateString('es-AR')}
+                      </div>
+                      
+                      <div className="flex items-center justify-between mb-5">
+                        <div className="text-center w-1/3">
+                          <span className="block font-bold truncate">{lastMatch.homeTeam}</span>
+                        </div>
+                        
+                        <div className="flex items-center gap-4 bg-neutral-950 px-4 py-2 rounded-xl border border-neutral-800">
+                          <span className={`text-3xl font-black ${lastMatch.homeScore > lastMatch.awayScore ? 'text-white' : 'text-neutral-500'}`}>
+                            {lastMatch.homeScore ?? 0}
+                          </span>
+                          <span className="text-neutral-600 font-bold">-</span>
+                          <span className={`text-3xl font-black ${lastMatch.awayScore > lastMatch.homeScore ? 'text-white' : 'text-neutral-500'}`}>
+                            {lastMatch.awayScore ?? 0}
+                          </span>
+                        </div>
+                        
+                        <div className="text-center w-1/3">
+                          <span className="block font-bold truncate">{lastMatch.awayTeam}</span>
+                        </div>
+                      </div>
+                      
+                      <div className="bg-neutral-950 border border-neutral-800 rounded-xl p-3 text-xs text-neutral-400 text-center mb-5 flex justify-center gap-2 items-center">
+                        <span className="text-white">⚽ Goles:</span> Borja 23', Aliendro 67'
+                      </div>
+                      
+                      <button className="w-full bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 hover:border-riverRed text-white font-semibold text-sm py-3 rounded-xl transition-all shadow-md active:scale-[0.98]">
+                        Ver estadísticas del partido
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-neutral-500 text-sm">No hay resultados recientes.</div>
+                  )}
+                </section>
+
+                {/* 3. Noticias Destacadas */}
+                <section className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-lg font-bold tracking-wide">Noticias Destacadas</h2>
+                    <span 
+                      onClick={() => setActiveTab('noticias')} 
+                      className="text-xs text-riverRed font-semibold cursor-pointer hover:underline"
+                    >
+                      Ver todas ↗
+                    </span>
+                  </div>
+                  
+                  {news.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      {news.slice(0, 3).map(item => (
+                        <a 
+                          key={item.id} 
+                          href={item.url || '#'} 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          className="bg-neutral-900 border border-neutral-800 hover:border-riverRed rounded-2xl p-4 transition-all duration-300 group flex flex-col justify-between shadow-lg h-full"
+                        >
+                          <div>
+                            <div className="w-full h-32 bg-neutral-950 border border-neutral-800 rounded-xl mb-4 flex items-center justify-center overflow-hidden group-hover:border-riverRed/50 transition-colors">
+                              <span className="text-4xl opacity-50">📰</span>
+                            </div>
+                            <div className="flex justify-between items-center mb-2">
+                              <span className="text-[10px] font-bold text-riverRed uppercase tracking-wider bg-red-950/30 border border-red-900/30 px-2 py-0.5 rounded-full">
+                                {item.category || 'Actualidad'}
+                              </span>
+                              <span className="text-[10px] text-neutral-500 font-medium">Hace 2h</span>
+                            </div>
+                            <h3 className="text-sm font-bold text-white group-hover:text-riverRed transition-colors line-clamp-3">
+                              {item.title}
+                            </h3>
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 bg-neutral-900 border border-neutral-800 rounded-2xl text-neutral-500 text-sm">
+                      Buscando primicias... ✍️
+                    </div>
+                  )}
+                </section>
+
+              </div>
+
+              {/* COLUMNA LATERAL */}
+              <div className="space-y-6">
+                
+                {/* 4. Tabla de Posiciones */}
+                <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl">
+                  <h2 className="text-xs font-semibold text-neutral-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <span>🏆</span> Liga Profesional
+                  </h2>
+                  <div className="w-full text-sm">
+                    <div className="flex text-neutral-500 border-b border-neutral-800 pb-2 mb-2 font-semibold text-xs uppercase tracking-wider">
+                      <div className="w-6 text-center">#</div>
+                      <div className="flex-1 px-2">Equipo</div>
+                      <div className="w-8 text-center">Pts</div>
+                      <div className="w-8 text-center">PJ</div>
+                    </div>
+                    {table.slice(0, 10).map(row => (
+                      <div 
+                        key={row.pos} 
+                        className={`flex py-2.5 items-center border-b border-neutral-800/50 last:border-0 ${row.team.includes('River Plate') ? 'bg-red-950/20 rounded-lg font-bold text-white' : 'text-neutral-300'}`}
+                      >
+                        <div className={`w-6 text-center text-xs ${row.team.includes('River Plate') ? 'text-riverRed' : 'text-neutral-500'}`}>
+                          {row.pos}
+                        </div>
+                        <div className="flex-1 px-2 truncate">
+                          {row.team}
+                        </div>
+                        <div className={`w-8 text-center ${row.team.includes('River Plate') ? 'text-riverRed' : ''}`}>
+                          {row.pts}
+                        </div>
+                        <div className="w-8 text-center text-neutral-500">{row.pj}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <button className="w-full mt-5 bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 text-white font-semibold text-xs py-2.5 rounded-xl transition-all">
+                    Ver tabla completa
+                  </button>
+                </section>
+
+                {/* 5. Estadísticas Rápidas */}
+                <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl">
+                  <h2 className="text-xs font-semibold text-neutral-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <span>📊</span> Estadísticas de Temporada
+                  </h2>
+                  {stats ? (
+                  <div className="space-y-5">
+                    <div className="grid grid-cols-4 gap-2 text-center bg-neutral-950 border border-neutral-800 p-3 rounded-xl">
+                      <div>
+                        <div className="text-lg font-black text-white">{stats.pj}</div>
+                        <div className="text-[10px] text-neutral-500 uppercase font-bold">PJ</div>
+                      </div>
+                      <div>
+                        <div className="text-lg font-black text-green-500">{stats.pg}</div>
+                        <div className="text-[10px] text-neutral-500 uppercase font-bold">G</div>
+                      </div>
+                      <div>
+                        <div className="text-lg font-black text-yellow-500">{stats.pe}</div>
+                        <div className="text-[10px] text-neutral-500 uppercase font-bold">E</div>
+                      </div>
+                      <div>
+                        <div className="text-lg font-black text-red-500">{stats.pp}</div>
+                        <div className="text-[10px] text-neutral-500 uppercase font-bold">P</div>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center text-sm border-b border-neutral-800/50 pb-2">
+                        <span className="text-neutral-400">Goles a favor</span>
+                        <span className="font-bold text-white bg-neutral-800 px-2 py-0.5 rounded-md">{stats.gf}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-sm border-b border-neutral-800/50 pb-2">
+                        <span className="text-neutral-400">Goles en contra</span>
+                        <span className="font-bold text-white bg-neutral-800 px-2 py-0.5 rounded-md">{stats.gc}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-sm border-b border-neutral-800/50 pb-2">
+                        <span className="text-neutral-400">Racha actual</span>
+                        <span className="font-bold text-green-400 text-xs uppercase tracking-wider">{stats.streak}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-sm pt-1">
+                        <span className="text-neutral-400">Goleador</span>
+                        <span className="font-bold text-white text-xs">{stats.topScorer}</span>
+                      </div>
+                    </div>
+                  </div>
+                  ) : (
+                    <div className="text-center text-sm text-neutral-500 py-8">Las estadísticas no están disponibles.</div>
+                  )}
+                </section>
+
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {['noticias', 'mas'].includes(activeTab) && (
+        <div className="max-w-6xl mx-auto px-4 mt-16 text-center">
+          <div className="text-6xl mb-4">🚧</div>
+          <h2 className="text-xl font-bold mb-2">Sección en construcción</h2>
+          <p className="text-neutral-400">El equipo técnico de River App está trabajando en esta área.</p>
+        </div>
+      )}
+
+      {/* Navegación Mobile Bottom */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-neutral-950 border-t border-neutral-900 flex justify-around p-2 z-50 pb-safe">
+        {navItems.map(item => (
+          <button
+            key={item.id}
+            onClick={() => setActiveTab(item.id as any)}
+            className="flex flex-col items-center justify-center p-2 w-16"
+          >
+            <span className={`text-xl mb-1 transition-transform ${activeTab === item.id ? 'scale-110' : 'opacity-50'}`}>
+              {item.icon}
+            </span>
+            <span className={`text-[9px] font-bold uppercase tracking-wider ${activeTab === item.id ? 'text-riverRed' : 'text-neutral-500'}`}>
+              {item.label}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+=================================================================
+// ARCHIVO: apps\frontend\src\pages\live.controller.ts
+=================================================================
+
+
+
+=================================================================
+// ARCHIVO: apps\frontend\src\pages\live.module.ts
+=================================================================
+
+
+
+=================================================================
+// ARCHIVO: apps\frontend\src\pages\live.service.ts
+=================================================================
+
+
+
+=================================================================
+// ARCHIVO: apps\frontend\src\pages\Login.tsx
+=================================================================
+
+// apps/frontend/src/pages/Login.tsx
+import { useState } from 'react';
+import { login } from '../services/auth.service'; // Importamos el servicio
+
+export default function Login({ onLoginSuccess }: { onLoginSuccess: () => void }) {
+  // Declaramos los estados necesarios para controlar el formulario
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  // Función que se ejecuta al presionar "Entrar a la Cancha"
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+
+    try {
+      // Llamamos al servicio que se conecta con tu NestJS en Render
+      const data = await login(email, password);
+      console.log('¡Ingreso exitoso! Token guardado:', data.access_token);
+      alert('¡Bienvenido a la River App! Entrando a la cancha...');
+      
+      // Ejecutamos la función que nos cambia la pantalla al Home
+      onLoginSuccess();
+    } catch (err: any) {
+      // Si el backend rebota las credenciales, mostramos el error en pantalla
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-neutral-950 flex items-center justify-center px-4 relative overflow-hidden">
+      {/* Detalle decorativo de la banda roja cruzada de fondo */}
+      <div className="absolute top-0 left-[-20%] w-[150%] h-[120px] bg-riverRed -rotate-12 opacity-80 blur-[2px] pointer-events-none" />
+
+      <div className="w-full max-w-md bg-neutral-900 border border-neutral-800 rounded-2xl p-8 shadow-2xl z-10">
+        {/* Encabezado / Logo */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-white text-riverRed font-black text-2xl shadow-md border-2 border-riverRed mb-3">
+            CARP
+          </div>
+          <h2 className="text-2xl font-bold text-white tracking-wide">River Plate App</h2>
+          <p className="text-sm text-neutral-400 mt-1">Ingresá con tu cuenta para ver el minuto a minuto</p>
+        </div>
+
+        {/* Alerta de Error en caso de credenciales inválidas */}
+        {error && (
+          <div className="bg-red-900/30 border border-red-500 text-red-200 text-sm p-3 rounded-xl mb-5 text-center">
+            {error}
+          </div>
+        )}
+
+        {/* Formulario */}
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-300 mb-2">
+              Correo Electrónico
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="tuusuario@river.com"
+              className="w-full bg-neutral-950 border border-neutral-800 focus:border-riverRed text-white rounded-xl px-4 py-3 text-sm outline-none transition-all duration-300"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-300 mb-2">
+              Contraseña
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              className="w-full bg-neutral-950 border border-neutral-800 focus:border-riverRed text-white rounded-xl px-4 py-3 text-sm outline-none transition-all duration-300"
+              required
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-riverRed hover:bg-red-700 disabled:bg-neutral-800 text-white font-bold py-3 px-4 rounded-xl transition-all duration-300 shadow-lg shadow-red-900/30 active:scale-[0.98] mt-2 flex items-center justify-center cursor-pointer"
+          >
+            {loading ? 'Validando pase...' : 'Entrar a la Cancha 🏟️'}
+          </button>
+        </form>
+
+        {/* Footer del login */}
+        <p className="text-center text-xs text-neutral-500 mt-6">
+          ¿No tenés cuenta? <span className="text-riverRed cursor-pointer hover:underline">Registrate acá</span>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+=================================================================
+// ARCHIVO: apps\frontend\src\pages\Plantel.tsx
+=================================================================
+
+// apps/frontend/src/pages/Plantel.tsx
+import { useState, useEffect } from 'react';
+import { getPlayers } from '../services/players.service';
+
+export default function Plantel() {
+  const [players, setPlayers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadPlayers = async () => {
+      try {
+        const list = await getPlayers();
+        // Nos aseguramos de que lo que recibimos sea un Array real
+        if (Array.isArray(list)) {
+          setPlayers(list);
+        } else {
+          console.warn('Los datos recibidos no tienen el formato de array esperado:', list);
+          setPlayers([]);
+        }
+      } catch (error) {
+        console.error('Error al cargar jugadores:', error);
+        setPlayers([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadPlayers();
+  }, []);
+
+  // Agrupamos a los jugadores por su posición de forma segura
+  const getPlayersByPosition = (position: string) => {
+    if (!Array.isArray(players)) return [];
+    return players.filter((p) => p && p.position?.toLowerCase().includes(position.toLowerCase()));
+  };
+
+  const positions = [
+    { title: 'Arqueros 🧤', key: 'Goalkeeper' },
+    { title: 'Defensores 🛡️', key: 'Defender' },
+    { title: 'Mediocampistas 🧠', key: 'Midfielder' },
+    { title: 'Delanteros ⚡', key: 'Attacker' },
+  ];
+
+  return (
+    <div className="min-h-screen bg-neutral-950 text-white pb-16 px-4 md:px-8 mt-6">
+      <div className="max-w-4xl mx-auto space-y-10">
+        
+        {/* Título de la sección */}
+        <div className="border-b border-neutral-800 pb-4">
+          <h2 className="text-2xl font-black tracking-wide uppercase">El Plantel Millonario</h2>
+          <p className="text-sm text-neutral-400 mt-1">Los defensores del manto sagrado para esta temporada.</p>
+        </div>
+
+        {loading ? (
+          <div className="text-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-riverRed mx-auto mb-4"></div>
+            <p className="text-neutral-400">Reuniendo al equipo en el vestuario...</p>
+          </div>
+        ) : players.length > 0 ? (
+          <div className="space-y-12">
+            {positions.map((pos) => {
+              const filteredList = getPlayersByPosition(pos.key);
+              if (filteredList.length === 0) return null;
+
+              return (
+                <div key={pos.key} className="space-y-4">
+                  <h3 className="text-lg font-bold text-riverRed border-l-4 border-riverRed pl-3 uppercase tracking-wider">
+                    {pos.title}
+                  </h3>
+                  
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                    {filteredList.map((player) => (
+                      <div 
+                        key={player.id} 
+                        className="bg-neutral-900 border border-neutral-800 rounded-xl p-4 text-center hover:border-neutral-700 transition-all duration-300 relative group overflow-hidden"
+                      >
+                        {/* Dorsal del jugador de fondo */}
+                        <div className="absolute right-2 top-0 text-5xl font-black text-neutral-800/40 select-none group-hover:text-riverRed/20 transition-all duration-300">
+                          #{player.number || '10'}
+                        </div>
+
+                        {/* Foto / Placeholder del Jugador */}
+                        <div className="w-20 h-20 bg-neutral-950 rounded-full mx-auto mb-3 flex items-center justify-center border-2 border-neutral-800 group-hover:border-riverRed transition-all duration-300">
+                          {player.photo ? (
+                            <img src={player.photo} alt={player.name} className="rounded-full w-full h-full object-cover" />
+                          ) : (
+                            <span className="text-2xl font-black text-neutral-600">⚽</span>
+                          )}
+                        </div>
+
+                        <h4 className="font-bold text-sm text-white truncate">{player.name}</h4>
+                        <p className="text-xs text-neutral-500 mt-1">{player.nationality || 'Argentina'}</p>
+                        <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-widest mt-2">
+                          Edad: {player.age || 'N/A'}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-center py-16 bg-neutral-900 border border-neutral-800 rounded-2xl text-neutral-500 text-sm">
+            Aún no hay jugadores registrados en el plantel o hubo un problema al consultarlos. 🏃‍♂️💨
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
+=================================================================
+// ARCHIVO: apps\frontend\src\services\auth.service.ts
+=================================================================
+
+// apps/frontend/src/services/auth.service.ts
+import axios from 'axios';
+
+// La URL de tu backend NestJS corriendo de forma local
+const API_URL = 'http://localhost:3000/auth';
+
+export const login = async (email: string, password: string) => {
+  try {
+    // Enviamos los datos al endpoint de NestJS
+    const response = await axios.post(`${API_URL}/login`, {
+      email,
+      password,
+    });
+
+    // Si el backend responde con éxito, nos devolverá un token JWT
+    if (response.data.access_token) {
+      // Guardamos el token en el almacenamiento local del navegador (LocalStorage)
+      localStorage.setItem('river_app_token', response.data.access_token);
+    }
+
+    return response.data;
+  } catch (error: any) {
+    // Si las credenciales son incorrectas, capturamos el error
+    const message = error.response?.data?.message || 'Error al iniciar sesión';
+    throw new Error(message);
+  }
+};
+
+=================================================================
+// ARCHIVO: apps\frontend\src\services\live.service.ts
+=================================================================
+
+import axios from 'axios';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
+export const getLiveDashboard = async () => {
+  try {
+    const res = await axios.get(`${API_URL}/live/dashboard`);
+    return res.data;
+  } catch (error) {
+    console.error('Error fetching live dashboard:', error);
+    return null;
+  }
+};
+
+=================================================================
+// ARCHIVO: apps\frontend\src\services\matches.service.ts
+=================================================================
+
+import axios from 'axios';
+
+export const getLatestMatch = async () => {
+  try {
+    const res = await axios.get('http://localhost:3000/matches/latest');
+    return res.data;
+  } catch (err) {
+    console.error('Error getLatestMatch', err);
+    return null;
+  }
+};
+
+export const getUpcomingMatches = async (limit = 10) => {
+  try {
+    const res = await axios.get(`http://localhost:3000/matches/upcoming?limit=${limit}`);
+    return res.data || [];
+  } catch (err) {
+    console.error('Error getUpcomingMatches', err);
+    return [];
+  }
+};
+
+export const getPastMatches = async (limit = 20) => {
+  try {
+    const res = await axios.get(`http://localhost:3000/matches/past?limit=${limit}`);
+    return res.data || [];
+  } catch (err) {
+    console.error('Error getPastMatches', err);
+    return [];
+  }
+};
+
+=================================================================
+// ARCHIVO: apps\frontend\src\services\news.service.ts
+=================================================================
+
+// apps/frontend/src/services/news.service.ts
+import axios from 'axios';
+
+const API_URL = 'http://localhost:3000/news';
+
+export const getNews = async () => {
+  try {
+    const token = localStorage.getItem('river_app_token');
+    const response = await axios.get(API_URL, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return response.data; // Devuelve la lista de noticias reales
+  } catch (error) {
+    console.error('Error al obtener las noticias de IA:', error);
+    return [];
+  }
+};
+
+=================================================================
+// ARCHIVO: apps\frontend\src\services\players.service.ts
+=================================================================
+
+// apps/frontend/src/services/players.service.ts
+import axios from 'axios';
+
+const API_URL = 'http://localhost:3000/players';
+
+export const getPlayers = async () => {
+  try {
+    const token = localStorage.getItem('river_app_token');
+    const response = await axios.get(API_URL, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return response.data; // Retorna la lista de jugadores reales desde Render
+  } catch (error) {
+    console.error('Error al obtener el plantel:', error);
+    return [];
+  }
+};
+
+=================================================================
+// ARCHIVO: apps\frontend\tailwind.config.js
+=================================================================
+
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
+  theme: {
+    extend: {
+      colors: {
+        riverRed: '#E30613', 
+      }
+    },
+  },
+  plugins: [],
+}
+
+=================================================================
+// ARCHIVO: apps\frontend\vite.config.ts
+=================================================================
+
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [react()],
+})

@@ -1,17 +1,23 @@
 // apps/backend/src/players/players.controller.ts
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
 import { PlayersService } from './players.service';
 import { CreatePlayerDto } from './dto/create-player.dto';
 import { UpdatePlayerDto } from './dto/update-player.dto';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 
-@ApiTags('Players') // Agrupa este controlador bajo 'Players' en Swagger
+@ApiTags('Players')
 @Controller('players')
 export class PlayersController {
   constructor(private readonly playersService: PlayersService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Agregar un nuevo jugador al plantel' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Agregar un nuevo jugador al plantel (admin)' })
   @ApiResponse({ status: 201, description: 'Jugador creado exitosamente.' })
   create(@Body() createPlayerDto: CreatePlayerDto) {
     return this.playersService.create(createPlayerDto);
@@ -30,13 +36,19 @@ export class PlayersController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Actualizar datos de un jugador (posición, camiseta, etc.)' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('editor', 'admin')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Actualizar datos de un jugador (editor/admin)' })
   update(@Param('id') id: string, @Body() updatePlayerDto: UpdatePlayerDto) {
     return this.playersService.update(id, updatePlayerDto);
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Eliminar un jugador del plantel' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Eliminar un jugador del plantel (admin)' })
   remove(@Param('id') id: string) {
     return this.playersService.remove(id);
   }

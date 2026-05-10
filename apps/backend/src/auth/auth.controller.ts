@@ -1,11 +1,14 @@
 // apps/backend/src/auth/auth.controller.ts
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { CurrentUser } from './decorators/current-user.decorator';
+import type { AuthUser } from './decorators/current-user.decorator';
 
-@ApiTags('Auth') // Agrupa este controlador bajo la etiqueta 'Auth' en Swagger
+@ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
@@ -25,5 +28,15 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Credenciales inválidas.' })
   login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
+  }
+
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Obtener el perfil del usuario logueado' })
+  @ApiResponse({ status: 200, description: 'Datos del usuario autenticado.' })
+  @ApiResponse({ status: 401, description: 'Token inválido o expirado.' })
+  me(@CurrentUser() user: AuthUser) {
+    return this.authService.getProfile(user.id);
   }
 }
