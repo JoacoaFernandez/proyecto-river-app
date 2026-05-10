@@ -262,6 +262,12 @@ export default function Home() {
                 </div>
               ))}
             </div>
+            <Link
+              to="/competiciones"
+              className="block text-center w-full mt-4 bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 hover:border-riverRed text-white font-semibold text-xs py-2.5 rounded-xl transition-all"
+            >
+              Ver tabla completa →
+            </Link>
           </section>
 
           {/* 5. Estadísticas Rápidas */}

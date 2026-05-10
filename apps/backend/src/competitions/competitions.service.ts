@@ -1,0 +1,493 @@
+// apps/backend/src/competitions/competitions.service.ts
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import axios from 'axios';
+
+const ESPN_HEADERS = { 'User-Agent': 'Mozilla/5.0 (compatible; RiverAppBot/2.0)' };
+
+export interface CompetitionMeta {
+  code: string;
+  name: string;
+  shortName: string;
+  type: 'league' | 'cup';
+  country: string;
+  /** En las copas internacionales tipo Libertadores no hay tabla unificada */
+  hasStandings: boolean;
+}
+
+export const COMPETITIONS: CompetitionMeta[] = [
+  {
+    code: 'arg.1',
+    name: 'Liga Profesional Argentina',
+    shortName: 'Liga Argentina',
+    type: 'league',
+    country: 'Argentina',
+    hasStandings: true,
+  },
+  {
+    code: 'conmebol.libertadores',
+    name: 'Copa Libertadores',
+    shortName: 'Libertadores',
+    type: 'cup',
+    country: 'Sudamérica',
+    hasStandings: false,
+  },
+  {
+    code: 'conmebol.sudamericana',
+    name: 'Copa Sudamericana',
+    shortName: 'Sudamericana',
+    type: 'cup',
+    country: 'Sudamérica',
+    hasStandings: false,
+  },
+];
+
+export interface StandingRow {
+  pos: number;
+  team: string;
+  teamLogo: string | null;
+  pj: number;
+  pg: number;
+  pe: number;
+  pp: number;
+  gf: number;
+  gc: number;
+  dif: number;
+  pts: number;
+}
+
+export interface StandingsGroup {
+  /** Nombre normalizado, p.ej. "Zona A" / "Zona B" */
+  name: string;
+  /** Identificador corto: "A" / "B" / etc. */
+  key: string;
+  standings: StandingRow[];
+}
+
+export interface PlayoffSeed {
+  team: string;
+  teamLogo: string | null;
+  /** Etiqueta del cruce: "A1", "B8", etc. Vacío para slots derivados (ganador de O1, etc.) */
+  seed: string;
+}
+
+export type PlayoffRound = 'octavos' | 'cuartos' | 'semis' | 'final';
+export type PlayoffStatus = 'pending' | 'scheduled' | 'live' | 'finished';
+
+export interface PlayoffMatch {
+  round: PlayoffRound;
+  /** Posición visual en el bracket */
+  slot: number;
+  home: PlayoffSeed | null;
+  away: PlayoffSeed | null;
+  homeScore: number | null;
+  awayScore: number | null;
+  status: PlayoffStatus;
+  date: string | null;
+  winner: 'home' | 'away' | null;
+}
+
+export interface PlayoffsBracket {
+  format: string;
+  rounds: {
+    octavos: PlayoffMatch[];
+    cuartos: PlayoffMatch[];
+    semis: PlayoffMatch[];
+    final: PlayoffMatch[];
+  };
+}
+
+export interface StandingsResponse {
+  meta: CompetitionMeta;
+  /** Liga arg.1 viene con 2 zonas; otras ligas pueden venir con una sola */
+  groups: StandingsGroup[];
+  /** Sólo se calcula para ligas con formato playoff y 2 zonas */
+  playoffs: PlayoffsBracket | null;
+}
+
+interface EspnPlayoffMatch {
+  homeTeam: string;
+  awayTeam: string;
+  homeScore: number | null;
+  awayScore: number | null;
+  status: PlayoffStatus;
+  date: string;
+  round: PlayoffRound | null;
+}
+
+@Injectable()
+export class CompetitionsService {
+  private readonly logger = new Logger(CompetitionsService.name);
+  private standingsCache = new Map<string, { data: StandingsGroup[]; ts: number }>();
+  private playoffsCache = new Map<string, { data: EspnPlayoffMatch[]; ts: number }>();
+  private readonly TTL = 15 * 60 * 1000;
+
+  list(): CompetitionMeta[] {
+    return COMPETITIONS;
+  }
+
+  findByCode(code: string): CompetitionMeta {
+    const meta = COMPETITIONS.find((c) => c.code === code);
+    if (!meta) {
+      throw new NotFoundException(`Competición desconocida: ${code}`);
+    }
+    return meta;
+  }
+
+  async getStandings(code: string): Promise<StandingsResponse> {
+    const meta = this.findByCode(code);
+
+    if (!meta.hasStandings) {
+      return { meta, groups: [], playoffs: null };
+    }
+
+    const cached = this.standingsCache.get(code);
+    let groups: StandingsGroup[];
+
+    if (cached && Date.now() - cached.ts < this.TTL) {
+      groups = cached.data;
+    } else {
+      groups = await this.fetchGroups(code, cached?.data);
+      if (groups.length > 0) {
+        this.standingsCache.set(code, { data: groups, ts: Date.now() });
+      }
+    }
+
+    const playoffs = code === 'arg.1' ? await this.buildPlayoffsBracket(code, groups) : null;
+    return { meta, groups, playoffs };
+  }
+
+  private async fetchGroups(code: string, fallback?: StandingsGroup[]): Promise<StandingsGroup[]> {
+    try {
+      const url = `https://site.api.espn.com/apis/v2/sports/soccer/${code}/standings`;
+      const res = await axios.get(url, { headers: ESPN_HEADERS, timeout: 10000 });
+
+      const children: any[] = Array.isArray(res.data?.children) ? res.data.children : [];
+
+      if (children.length > 0) {
+        return children
+          .map((child, idx) => this.parseGroup(child, idx))
+          .filter((g) => g.standings.length > 0);
+      }
+
+      const entries: any[] = res.data?.standings?.entries ?? [];
+      if (entries.length > 0) {
+        return [
+          {
+            name: res.data?.name ?? 'Tabla',
+            key: 'main',
+            standings: this.parseEntries(entries),
+          },
+        ];
+      }
+
+      return fallback ?? [];
+    } catch (e: any) {
+      this.logger.warn(`⚠️ ESPN standings [${code}] falló: ${e?.message}`);
+      return fallback ?? [];
+    }
+  }
+
+  private parseGroup(child: any, idx: number): StandingsGroup {
+    const entries: any[] = child?.standings?.entries ?? [];
+    const standings = this.parseEntries(entries);
+    const { name, key } = this.normalizeGroupLabel(child, idx);
+    return { name, key, standings };
+  }
+
+  private normalizeGroupLabel(child: any, idx: number): { name: string; key: string } {
+    const raw: string = child?.name ?? child?.abbreviation ?? '';
+    const match = raw.match(/Group\s+([A-Z0-9]+)/i) ?? raw.match(/Zona\s+([A-Z0-9]+)/i);
+    if (match) {
+      const letter = match[1].toUpperCase();
+      return { name: `Zona ${letter}`, key: letter };
+    }
+    const fallbackKey = String.fromCharCode('A'.charCodeAt(0) + idx);
+    return { name: `Zona ${fallbackKey}`, key: fallbackKey };
+  }
+
+  private parseEntries(entries: any[]): StandingRow[] {
+    return entries
+      .map((e) => {
+        const get = (key: string) => {
+          const stat = e.stats?.find((s: any) => s.name === key || s.type === key);
+          if (!stat) return 0;
+          return typeof stat.value === 'number' ? stat.value : parseInt(stat.displayValue ?? '0', 10);
+        };
+        return {
+          pos: get('rank'),
+          team: e.team?.displayName ?? e.team?.name ?? 'Desconocido',
+          teamLogo: e.team?.logos?.[0]?.href ?? null,
+          pj: get('gamesPlayed'),
+          pg: get('wins'),
+          pe: get('ties'),
+          pp: get('losses'),
+          gf: get('pointsFor'),
+          gc: get('pointsAgainst'),
+          dif: get('pointDifferential'),
+          pts: get('points'),
+        };
+      })
+      .filter((row) => row.team)
+      .sort((a, b) => a.pos - b.pos);
+  }
+
+  /**
+   * Trae los partidos de playoff directamente desde ESPN scoreboard.
+   * El campo `season.type.name` indica la ronda ("Round of 16", "Quarterfinals", etc.)
+   * y nos sirve como fuente de verdad para mapear cada partido a su slot del bracket.
+   */
+  private async fetchPlayoffMatches(code: string): Promise<EspnPlayoffMatch[]> {
+    const cached = this.playoffsCache.get(code);
+    if (cached && Date.now() - cached.ts < this.TTL) {
+      return cached.data;
+    }
+
+    try {
+      // Rango amplio para cubrir octavos → final del Apertura (mayo–agosto)
+      const year = new Date().getUTCFullYear();
+      const from = `${year}0501`;
+      const to = `${year}0831`;
+      const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/${code}/scoreboard?dates=${from}-${to}`;
+      const res = await axios.get(url, { headers: ESPN_HEADERS, timeout: 10000 });
+
+      const events: any[] = Array.isArray(res.data?.events) ? res.data.events : [];
+      const matches: EspnPlayoffMatch[] = [];
+
+      for (const ev of events) {
+        const seasonSlug: string = ev?.season?.slug ?? '';
+        const round = this.parseRoundFromSeason(seasonSlug);
+        if (!round) continue;
+
+        const comp = ev?.competitions?.[0];
+        const competitors = comp?.competitors ?? [];
+        const home = competitors.find((c: any) => c.homeAway === 'home');
+        const away = competitors.find((c: any) => c.homeAway === 'away');
+        if (!home || !away) continue;
+
+        const statusName: string = ev?.status?.type?.name ?? '';
+        const completed: boolean = !!ev?.status?.type?.completed;
+        const status = this.mapStatus(statusName, completed);
+
+        const homeScoreRaw = home.score;
+        const awayScoreRaw = away.score;
+        const hasScore = status === 'finished' || status === 'live';
+        const homeScore = hasScore ? this.parseScore(homeScoreRaw) : null;
+        const awayScore = hasScore ? this.parseScore(awayScoreRaw) : null;
+
+        matches.push({
+          homeTeam: home?.team?.displayName ?? '',
+          awayTeam: away?.team?.displayName ?? '',
+          homeScore,
+          awayScore,
+          status,
+          date: ev?.date ?? '',
+          round,
+        });
+      }
+
+      this.playoffsCache.set(code, { data: matches, ts: Date.now() });
+      return matches;
+    } catch (e: any) {
+      this.logger.warn(`⚠️ ESPN scoreboard playoffs [${code}] falló: ${e?.message}`);
+      return cached?.data ?? [];
+    }
+  }
+
+  /**
+   * El `season.slug` de ESPN identifica la ronda. Ejemplos observados:
+   *   - "torneo-apertura"           → fase regular (no es playoff)
+   *   - "apertura---round-of-16"    → octavos
+   *   - "apertura---quarterfinals"  → cuartos
+   *   - "apertura---semifinals"     → semis
+   *   - "apertura---final"          → final
+   */
+  private parseRoundFromSeason(slug: string): PlayoffRound | null {
+    const s = (slug || '').toLowerCase();
+    if (s.includes('round-of-16') || s.includes('octavos')) return 'octavos';
+    if (s.includes('quarter')) return 'cuartos';
+    if (s.includes('semi')) return 'semis';
+    // "final" sólo si NO es quarter/semi y NO es la fase regular
+    if (s.includes('final') && !s.includes('apertura-final-stage')) return 'final';
+    return null;
+  }
+
+  private mapStatus(statusName: string, completed: boolean): PlayoffStatus {
+    const s = statusName.toUpperCase();
+    if (completed || s === 'STATUS_FULL_TIME' || s === 'STATUS_FINAL') return 'finished';
+    if (
+      s === 'STATUS_IN_PROGRESS' ||
+      s === 'STATUS_HALFTIME' ||
+      s === 'STATUS_FIRST_HALF' ||
+      s === 'STATUS_SECOND_HALF'
+    ) {
+      return 'live';
+    }
+    if (s === 'STATUS_SCHEDULED') return 'scheduled';
+    return 'pending';
+  }
+
+  private parseScore(raw: any): number | null {
+    if (raw == null) return null;
+    if (typeof raw === 'number') return raw;
+    if (typeof raw === 'string') {
+      const n = parseInt(raw, 10);
+      return Number.isNaN(n) ? null : n;
+    }
+    if (typeof raw === 'object') {
+      if (typeof raw.value === 'number') return raw.value;
+      if (typeof raw.displayValue === 'string') {
+        const n = parseInt(raw.displayValue, 10);
+        return Number.isNaN(n) ? null : n;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Construye el bracket completo (octavos → cuartos → semis → final) para Liga Profesional Argentina.
+   *
+   * Cruces inter-zona en octavos:
+   *   1: A1 vs B8       2: A4 vs B5       3: A2 vs B7       4: A3 vs B6
+   *   5: B1 vs A8       6: B4 vs A5       7: B2 vs A7       8: B3 vs A6
+   *
+   * Avance a cuartos:   QF1: O1 vs O2     QF2: O3 vs O4     QF3: O5 vs O6     QF4: O7 vs O8
+   * Avance a semis:     SF1: QF1 vs QF2   SF2: QF3 vs QF4
+   * Final:              F:   SF1 vs SF2
+   *
+   * Para cada slot tratamos de matchear contra ESPN scoreboard filtrando por la ronda
+   * que indica `season.type.name`. Si encontramos el partido, atamos los goles
+   * y, si está finalizado, calculamos el ganador y lo proyectamos a la siguiente ronda.
+   */
+  private async buildPlayoffsBracket(
+    code: string,
+    groups: StandingsGroup[],
+  ): Promise<PlayoffsBracket | null> {
+    const zonaA = groups.find((g) => g.key === 'A');
+    const zonaB = groups.find((g) => g.key === 'B');
+    if (!zonaA || !zonaB) return null;
+    if (zonaA.standings.length < 8 || zonaB.standings.length < 8) return null;
+
+    const playoffMatches = await this.fetchPlayoffMatches(code);
+
+    const seedFromZone = (group: StandingsGroup, pos: number): PlayoffSeed | null => {
+      const row = group.standings[pos - 1];
+      if (!row) return null;
+      return { team: row.team, teamLogo: row.teamLogo, seed: `${group.key}${pos}` };
+    };
+
+    const buildMatch = (
+      round: PlayoffRound,
+      slot: number,
+      home: PlayoffSeed | null,
+      away: PlayoffSeed | null,
+    ): PlayoffMatch => {
+      const espnMatch =
+        home && away ? this.findEspnMatch(home.team, away.team, round, playoffMatches) : null;
+
+      if (!espnMatch) {
+        return {
+          round,
+          slot,
+          home,
+          away,
+          homeScore: null,
+          awayScore: null,
+          status: 'pending',
+          date: null,
+          winner: null,
+        };
+      }
+
+      // Si ESPN tiene el partido invertido, alineamos a (home, away) según el seed pedido
+      const flipped = this.normalize(espnMatch.homeTeam) !== this.normalize(home!.team);
+      const homeScore = flipped ? espnMatch.awayScore : espnMatch.homeScore;
+      const awayScore = flipped ? espnMatch.homeScore : espnMatch.awayScore;
+
+      const winner =
+        espnMatch.status === 'finished' && homeScore != null && awayScore != null
+          ? homeScore > awayScore
+            ? 'home'
+            : awayScore > homeScore
+              ? 'away'
+              : null
+          : null;
+
+      return {
+        round,
+        slot,
+        home,
+        away,
+        homeScore: homeScore ?? null,
+        awayScore: awayScore ?? null,
+        status: espnMatch.status,
+        date: espnMatch.date || null,
+        winner,
+      };
+    };
+
+    const winnerSeed = (m: PlayoffMatch | undefined): PlayoffSeed | null => {
+      if (!m || !m.winner) return null;
+      return m.winner === 'home' ? m.home : m.away;
+    };
+
+    // Octavos — orden oficial AFA / promiedos
+    // Las parejas son cruces inter-zona; lo que cambia es la ubicación visual,
+    // que determina cómo se conectan los ganadores con cuartos/semis/final.
+    const octavos: PlayoffMatch[] = [
+      buildMatch('octavos', 1, seedFromZone(zonaA, 1), seedFromZone(zonaB, 8)), // A1 vs B8
+      buildMatch('octavos', 2, seedFromZone(zonaB, 4), seedFromZone(zonaA, 5)), // B4 vs A5
+      buildMatch('octavos', 3, seedFromZone(zonaB, 2), seedFromZone(zonaA, 7)), // B2 vs A7  (River)
+      buildMatch('octavos', 4, seedFromZone(zonaA, 3), seedFromZone(zonaB, 6)), // A3 vs B6
+      buildMatch('octavos', 5, seedFromZone(zonaB, 1), seedFromZone(zonaA, 8)), // B1 vs A8
+      buildMatch('octavos', 6, seedFromZone(zonaA, 4), seedFromZone(zonaB, 5)), // A4 vs B5
+      buildMatch('octavos', 7, seedFromZone(zonaA, 2), seedFromZone(zonaB, 7)), // A2 vs B7
+      buildMatch('octavos', 8, seedFromZone(zonaB, 3), seedFromZone(zonaA, 6)), // B3 vs A6
+    ];
+
+    // Cuartos: O1∪O2, O3∪O4, O5∪O6, O7∪O8
+    const cuartos: PlayoffMatch[] = [
+      buildMatch('cuartos', 1, winnerSeed(octavos[0]), winnerSeed(octavos[1])),
+      buildMatch('cuartos', 2, winnerSeed(octavos[2]), winnerSeed(octavos[3])),
+      buildMatch('cuartos', 3, winnerSeed(octavos[4]), winnerSeed(octavos[5])),
+      buildMatch('cuartos', 4, winnerSeed(octavos[6]), winnerSeed(octavos[7])),
+    ];
+
+    // Semis: QF1∪QF2, QF3∪QF4
+    const semis: PlayoffMatch[] = [
+      buildMatch('semis', 1, winnerSeed(cuartos[0]), winnerSeed(cuartos[1])),
+      buildMatch('semis', 2, winnerSeed(cuartos[2]), winnerSeed(cuartos[3])),
+    ];
+
+    // Final: SF1∪SF2
+    const final: PlayoffMatch[] = [
+      buildMatch('final', 1, winnerSeed(semis[0]), winnerSeed(semis[1])),
+    ];
+
+    return {
+      format: 'Octavos a partido único · cruces inter-zona (Top 8 de cada Zona)',
+      rounds: { octavos, cuartos, semis, final },
+    };
+  }
+
+  private findEspnMatch(
+    teamA: string,
+    teamB: string,
+    round: PlayoffRound,
+    matches: EspnPlayoffMatch[],
+  ): EspnPlayoffMatch | null {
+    const a = this.normalize(teamA);
+    const b = this.normalize(teamB);
+    return (
+      matches.find((m) => {
+        if (m.round !== round) return false;
+        const home = this.normalize(m.homeTeam);
+        const away = this.normalize(m.awayTeam);
+        return (home === a && away === b) || (home === b && away === a);
+      }) ?? null
+    );
+  }
+
+  private normalize(s: string): string {
+    return (s || '').toLowerCase().trim();
+  }
+}

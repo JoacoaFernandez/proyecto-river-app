@@ -7,6 +7,7 @@ import { MatchesModule } from './matches/matches.module';
 import { NewsModule } from './news/news.module';
 import { PlayersModule } from './players/players.module';
 import { FormationsModule } from './formations/formations.module';
+import { CompetitionsModule } from './competitions/competitions.module';
 import { LiveApiModule } from './live-api.module';
 
 @Module({
@@ -19,6 +20,7 @@ import { LiveApiModule } from './live-api.module';
     NewsModule,
     PlayersModule,
     FormationsModule,
+    CompetitionsModule,
     LiveApiModule,
   ],
   controllers: [],
