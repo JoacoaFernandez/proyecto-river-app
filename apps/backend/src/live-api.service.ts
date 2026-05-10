@@ -4,6 +4,28 @@ import { MatchesService } from './matches/matches.service';
 
 const ESPN_HEADERS = { 'User-Agent': 'Mozilla/5.0 (compatible; RiverAppBot/2.0)' };
 
+export interface ScoringPlay {
+  team: string;
+  scorer: string;
+  minute: string;
+  period: number;
+  type: 'goal' | 'own-goal' | 'penalty';
+}
+
+export interface LiveMatchPayload {
+  id: string;
+  status: 'pre' | 'in' | 'post';
+  displayClock: string;
+  period: number;
+  homeTeam: string;
+  awayTeam: string;
+  homeScore: number;
+  awayScore: number;
+  competition: string;
+  venue: string;
+  scoringPlays: ScoringPlay[];
+}
+
 @Injectable()
 export class LiveApiService {
   private readonly logger = new Logger(LiveApiService.name);
@@ -147,5 +169,76 @@ export class LiveApiService {
     if (w >= 3) return `${w} victorias en ${form.length} PJ`;
     if (form.includes('L')) return 'Irregular';
     return 'Estable';
+  }
+
+  // ── Live match (sin caché — se llama cada 30s desde el Gateway) ───────────
+
+  async getLiveMatch(): Promise<LiveMatchPayload | null> {
+    try {
+      const res = await axios.get(
+        'https://site.api.espn.com/apis/v2/sports/soccer/arg.1/scoreboard',
+        { headers: ESPN_HEADERS, timeout: 8000 },
+      );
+
+      const events: any[] = res.data?.events ?? [];
+
+      const liveEvent = events.find((ev) => {
+        const state: string = ev.status?.type?.state ?? '';
+        const competitors: any[] = ev.competitions?.[0]?.competitors ?? [];
+        const hasRiver = competitors.some((c) =>
+          /river plate/i.test(c.team?.displayName ?? ''),
+        );
+        return hasRiver && state === 'in';
+      });
+
+      if (!liveEvent) return null;
+
+      const summary = await axios.get(
+        `https://site.api.espn.com/apis/site/v2/sports/soccer/arg.1/summary?event=${liveEvent.id}`,
+        { headers: ESPN_HEADERS, timeout: 8000 },
+      );
+
+      return this.parseLiveMatch(liveEvent, summary.data);
+    } catch (e: any) {
+      this.logger.warn(`getLiveMatch falló: ${e?.message}`);
+      return null;
+    }
+  }
+
+  private parseLiveMatch(event: any, summary: any): LiveMatchPayload {
+    const comp = event.competitions?.[0] ?? {};
+    const competitors: any[] = comp.competitors ?? [];
+    const home = competitors.find((c) => c.homeAway === 'home') ?? competitors[0] ?? {};
+    const away = competitors.find((c) => c.homeAway === 'away') ?? competitors[1] ?? {};
+
+    const scoringPlays: ScoringPlay[] = (summary.scoringPlays ?? []).map((sp: any) => {
+      const typeText: string = (sp.type?.text ?? '').toLowerCase();
+      const type: ScoringPlay['type'] =
+        typeText.includes('own') ? 'own-goal' :
+        typeText.includes('penalty') ? 'penalty' :
+        'goal';
+
+      return {
+        team: sp.team?.displayName ?? '',
+        scorer: sp.participants?.[0]?.athlete?.displayName ?? sp.text ?? '',
+        minute: sp.clock?.displayValue ?? '',
+        period: sp.period?.number ?? 1,
+        type,
+      };
+    });
+
+    return {
+      id: event.id,
+      status: event.status?.type?.state ?? 'in',
+      displayClock: event.status?.displayClock ?? '',
+      period: event.status?.period ?? 1,
+      homeTeam: home.team?.displayName ?? '',
+      awayTeam: away.team?.displayName ?? '',
+      homeScore: parseInt(home.score ?? '0', 10),
+      awayScore: parseInt(away.score ?? '0', 10),
+      competition: event.competitions?.[0]?.type?.text ?? event.name ?? '',
+      venue: comp.venue?.fullName ?? '',
+      scoringPlays,
+    };
   }
 }

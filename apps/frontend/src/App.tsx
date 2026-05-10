@@ -6,10 +6,12 @@ import Plantel from './pages/Plantel';
 import JugadorDetalle from './pages/JugadorDetalle';
 import Partidos from './pages/Partidos';
 import ProximoPartido from './pages/ProximoPartido';
+import PartidoEnVivo from './pages/PartidoEnVivo';
 import Noticias from './pages/Noticias';
 import NoticiaDetalle from './pages/NoticiaDetalle';
 import Estadisticas from './pages/Estadisticas';
 import Competiciones from './pages/Competiciones';
+import Historia from './pages/Historia';
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminNoticias from './pages/admin/AdminNoticias';
@@ -45,12 +47,14 @@ export default function App() {
           <Route index element={<Home />} />
           <Route path="partidos" element={<Partidos />} />
           <Route path="partidos/proximo" element={<ProximoPartido />} />
+          <Route path="partidos/en-vivo" element={<PartidoEnVivo />} />
           <Route path="plantel" element={<Plantel />} />
           <Route path="plantel/:id" element={<JugadorDetalle />} />
           <Route path="noticias" element={<Noticias />} />
           <Route path="noticias/:id" element={<NoticiaDetalle />} />
           <Route path="estadisticas" element={<Estadisticas />} />
           <Route path="competiciones" element={<Competiciones />} />
+          <Route path="historia" element={<Historia />} />
           <Route path="mas" element={<ComingSoon title="Más" />} />
         </Route>
 
