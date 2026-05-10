@@ -1,7 +1,9 @@
 // apps/frontend/src/components/Layout.tsx
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { clearCurrentUser, getCurrentUser } from '../services/me.service';
 
-const navItems = [
+const baseNavItems = [
   { to: '/', label: 'Inicio', icon: '🏟️', end: true },
   { to: '/partidos', label: 'Partidos', icon: '⚽', end: false },
   { to: '/plantel', label: 'Plantel', icon: '🏃‍♂️', end: false },
@@ -9,11 +11,21 @@ const navItems = [
   { to: '/mas', label: 'Más', icon: '≡', end: false },
 ];
 
+const adminNavItem = { to: '/admin', label: 'Admin', icon: '⚙️', end: false };
+
 export default function Layout() {
   const navigate = useNavigate();
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    getCurrentUser().then((u) => setIsAdmin(u?.role === 'admin'));
+  }, []);
+
+  const navItems = isAdmin ? [...baseNavItems, adminNavItem] : baseNavItems;
 
   const handleLogout = () => {
     localStorage.removeItem('river_app_token');
+    clearCurrentUser();
     navigate('/login', { replace: true });
   };
 

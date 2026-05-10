@@ -8,8 +8,13 @@ import Partidos from './pages/Partidos';
 import ProximoPartido from './pages/ProximoPartido';
 import Noticias from './pages/Noticias';
 import NoticiaDetalle from './pages/NoticiaDetalle';
+import AdminLayout from './pages/admin/AdminLayout';
+import AdminDashboard from './pages/admin/AdminDashboard';
+import AdminNoticias from './pages/admin/AdminNoticias';
+import AdminPlantel from './pages/admin/AdminPlantel';
 import Layout from './components/Layout';
 import RequireAuth from './components/RequireAuth';
+import RequireAdmin from './components/RequireAdmin';
 
 function ComingSoon({ title }: { title: string }) {
   return (
@@ -27,6 +32,7 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
 
+        {/* App pública (autenticada) */}
         <Route
           element={
             <RequireAuth>
@@ -42,6 +48,22 @@ export default function App() {
           <Route path="noticias" element={<Noticias />} />
           <Route path="noticias/:id" element={<NoticiaDetalle />} />
           <Route path="mas" element={<ComingSoon title="Más" />} />
+        </Route>
+
+        {/* Panel de administración (admin only) */}
+        <Route
+          path="/admin"
+          element={
+            <RequireAuth>
+              <RequireAdmin>
+                <AdminLayout />
+              </RequireAdmin>
+            </RequireAuth>
+          }
+        >
+          <Route index element={<AdminDashboard />} />
+          <Route path="noticias" element={<AdminNoticias />} />
+          <Route path="plantel" element={<AdminPlantel />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />
