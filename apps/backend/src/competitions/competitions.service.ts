@@ -29,7 +29,7 @@ export const COMPETITIONS: CompetitionMeta[] = [
     shortName: 'Libertadores',
     type: 'cup',
     country: 'Sudamérica',
-    hasStandings: false,
+    hasStandings: true,
   },
   {
     code: 'conmebol.sudamericana',
@@ -37,7 +37,7 @@ export const COMPETITIONS: CompetitionMeta[] = [
     shortName: 'Sudamericana',
     type: 'cup',
     country: 'Sudamérica',
-    hasStandings: false,
+    hasStandings: true,
   },
 ];
 
@@ -152,7 +152,12 @@ export class CompetitionsService {
       }
     }
 
-    const playoffs = code === 'arg.1' ? await this.buildPlayoffsBracket(code, groups) : null;
+    let playoffs: PlayoffsBracket | null = null;
+    if (code === 'arg.1') {
+      playoffs = await this.buildPlayoffsBracket(code, groups);
+    } else if (code === 'conmebol.libertadores' || code === 'conmebol.sudamericana') {
+      playoffs = await this.buildCopaBracket(code);
+    }
     return { meta, groups, playoffs };
   }
 
@@ -196,9 +201,14 @@ export class CompetitionsService {
 
   private normalizeGroupLabel(child: any, idx: number): { name: string; key: string } {
     const raw: string = child?.name ?? child?.abbreviation ?? '';
-    const match = raw.match(/Group\s+([A-Z0-9]+)/i) ?? raw.match(/Zona\s+([A-Z0-9]+)/i);
-    if (match) {
-      const letter = match[1].toUpperCase();
+    const matchGroup = raw.match(/Group\s+([A-Z0-9]+)/i);
+    if (matchGroup) {
+      const letter = matchGroup[1].toUpperCase();
+      return { name: `Grupo ${letter}`, key: letter };
+    }
+    const matchZona = raw.match(/Zona\s+([A-Z0-9]+)/i);
+    if (matchZona) {
+      const letter = matchZona[1].toUpperCase();
       return { name: `Zona ${letter}`, key: letter };
     }
     const fallbackKey = String.fromCharCode('A'.charCodeAt(0) + idx);
@@ -243,10 +253,10 @@ export class CompetitionsService {
     }
 
     try {
-      // Rango amplio para cubrir octavos → final del Apertura (mayo–agosto)
       const year = new Date().getUTCFullYear();
       const from = `${year}0501`;
-      const to = `${year}0831`;
+      // Copa Libertadores/Sudamericana finales llegan hasta noviembre
+      const to = code === 'arg.1' ? `${year}0831` : `${year}1231`;
       const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/${code}/scoreboard?dates=${from}-${to}`;
       const res = await axios.get(url, { headers: ESPN_HEADERS, timeout: 10000 });
 
@@ -303,7 +313,7 @@ export class CompetitionsService {
    */
   private parseRoundFromSeason(slug: string): PlayoffRound | null {
     const s = (slug || '').toLowerCase();
-    if (s.includes('round-of-16') || s.includes('octavos')) return 'octavos';
+    if (s.includes('round-of-16') || s.includes('octavos') || s.includes('knockout-round-playoff')) return 'octavos';
     if (s.includes('quarter')) return 'cuartos';
     if (s.includes('semi')) return 'semis';
     // "final" sólo si NO es quarter/semi y NO es la fase regular
@@ -489,5 +499,121 @@ export class CompetitionsService {
 
   private normalize(s: string): string {
     return (s || '').toLowerCase().trim();
+  }
+
+  /**
+   * Bracket de eliminatorias para Copa Libertadores / Copa Sudamericana.
+   * Intenta poblar los cruces desde ESPN scoreboard; si aún estamos en fase
+   * de grupos, todos los slots aparecen como "A confirmar" (pending).
+   * Los partidos son a doble partido (ida y vuelta); se muestra marcador agregado.
+   */
+  private async buildCopaBracket(code: string): Promise<PlayoffsBracket | null> {
+    const espnMatches = await this.fetchPlayoffMatches(code);
+
+    const byRound = (round: PlayoffRound) => espnMatches.filter((m) => m.round === round);
+
+    const r16 = byRound('octavos');
+    const qf = byRound('cuartos');
+    const sf = byRound('semis');
+    const fin = byRound('final');
+
+    const hasKnockout = r16.length > 0 || qf.length > 0 || sf.length > 0 || fin.length > 0;
+    const format = hasKnockout
+      ? 'Round of 16 a doble partido · marcador agregado'
+      : 'Round of 16 · Cruces a definir al término de la fase de grupos';
+
+    return {
+      format,
+      rounds: {
+        octavos: this.buildTies(r16, 8, 'octavos'),
+        cuartos: this.buildTies(qf, 4, 'cuartos'),
+        semis: this.buildTies(sf, 2, 'semis'),
+        final: this.buildTies(fin, 1, 'final'),
+      },
+    };
+  }
+
+  /**
+   * Agrupa hasta `count` partidos de doble vuelta (pares de ida+vuelta) en PlayoffMatch[]
+   * mostrando el marcador agregado cuando ambos partidos están terminados.
+   */
+  private buildTies(
+    espnMatches: EspnPlayoffMatch[],
+    count: number,
+    round: PlayoffRound,
+  ): PlayoffMatch[] {
+    // Agrupa por par de equipos (clave ordenada para capturar ida y vuelta)
+    const tieMap = new Map<string, EspnPlayoffMatch[]>();
+    for (const m of espnMatches) {
+      const key = [this.normalize(m.homeTeam), this.normalize(m.awayTeam)].sort().join('|');
+      const arr = tieMap.get(key) ?? [];
+      arr.push(m);
+      tieMap.set(key, arr);
+    }
+
+    const result: PlayoffMatch[] = [];
+    let slot = 1;
+
+    for (const legs of tieMap.values()) {
+      if (result.length >= count) break;
+      const first = legs[0];
+
+      // Suma marcadores normalizando al equipo "home" del primer partido
+      let homeAgg = 0;
+      let awayAgg = 0;
+      let legsPlayed = 0;
+
+      for (const leg of legs) {
+        if (leg.homeScore == null || leg.awayScore == null) continue;
+        const flipped = this.normalize(leg.homeTeam) !== this.normalize(first.homeTeam);
+        homeAgg += flipped ? leg.awayScore : leg.homeScore;
+        awayAgg += flipped ? leg.homeScore : leg.awayScore;
+        legsPlayed++;
+      }
+
+      const bothDone = legs.length >= 2 && legs.every((l) => l.status === 'finished');
+      const status: PlayoffStatus = bothDone
+        ? 'finished'
+        : legsPlayed > 0
+          ? 'scheduled'
+          : first.status;
+
+      const winner: 'home' | 'away' | null = bothDone
+        ? homeAgg > awayAgg
+          ? 'home'
+          : awayAgg > homeAgg
+            ? 'away'
+            : null
+        : null;
+
+      result.push({
+        round,
+        slot: slot++,
+        home: { team: first.homeTeam, teamLogo: null, seed: '' },
+        away: { team: first.awayTeam, teamLogo: null, seed: '' },
+        homeScore: legsPlayed > 0 ? homeAgg : null,
+        awayScore: legsPlayed > 0 ? awayAgg : null,
+        status,
+        date: first.date,
+        winner,
+      });
+    }
+
+    // Rellena los slots vacíos (fase de grupos aún en curso)
+    while (result.length < count) {
+      result.push({
+        round,
+        slot: slot++,
+        home: null,
+        away: null,
+        homeScore: null,
+        awayScore: null,
+        status: 'pending',
+        date: null,
+        winner: null,
+      });
+    }
+
+    return result;
   }
 }
