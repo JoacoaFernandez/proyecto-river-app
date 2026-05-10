@@ -8,7 +8,7 @@ const baseNavItems = [
   { to: '/partidos', label: 'Partidos', icon: '⚽', end: false },
   { to: '/plantel', label: 'Plantel', icon: '🏃‍♂️', end: false },
   { to: '/noticias', label: 'Noticias', icon: '📰', end: false },
-  { to: '/mas', label: 'Más', icon: '≡', end: false },
+  { to: '/historia', label: 'Historia', icon: '🏅', end: false },
 ];
 
 const adminNavItem = { to: '/admin', label: 'Admin', icon: '⚙️', end: false };
