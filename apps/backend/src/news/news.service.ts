@@ -1,5 +1,5 @@
 // apps/backend/src/news/news.service.ts
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateNewsDto } from './dto/create-news.dto';
 import { UpdateNewsDto } from './dto/update-news.dto';
@@ -56,7 +56,8 @@ export class NewsService {
         category: createNewsDto.category || 'Actualidad',
         status: createNewsDto.status || 'published',
         slug,
-        authorId: createNewsDto.authorId || author.id, // <-- ¡Solución definitiva a la fkey obligatoria!
+        imageUrl: createNewsDto.imageUrl || null,
+        authorId: createNewsDto.authorId || author.id,
       },
     });
   }
@@ -120,5 +121,61 @@ export class NewsService {
     return this.prisma.news.delete({
       where: { id },
     });
+  }
+
+  // ── COMENTARIOS ──────────────────────────────────────────────────────────────
+
+  async getComments(newsId: string) {
+    await this.findOne(newsId);
+    return this.prisma.comment.findMany({
+      where: { newsId },
+      orderBy: { createdAt: 'asc' },
+      include: {
+        user: { select: { id: true, display_name: true, avatar_url: true } },
+      },
+    });
+  }
+
+  async addComment(newsId: string, userId: string, body: string) {
+    await this.findOne(newsId);
+    return this.prisma.comment.create({
+      data: { newsId, userId, body },
+      include: {
+        user: { select: { id: true, display_name: true, avatar_url: true } },
+      },
+    });
+  }
+
+  async removeComment(commentId: string, userId: string, userRole: string) {
+    const comment = await this.prisma.comment.findUnique({ where: { id: commentId } });
+    if (!comment) throw new NotFoundException('Comentario no encontrado.');
+    if (comment.userId !== userId && userRole !== 'admin') {
+      throw new ForbiddenException('No podés eliminar este comentario.');
+    }
+    return this.prisma.comment.delete({ where: { id: commentId } });
+  }
+
+  // ── LIKES ─────────────────────────────────────────────────────────────────────
+
+  async toggleLike(newsId: string, userId: string) {
+    await this.findOne(newsId);
+    const existing = await this.prisma.newsLike.findUnique({
+      where: { newsId_userId: { newsId, userId } },
+    });
+    if (existing) {
+      await this.prisma.newsLike.delete({ where: { newsId_userId: { newsId, userId } } });
+    } else {
+      await this.prisma.newsLike.create({ data: { newsId, userId } });
+    }
+    const count = await this.prisma.newsLike.count({ where: { newsId } });
+    return { liked: !existing, count };
+  }
+
+  async getLikeStatus(newsId: string, userId: string | null) {
+    const count = await this.prisma.newsLike.count({ where: { newsId } });
+    const liked = userId
+      ? !!(await this.prisma.newsLike.findUnique({ where: { newsId_userId: { newsId, userId } } }))
+      : false;
+    return { liked, count };
   }
 }

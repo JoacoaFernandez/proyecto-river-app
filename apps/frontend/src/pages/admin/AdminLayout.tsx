@@ -5,6 +5,7 @@ import { clearCurrentUser, getCurrentUser, type CurrentUser } from '../../servic
 
 const navItems = [
   { to: '/admin', label: 'Dashboard', icon: '📊', end: true },
+  { to: '/admin/partidos', label: 'Partidos', icon: '⚽', end: false },
   { to: '/admin/noticias', label: 'Noticias', icon: '📰', end: false },
   { to: '/admin/plantel', label: 'Plantel', icon: '🏃', end: false },
 ];
