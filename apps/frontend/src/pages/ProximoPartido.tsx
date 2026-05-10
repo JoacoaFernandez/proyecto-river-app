@@ -2,8 +2,96 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getLiveDashboard } from '../services/live.service';
+import { getLineup, type LineupResponse } from '../services/formations.service';
+import CanchaTactica from '../components/CanchaTactica';
 
 type Pred = 'home' | 'draw' | 'away' | null;
+
+function FormacionSection() {
+  const [data, setData] = useState<LineupResponse | null>(null);
+  const [scheme, setScheme] = useState('4-3-3');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    getLineup(scheme)
+      .then((d) => setData(d))
+      .finally(() => setLoading(false));
+  }, [scheme]);
+
+  const schemes = data?.schemes ?? ['4-3-3', '4-4-2', '4-2-3-1', '3-5-2', '3-4-3', '5-3-2'];
+
+  return (
+    <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest">
+            Formación probable
+          </h3>
+          <p className="text-[11px] text-neutral-500 mt-0.5">
+            XI derivado del plantel actual. La alineación oficial se confirma antes del partido.
+          </p>
+        </div>
+        <div className="flex gap-1.5 flex-wrap">
+          {schemes.map((s) => (
+            <button
+              key={s}
+              onClick={() => setScheme(s)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold tabular-nums transition-all ${
+                scheme === s
+                  ? 'bg-riverRed text-white shadow-md shadow-red-900/30'
+                  : 'bg-neutral-950 text-neutral-400 border border-neutral-800 hover:border-riverRed hover:text-white'
+              }`}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-riverRed" />
+        </div>
+      ) : !data || data.lineup.length === 0 ? (
+        <p className="text-neutral-500 text-sm text-center py-8">
+          No se pudo cargar la formación.
+        </p>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4 items-start">
+          <div className="max-w-md mx-auto lg:max-w-none">
+            <CanchaTactica data={data} />
+          </div>
+          <div className="bg-neutral-950 border border-neutral-800 rounded-xl p-3 space-y-2">
+            <h4 className="text-[10px] uppercase tracking-widest text-neutral-500 font-bold pb-2 border-b border-neutral-800">
+              Suplentes
+            </h4>
+            {data.bench.length === 0 ? (
+              <p className="text-xs text-neutral-500">Sin suplentes disponibles.</p>
+            ) : (
+              <ul className="space-y-1 text-xs max-h-[480px] overflow-y-auto">
+                {data.bench.map((p) => (
+                  <li
+                    key={p.id}
+                    className="flex items-center gap-2 py-1 border-b border-neutral-800/50 last:border-0"
+                  >
+                    <span className="w-6 text-center font-bold tabular-nums text-neutral-500">
+                      {p.number ?? '–'}
+                    </span>
+                    <span className="flex-1 truncate text-neutral-300">{p.name}</span>
+                    <span className="text-[9px] uppercase tracking-wider text-neutral-600">
+                      {p.position.slice(0, 3)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
 
 export default function ProximoPartido() {
   const [match, setMatch] = useState<any>(null);
@@ -215,11 +303,8 @@ export default function ProximoPartido() {
         </div>
       </section>
 
-      {/* Placeholders de secciones que vendrán */}
-      <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 opacity-60">
-        <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-2">Formación probable</h3>
-        <p className="text-sm text-neutral-500">🚧 Próximamente: la cancha interactiva con la alineación.</p>
-      </section>
+      {/* Formación probable: cancha SVG con XI titular */}
+      <FormacionSection />
 
       <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 opacity-60">
         <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-2">Historial vs {rival}</h3>

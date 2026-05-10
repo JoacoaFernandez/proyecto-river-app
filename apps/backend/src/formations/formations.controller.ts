@@ -1,5 +1,5 @@
 // apps/backend/src/formations/formations.controller.ts
-import { Controller, Get, Post, Body, Param, Delete, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Delete, Query, UseGuards } from '@nestjs/common';
 import { FormationsService } from './formations.service';
 import { CreateFormationDto } from './dto/create-formation.dto';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -20,6 +20,14 @@ export class FormationsController {
   @ApiResponse({ status: 201, description: 'Formación creada con éxito.' })
   create(@Body() createFormationDto: CreateFormationDto) {
     return this.formationsService.create(createFormationDto);
+  }
+
+  @Get('lineup')
+  @ApiOperation({
+    summary: 'Obtener el XI titular probable de River sobre la cancha (auto-derivado del plantel)',
+  })
+  lineup(@Query('scheme') scheme?: string) {
+    return this.formationsService.getLineup(scheme);
   }
 
   @Get()
