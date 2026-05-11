@@ -1,6 +1,7 @@
 // apps/frontend/src/pages/NoticiaDetalle.tsx
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { Heart, Share2, FileText, Inbox, ExternalLink } from 'lucide-react';
 import {
   addComment,
   deleteComment,
@@ -111,7 +112,9 @@ export default function NoticiaDetalle() {
   if (!news) {
     return (
       <div className="max-w-3xl mx-auto px-4 mt-12 text-center">
-        <div className="text-6xl mb-4">📭</div>
+        <div className="w-16 h-16 rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-center mx-auto mb-4">
+          <Inbox className="w-7 h-7 text-neutral-500" />
+        </div>
         <h2 className="text-xl font-bold mb-2">Noticia no encontrada</h2>
         <p className="text-neutral-400 mb-6">No pudimos encontrar esa nota.</p>
         <Link to="/noticias" className="text-riverRed font-semibold hover:underline">
@@ -136,6 +139,31 @@ export default function NoticiaDetalle() {
     .filter(Boolean);
   const bodyParagraphs = paragraphs.length > 1 ? paragraphs : [news.body.trim()];
 
+  function extractYouTubeId(text: string): string | null {
+    const m = text.match(
+      /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{11})/,
+    );
+    return m ? m[1] : null;
+  }
+
+  function renderParagraph(p: string, idx: number) {
+    const ytId = extractYouTubeId(p);
+    if (ytId) {
+      return (
+        <div key={idx} className="aspect-video rounded-2xl overflow-hidden border border-neutral-800">
+          <iframe
+            src={`https://www.youtube.com/embed/${ytId}`}
+            title="Video"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+            className="w-full h-full"
+          />
+        </div>
+      );
+    }
+    return <p key={idx}>{p}</p>;
+  }
+
   return (
     <div className="max-w-3xl mx-auto px-4 mt-6 pb-12">
       {/* Breadcrumb */}
@@ -155,7 +183,7 @@ export default function NoticiaDetalle() {
           />
         ) : (
           <div className="aspect-[16/9] bg-gradient-to-br from-red-950/30 via-neutral-900 to-neutral-950 flex items-center justify-center border-b border-neutral-800">
-            <span className="text-8xl opacity-30">📰</span>
+            <FileText className="w-16 h-16 text-neutral-700" />
           </div>
         )}
 
@@ -195,23 +223,22 @@ export default function NoticiaDetalle() {
                 }`}
                 title={me ? undefined : 'Iniciá sesión para dar like'}
               >
-                {liked ? '❤️' : '🤍'} {likeCount > 0 && <span>{likeCount}</span>}
+                <Heart className={`w-3.5 h-3.5 ${liked ? 'fill-current' : ''}`} />
+                {likeCount > 0 && <span>{likeCount}</span>}
               </button>
               {/* Compartir */}
               <button
                 onClick={handleShare}
                 className="bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 hover:border-riverRed text-xs px-4 py-2 rounded-xl transition-all flex items-center gap-2"
               >
-                {shared ? '✓ Copiado' : '🔗 Compartir'}
+                {shared ? '✓ Copiado' : <><Share2 className="w-3.5 h-3.5" /> Compartir</>}
               </button>
             </div>
           </div>
 
           {/* Cuerpo */}
           <div className="space-y-4 text-[15px] leading-relaxed text-neutral-200">
-            {bodyParagraphs.map((p, idx) => (
-              <p key={idx}>{p}</p>
-            ))}
+            {bodyParagraphs.map((p, idx) => renderParagraph(p, idx))}
           </div>
 
           {/* Link a la fuente original */}
@@ -223,7 +250,7 @@ export default function NoticiaDetalle() {
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 bg-neutral-950 hover:bg-riverRed border border-neutral-800 hover:border-riverRed text-sm font-semibold px-5 py-3 rounded-xl transition-all"
               >
-                Leer la nota original ↗
+                Leer la nota original <ExternalLink className="w-4 h-4" />
               </a>
               <p className="text-[11px] text-neutral-500 mt-2">
                 Esta nota fue importada desde Diario Olé.

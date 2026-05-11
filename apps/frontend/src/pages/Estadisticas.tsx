@@ -1,6 +1,7 @@
 // apps/frontend/src/pages/Estadisticas.tsx
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { User } from 'lucide-react';
 import { getLiveDashboard } from '../services/live.service';
 import { getPastMatches } from '../services/matches.service';
 import { getLeaderboard, type LeaderboardEntry } from '../services/players.service';
@@ -313,6 +314,20 @@ export default function Estadisticas() {
         </section>
       )}
 
+      {/* Comparador */}
+      <Link
+        to="/comparador"
+        className="flex items-center justify-between bg-neutral-900 border border-neutral-800 hover:border-riverRed rounded-2xl p-5 transition-all group"
+      >
+        <div>
+          <div className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-1">Comparador de jugadores</div>
+          <div className="text-sm text-neutral-300 group-hover:text-white transition-colors">
+            Comparar estadísticas cara a cara entre dos jugadores del plantel
+          </div>
+        </div>
+        <span className="text-riverRed font-bold text-lg ml-4">→</span>
+      </Link>
+
       {/* Goleadores */}
       <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
         <div className="flex items-center justify-between mb-4">
@@ -355,7 +370,7 @@ export default function Estadisticas() {
                         onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                       />
                     ) : (
-                      <span className="text-neutral-600 text-xs">⚽</span>
+                      <User className="w-4 h-4 text-neutral-600" />
                     )}
                   </div>
                   <div className="flex-1 min-w-0">

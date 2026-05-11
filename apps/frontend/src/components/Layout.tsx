@@ -1,6 +1,10 @@
 // apps/frontend/src/components/Layout.tsx
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
+import {
+  Home, Calendar, Users, Newspaper, BookOpen, Settings, User,
+  Download, Bell, BellOff, LogOut,
+} from 'lucide-react';
 import { clearCurrentUser, getCurrentUser } from '../services/me.service';
 import type { CurrentUser } from '../services/me.service';
 import { useMatchNotifications } from '../hooks/useMatchNotifications';
@@ -8,14 +12,14 @@ import NotificationBell from './NotificationBell';
 import { useInstallPrompt } from '../hooks/useInstallPrompt';
 
 const baseNavItems = [
-  { to: '/', label: 'Inicio', icon: '🏟️', end: true },
-  { to: '/partidos', label: 'Partidos', icon: '⚽', end: false },
-  { to: '/plantel', label: 'Plantel', icon: '🏃‍♂️', end: false },
-  { to: '/noticias', label: 'Noticias', icon: '📰', end: false },
-  { to: '/historia', label: 'Historia', icon: '🏅', end: false },
+  { to: '/', label: 'Inicio', Icon: Home, end: true },
+  { to: '/partidos', label: 'Partidos', Icon: Calendar, end: false },
+  { to: '/plantel', label: 'Plantel', Icon: Users, end: false },
+  { to: '/noticias', label: 'Noticias', Icon: Newspaper, end: false },
+  { to: '/historia', label: 'Historia', Icon: BookOpen, end: false },
 ];
 
-const adminNavItem = { to: '/admin', label: 'Admin', icon: '⚙️', end: false };
+const adminNavItem = { to: '/admin', label: 'Admin', Icon: Settings, end: false };
 
 export default function Layout() {
   const navigate = useNavigate();
@@ -58,56 +62,62 @@ export default function Layout() {
   return (
     <div className="min-h-screen bg-neutral-950 text-white pb-20 md:pb-12">
       {/* Navegación Desktop */}
-      <nav className="bg-neutral-900 border-b border-neutral-800 px-6 py-4 sticky top-0 z-50">
+      <nav className="bg-neutral-900/95 backdrop-blur border-b border-neutral-800 px-6 py-3 sticky top-0 z-50">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <NavLink to="/" className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-white text-riverRed font-black flex items-center justify-center border border-riverRed text-lg">
-                CARP
-              </div>
-              <span className="font-bold text-lg tracking-wide hidden sm:block">River App</span>
+          <div className="flex items-center gap-8">
+            {/* Logo */}
+            <NavLink to="/" className="flex items-center gap-3 group">
+              <img
+                src="/favicon.svg"
+                alt="River App"
+                className="w-9 h-9 rounded-full border border-neutral-700 group-hover:border-riverRed transition-colors"
+              />
+              <span className="font-black text-base tracking-wide hidden sm:block">River App</span>
             </NavLink>
 
-            <div className="hidden md:flex items-center gap-6">
+            {/* Links desktop */}
+            <div className="hidden md:flex items-center gap-1">
               {navItems.map((item) => (
                 <NavLink
                   key={item.to}
                   to={item.to}
                   end={item.end}
                   className={({ isActive }) =>
-                    `text-sm font-semibold transition-colors flex items-center gap-1 ${
+                    `flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold transition-all ${
                       isActive
-                        ? 'text-riverRed border-b-2 border-riverRed pb-1'
-                        : 'text-neutral-400 hover:text-white'
+                        ? 'bg-red-950/40 text-riverRed'
+                        : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
                     }`
                   }
                 >
-                  {item.label} {item.icon}
+                  <item.Icon className="w-4 h-4" />
+                  {item.label}
                 </NavLink>
               ))}
             </div>
           </div>
 
+          {/* Acciones derecha */}
           <div className="flex items-center gap-2">
             <NotificationBell />
 
             {notifSupported && permission !== 'denied' && (
               <button
                 onClick={permission === 'granted' ? undefined : requestPermission}
-                title={
-                  permission === 'granted'
-                    ? 'Push activo'
-                    : 'Activar notificaciones push'
-                }
-                className={`p-2 rounded-xl border text-sm transition-all duration-200 ${
+                title={permission === 'granted' ? 'Notificaciones activas' : 'Activar notificaciones'}
+                className={`p-2 rounded-xl border transition-all ${
                   permission === 'granted'
                     ? 'border-green-800/50 text-green-500 bg-green-950/20 cursor-default'
-                    : 'border-neutral-800 text-neutral-400 hover:text-white hover:border-neutral-600 cursor-pointer'
+                    : 'border-neutral-800 text-neutral-400 hover:text-white hover:border-neutral-600'
                 }`}
               >
-                {permission === 'granted' ? '📳' : '🔕'}
+                {permission === 'granted'
+                  ? <Bell className="w-4 h-4" />
+                  : <BellOff className="w-4 h-4" />
+                }
               </button>
             )}
+
             {/* Avatar dropdown */}
             <div className="relative" ref={menuRef}>
               <button
@@ -127,7 +137,7 @@ export default function Layout() {
               </button>
 
               {menuOpen && (
-                <div className="fixed right-4 top-16 w-48 bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl overflow-hidden z-[200]">
+                <div className="fixed right-4 top-16 w-52 bg-neutral-900 border border-neutral-800 rounded-2xl shadow-2xl overflow-hidden z-[200]">
                   {user && (
                     <div className="px-4 py-3 border-b border-neutral-800">
                       <div className="text-sm font-semibold truncate">{user.display_name}</div>
@@ -137,14 +147,16 @@ export default function Layout() {
                   <Link
                     to="/perfil"
                     onClick={() => setMenuOpen(false)}
-                    className="block text-sm px-4 py-2.5 hover:bg-neutral-800 transition-colors"
+                    className="flex items-center gap-2.5 text-sm px-4 py-2.5 hover:bg-neutral-800 transition-colors"
                   >
+                    <User className="w-4 h-4 text-neutral-400" />
                     Mi perfil
                   </Link>
                   <button
                     onClick={handleLogout}
-                    className="w-full text-left text-sm px-4 py-2.5 hover:bg-red-950/40 text-neutral-300 hover:text-riverRed transition-colors border-t border-neutral-800"
+                    className="w-full flex items-center gap-2.5 text-left text-sm px-4 py-2.5 hover:bg-red-950/40 text-neutral-300 hover:text-riverRed transition-colors border-t border-neutral-800"
                   >
+                    <LogOut className="w-4 h-4" />
                     Cerrar sesión
                   </button>
                 </div>
@@ -154,11 +166,12 @@ export default function Layout() {
         </div>
       </nav>
 
+      {/* Banner instalación PWA */}
       {canInstall && (
         <div className="bg-riverRed/10 border-b border-riverRed/20 px-4 py-2.5 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-sm">
-            <span>📲</span>
-            <span className="text-neutral-200">Instalá River App en tu celular para acceso rápido</span>
+            <Download className="w-4 h-4 text-riverRed flex-shrink-0" />
+            <span className="text-neutral-200">Instalá River App en tu dispositivo</span>
           </div>
           <button
             onClick={install}
@@ -172,22 +185,22 @@ export default function Layout() {
       <Outlet />
 
       {/* Navegación Mobile Bottom */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-neutral-950 border-t border-neutral-900 flex justify-around p-2 z-50 pb-safe">
-        {[...navItems, { to: '/perfil', label: 'Perfil', icon: '👤', end: false }].map((item) => (
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-neutral-950/95 backdrop-blur border-t border-neutral-800/80 flex justify-around py-2 z-50 pb-safe">
+        {[...navItems, { to: '/perfil', label: 'Perfil', Icon: User, end: false }].map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             end={item.end}
-            className="flex flex-col items-center justify-center p-2 w-14"
+            className="flex flex-col items-center justify-center p-2 min-w-[52px]"
           >
             {({ isActive }) => (
               <>
-                <span className={`text-xl mb-1 transition-transform ${isActive ? 'scale-110' : 'opacity-50'}`}>
-                  {item.icon}
-                </span>
+                <item.Icon
+                  className={`w-5 h-5 mb-1 transition-all ${isActive ? 'text-riverRed' : 'text-neutral-500'}`}
+                />
                 <span
                   className={`text-[9px] font-bold uppercase tracking-wider ${
-                    isActive ? 'text-riverRed' : 'text-neutral-500'
+                    isActive ? 'text-riverRed' : 'text-neutral-600'
                   }`}
                 >
                   {item.label}

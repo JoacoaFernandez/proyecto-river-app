@@ -1,6 +1,7 @@
 // apps/frontend/src/pages/ProximoPartido.tsx
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Calendar } from 'lucide-react';
 import { getLiveDashboard } from '../services/live.service';
 import { getLineup, type LineupResponse } from '../services/formations.service';
 import { getH2H, type Match } from '../services/matches.service';
@@ -304,7 +305,9 @@ export default function ProximoPartido() {
   if (!match) {
     return (
       <div className="max-w-4xl mx-auto px-4 mt-12 text-center">
-        <div className="text-6xl mb-4">📭</div>
+        <div className="w-16 h-16 rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-center mx-auto mb-4">
+          <Calendar className="w-7 h-7 text-neutral-500" />
+        </div>
         <h2 className="text-xl font-bold mb-2">No hay próximo partido programado</h2>
         <p className="text-neutral-400 mb-6">Volvé pronto, ya viene el siguiente.</p>
         <Link to="/" className="text-riverRed font-semibold hover:underline">

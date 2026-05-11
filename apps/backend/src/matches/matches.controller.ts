@@ -41,6 +41,12 @@ export class MatchesController {
     return this.matchesService.getH2H(rival, n);
   }
 
+  @Get('by-id/:id')
+  @ApiOperation({ summary: 'Obtener partido por ID (público)' })
+  async findOnePublic(@Param('id') id: string) {
+    return this.matchesService.findOne(id);
+  }
+
   // ── Admin ───────────────────────────────────────────────────────────────────
 
   @Get()

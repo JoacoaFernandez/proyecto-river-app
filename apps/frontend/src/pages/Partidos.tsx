@@ -1,6 +1,7 @@
 // apps/frontend/src/pages/Partidos.tsx
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Link2, Check } from 'lucide-react';
 import { getPastMatches, getUpcomingMatches } from '../services/matches.service';
 import type { Match } from '../services/matches.service';
 
@@ -33,6 +34,18 @@ function MatchCard({ m }: { m: Match }) {
   const isLive = m.status === 'live';
   const isFinished = m.status === 'finished';
   const { day, time } = formatDate(m.date);
+  const [copied, setCopied] = useState(false);
+
+  const handleShare = async () => {
+    const url = `${window.location.origin}/partidos/${m.id}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* no clipboard */
+    }
+  };
 
   const resultColor =
     result === 'W' ? 'border-green-700/50 bg-green-950/10' :
@@ -110,18 +123,31 @@ function MatchCard({ m }: { m: Match }) {
         </div>
       </div>
 
-      {/* Footer — link En Vivo */}
-      {isLive && (
-        <div className="mt-4 pt-3 border-t border-neutral-800">
+      {/* Footer */}
+      <div className="mt-4 pt-3 border-t border-neutral-800 flex items-center gap-2">
+        <Link
+          to={`/partidos/${m.id}`}
+          className="flex-1 flex items-center justify-center gap-1 bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 text-neutral-400 hover:text-white font-semibold text-xs py-2 rounded-xl transition-all"
+        >
+          Ver detalles →
+        </Link>
+        <button
+          onClick={handleShare}
+          className="flex items-center justify-center gap-1 bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 text-neutral-500 hover:text-white text-xs py-2 px-3 rounded-xl transition-all"
+          title="Copiar enlace"
+        >
+          {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Link2 className="w-3.5 h-3.5" />}
+        </button>
+        {isLive && (
           <Link
             to="/partidos/en-vivo"
-            className="flex items-center justify-center gap-2 w-full bg-green-950/30 hover:bg-green-950/50 border border-green-800/50 text-green-400 font-bold text-xs py-2 rounded-xl transition-all"
+            className="flex items-center gap-1 bg-green-950/30 hover:bg-green-950/50 border border-green-800/50 text-green-400 font-bold text-xs py-2 px-3 rounded-xl transition-all"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-            Ver partido en vivo
+            En vivo
           </Link>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 // apps/frontend/src/pages/admin/AdminPlantel.tsx
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Search, X, Plus, User } from 'lucide-react';
 import {
   createPlayer,
   deletePlayer,
@@ -142,7 +143,7 @@ export default function AdminPlantel() {
     if (!confirm(`¿Eliminar a ${name} del plantel? Esta acción no se puede deshacer.`)) return;
     try {
       await deletePlayer(id);
-      flash(`🗑️ ${name} fue removido del plantel.`);
+      flash(`${name} fue removido del plantel.`);
       await load();
     } catch (err: any) {
       flash(err?.response?.data?.message || 'Error al eliminar.', true);
@@ -170,7 +171,10 @@ export default function AdminPlantel() {
           onClick={() => setShowForm((s) => !s)}
           className="bg-riverRed hover:bg-red-700 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-red-900/30"
         >
-          {showForm ? '✕ Cancelar' : '+ Nuevo jugador'}
+          {showForm
+            ? <><X className="w-4 h-4" /> Cancelar</>
+            : <><Plus className="w-4 h-4" /> Nuevo jugador</>
+          }
         </button>
       </div>
 
@@ -239,7 +243,7 @@ export default function AdminPlantel() {
 
       {/* Buscador */}
       <div className="relative">
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500">🔍</span>
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
         <input
           type="text"
           value={search}
@@ -250,9 +254,9 @@ export default function AdminPlantel() {
         {search && (
           <button
             onClick={() => setSearch('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-white text-sm"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-white"
           >
-            ✕
+            <X className="w-4 h-4" />
           </button>
         )}
       </div>
@@ -299,7 +303,7 @@ export default function AdminPlantel() {
                       }}
                     />
                   ) : (
-                    <span className="text-neutral-600">⚽</span>
+                    <User className="w-4 h-4 text-neutral-600" />
                   )}
                 </div>
               </div>
@@ -354,7 +358,7 @@ export default function AdminPlantel() {
           >
             <div className="flex items-center justify-between">
               <h2 className="font-black text-lg">Editar jugador</h2>
-              <button type="button" onClick={() => setEditing(null)} className="text-neutral-500 hover:text-white text-xl leading-none">✕</button>
+              <button type="button" onClick={() => setEditing(null)} className="text-neutral-500 hover:text-white p-1 rounded-lg hover:bg-neutral-800 transition-colors"><X className="w-5 h-5" /></button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

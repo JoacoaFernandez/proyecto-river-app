@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { X, Plus } from 'lucide-react';
 import type { Match } from '../../services/matches.service';
 import {
   createMatchAdmin,
@@ -144,7 +145,7 @@ export default function AdminPartidos() {
     if (!confirm(`¿Eliminar "${m.homeTeam} vs ${m.awayTeam}"? Esta acción no se puede deshacer.`)) return;
     try {
       await deleteMatchAdmin(m.id);
-      showFlash('🗑️ Partido eliminado.');
+      showFlash('Partido eliminado.');
       await load();
     } catch (err: any) {
       showFlash(err?.response?.data?.message || 'Error al eliminar.', true);
@@ -168,7 +169,10 @@ export default function AdminPartidos() {
           onClick={() => setShowCreate((s) => !s)}
           className="bg-riverRed hover:bg-red-700 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-red-900/30"
         >
-          {showCreate ? '✕ Cancelar' : '+ Partido manual'}
+          {showCreate
+            ? <><X className="w-4 h-4" /> Cancelar</>
+            : <><Plus className="w-4 h-4" /> Partido manual</>
+          }
         </button>
       </div>
 
@@ -301,7 +305,7 @@ export default function AdminPartidos() {
           >
             <div className="flex items-center justify-between mb-2">
               <h2 className="font-black text-lg">Editar partido</h2>
-              <button type="button" onClick={() => setEditing(null)} className="text-neutral-500 hover:text-white text-xl leading-none">✕</button>
+              <button type="button" onClick={() => setEditing(null)} className="text-neutral-500 hover:text-white p-1 rounded-lg hover:bg-neutral-800 transition-colors"><X className="w-5 h-5" /></button>
             </div>
             <p className="text-sm text-neutral-400 -mt-2">
               {editing.homeTeam} vs {editing.awayTeam}

@@ -8,6 +8,8 @@ import JugadorDetalle from './pages/JugadorDetalle';
 import Partidos from './pages/Partidos';
 import ProximoPartido from './pages/ProximoPartido';
 import PartidoEnVivo from './pages/PartidoEnVivo';
+import PartidoDetalle from './pages/PartidoDetalle';
+import Comparador from './pages/Comparador';
 import Noticias from './pages/Noticias';
 import NoticiaDetalle from './pages/NoticiaDetalle';
 import Estadisticas from './pages/Estadisticas';
@@ -26,7 +28,9 @@ import RequireAdmin from './components/RequireAdmin';
 function ComingSoon({ title }: { title: string }) {
   return (
     <div className="max-w-6xl mx-auto px-4 mt-16 text-center">
-      <div className="text-6xl mb-4">🚧</div>
+      <div className="w-16 h-16 rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-center mx-auto mb-4">
+        <span className="text-2xl font-black text-neutral-600">—</span>
+      </div>
       <h2 className="text-xl font-bold mb-2">{title}</h2>
       <p className="text-neutral-400">Sección en construcción.</p>
     </div>
@@ -52,6 +56,8 @@ export default function App() {
           <Route path="partidos" element={<Partidos />} />
           <Route path="partidos/proximo" element={<ProximoPartido />} />
           <Route path="partidos/en-vivo" element={<PartidoEnVivo />} />
+          <Route path="partidos/:id" element={<PartidoDetalle />} />
+          <Route path="comparador" element={<Comparador />} />
           <Route path="plantel" element={<Plantel />} />
           <Route path="plantel/:id" element={<JugadorDetalle />} />
           <Route path="noticias" element={<Noticias />} />
