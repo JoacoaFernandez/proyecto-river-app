@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getLiveDashboard } from '../services/live.service';
 import { getPastMatches } from '../services/matches.service';
+import { getLeaderboard, type LeaderboardEntry } from '../services/players.service';
 
 interface TeamStats {
   pj: number;
@@ -31,10 +32,19 @@ function formatRecent(match: any): { result: 'W' | 'D' | 'L'; rivalName: string;
   return { result, rivalName, score: `${our}-${them}` };
 }
 
+const positionLabel: Record<string, string> = {
+  Goalkeeper: 'ARQ',
+  Defender: 'DEF',
+  Midfielder: 'MED',
+  Attacker: 'DEL',
+};
+
 export default function Estadisticas() {
   const [stats, setStats] = useState<TeamStats | null>(null);
   const [pastMatches, setPastMatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([getLiveDashboard(), getPastMatches(20)])
@@ -43,6 +53,10 @@ export default function Estadisticas() {
         setPastMatches(Array.isArray(past) ? past : []);
       })
       .finally(() => setLoading(false));
+
+    getLeaderboard()
+      .then(setLeaderboard)
+      .finally(() => setLeaderboardLoading(false));
   }, []);
 
   const recent5 = useMemo(() => pastMatches.slice(0, 5).map(formatRecent), [pastMatches]);
@@ -299,27 +313,78 @@ export default function Estadisticas() {
         </section>
       )}
 
-      {/* Placeholders honestos para lo que viene */}
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 opacity-70">
-          <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-2">
-            Goleadores
-          </h3>
-          <div className="flex items-center gap-3 text-sm text-neutral-500">
-            <span className="text-2xl">🚧</span>
-            <span>Próximamente: ranking individual cuando tengamos datos por partido.</span>
-          </div>
+      {/* Goleadores */}
+      <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest">Goleadores</h3>
+          {leaderboard.length > 0 && (
+            <span className="text-[10px] text-neutral-600 border border-neutral-800 px-2 py-0.5 rounded-full">
+              Temporada {leaderboard[0].season}
+            </span>
+          )}
         </div>
 
-        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 opacity-70">
-          <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-2">
-            Comparativa de temporadas
-          </h3>
-          <div className="flex items-center gap-3 text-sm text-neutral-500">
-            <span className="text-2xl">📈</span>
-            <span>Próximamente: gráfico de evolución vs temporadas anteriores.</span>
+        {leaderboardLoading ? (
+          <div className="flex justify-center py-8">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-riverRed" />
           </div>
-        </div>
+        ) : leaderboard.filter((p) => p.goals > 0).length === 0 ? (
+          <p className="text-sm text-neutral-500 text-center py-6">
+            Sin datos de goles disponibles aún.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {leaderboard
+              .filter((p) => p.goals > 0)
+              .slice(0, 10)
+              .map((p, idx) => (
+                <Link
+                  key={p.id}
+                  to={`/plantel/${p.id}`}
+                  className="flex items-center gap-3 p-3 rounded-xl bg-neutral-950 border border-neutral-800 hover:border-neutral-700 transition-all"
+                >
+                  <span className="w-5 text-center text-xs font-black text-neutral-500 tabular-nums">
+                    {idx + 1}
+                  </span>
+                  <div className="w-8 h-8 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center overflow-hidden flex-shrink-0">
+                    {p.photo ? (
+                      <img
+                        src={p.photo}
+                        alt={p.name}
+                        className="w-full h-full object-cover"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    ) : (
+                      <span className="text-neutral-600 text-xs">⚽</span>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold truncate">{p.name}</div>
+                    <div className="text-[10px] text-neutral-500 uppercase tracking-wider">
+                      {positionLabel[p.position] ?? p.position}
+                      {p.number != null && ` · #${p.number}`}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 text-right flex-shrink-0">
+                    <div>
+                      <div className="text-lg font-black text-riverRed tabular-nums">{p.goals}</div>
+                      <div className="text-[9px] uppercase tracking-widest text-neutral-500">Goles</div>
+                    </div>
+                    {p.assists > 0 && (
+                      <div>
+                        <div className="text-lg font-black text-blue-400 tabular-nums">{p.assists}</div>
+                        <div className="text-[9px] uppercase tracking-widest text-neutral-500">Asist.</div>
+                      </div>
+                    )}
+                    <div>
+                      <div className="text-sm font-bold text-neutral-400 tabular-nums">{p.appearances}</div>
+                      <div className="text-[9px] uppercase tracking-widest text-neutral-500">PJ</div>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+          </div>
+        )}
       </section>
     </div>
   );

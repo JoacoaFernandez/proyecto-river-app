@@ -75,3 +75,12 @@ export const updateMatchAdmin = async (
 export const deleteMatchAdmin = async (id: string): Promise<void> => {
   await api.delete(`/matches/${id}`);
 };
+
+export const getH2H = async (rival: string, limit = 6): Promise<Match[]> => {
+  try {
+    const res = await api.get(`/matches/h2h?rival=${encodeURIComponent(rival)}&limit=${limit}`);
+    return Array.isArray(res.data) ? res.data : [];
+  } catch {
+    return [];
+  }
+};

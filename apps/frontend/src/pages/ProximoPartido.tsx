@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getLiveDashboard } from '../services/live.service';
 import { getLineup, type LineupResponse } from '../services/formations.service';
+import { getH2H, type Match } from '../services/matches.service';
 import CanchaTactica from '../components/CanchaTactica';
 
 type Pred = 'home' | 'draw' | 'away' | null;
@@ -88,6 +89,104 @@ function FormacionSection() {
             )}
           </div>
         </div>
+      )}
+    </section>
+  );
+}
+
+const RIVER_RX = /river\s*plate|^river$/i;
+
+function H2HSection({ rival }: { rival: string }) {
+  const [h2h, setH2h] = useState<Match[]>([]);
+  const [h2hLoading, setH2hLoading] = useState(true);
+
+  useEffect(() => {
+    if (!rival) return;
+    setH2hLoading(true);
+    getH2H(rival, 6)
+      .then(setH2h)
+      .finally(() => setH2hLoading(false));
+  }, [rival]);
+
+  const summary = h2h.reduce(
+    (acc, m) => {
+      const isHome = RIVER_RX.test(m.homeTeam);
+      const our = isHome ? (m.homeScore ?? 0) : (m.awayScore ?? 0);
+      const them = isHome ? (m.awayScore ?? 0) : (m.homeScore ?? 0);
+      if (our > them) acc.w++;
+      else if (our === them) acc.d++;
+      else acc.l++;
+      return acc;
+    },
+    { w: 0, d: 0, l: 0 },
+  );
+
+  return (
+    <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
+      <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-4">
+        Historial vs {rival}
+      </h3>
+
+      {h2hLoading ? (
+        <div className="flex justify-center py-6">
+          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-riverRed" />
+        </div>
+      ) : h2h.length === 0 ? (
+        <p className="text-sm text-neutral-500 text-center py-4">
+          Sin partidos registrados vs {rival}.
+        </p>
+      ) : (
+        <>
+          {/* Resumen W/D/L */}
+          <div className="grid grid-cols-3 gap-2 mb-4">
+            {[
+              { label: 'Victorias', value: summary.w, color: 'text-green-400' },
+              { label: 'Empates', value: summary.d, color: 'text-yellow-400' },
+              { label: 'Derrotas', value: summary.l, color: 'text-red-400' },
+            ].map((s) => (
+              <div key={s.label} className="bg-neutral-950 border border-neutral-800 rounded-xl py-3 text-center">
+                <div className={`text-2xl font-black tabular-nums ${s.color}`}>{s.value}</div>
+                <div className="text-[9px] uppercase tracking-widest text-neutral-500 mt-0.5">{s.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Lista de partidos */}
+          <div className="space-y-2">
+            {h2h.map((m) => {
+              const isHome = RIVER_RX.test(m.homeTeam);
+              const our = isHome ? (m.homeScore ?? 0) : (m.awayScore ?? 0);
+              const them = isHome ? (m.awayScore ?? 0) : (m.homeScore ?? 0);
+              const result: 'W' | 'D' | 'L' = our > them ? 'W' : our === them ? 'D' : 'L';
+              return (
+                <div
+                  key={m.id}
+                  className="flex items-center gap-3 p-3 rounded-xl bg-neutral-950 border border-neutral-800 text-sm"
+                >
+                  <span
+                    className={`w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-black flex-shrink-0 ${
+                      result === 'W'
+                        ? 'bg-green-500/20 text-green-400 border border-green-700/40'
+                        : result === 'D'
+                        ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-700/40'
+                        : 'bg-red-500/20 text-red-400 border border-red-700/40'
+                    }`}
+                  >
+                    {result === 'W' ? 'G' : result === 'D' ? 'E' : 'P'}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-semibold truncate">
+                      {m.homeTeam} {m.homeScore ?? '?'} – {m.awayScore ?? '?'} {m.awayTeam}
+                    </div>
+                    <div className="text-[10px] text-neutral-500">
+                      {m.competition} · {new Date(m.date).toLocaleDateString('es-AR')}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
       )}
     </section>
   );
@@ -306,10 +405,7 @@ export default function ProximoPartido() {
       {/* Formación probable: cancha SVG con XI titular */}
       <FormacionSection />
 
-      <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 opacity-60">
-        <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-2">Historial vs {rival}</h3>
-        <p className="text-sm text-neutral-500">🚧 Próximamente: últimos enfrentamientos cara a cara.</p>
-      </section>
+      <H2HSection rival={rival} />
     </div>
   );
 }
