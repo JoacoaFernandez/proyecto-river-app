@@ -10,6 +10,9 @@ import { FormationsModule } from './formations/formations.module';
 import { CompetitionsModule } from './competitions/competitions.module';
 import { LiveApiModule } from './live-api.module';
 
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -23,7 +26,7 @@ import { LiveApiModule } from './live-api.module';
     CompetitionsModule,
     LiveApiModule,
   ],
-  controllers: [],
-  providers: [],
+  controllers: [AppController],
+  providers: [AppService],
 })
 export class AppModule {}
