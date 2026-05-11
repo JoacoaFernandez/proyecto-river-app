@@ -4,6 +4,8 @@ import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { clearCurrentUser, getCurrentUser } from '../services/me.service';
 import type { CurrentUser } from '../services/me.service';
 import { useMatchNotifications } from '../hooks/useMatchNotifications';
+import NotificationBell from './NotificationBell';
+import { useInstallPrompt } from '../hooks/useInstallPrompt';
 
 const baseNavItems = [
   { to: '/', label: 'Inicio', icon: '🏟️', end: true },
@@ -21,6 +23,7 @@ export default function Layout() {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const { supported: notifSupported, permission, requestPermission } = useMatchNotifications();
+  const { canInstall, install } = useInstallPrompt();
 
   useEffect(() => {
     getCurrentUser().then(setUser);
@@ -86,13 +89,15 @@ export default function Layout() {
           </div>
 
           <div className="flex items-center gap-2">
+            <NotificationBell />
+
             {notifSupported && permission !== 'denied' && (
               <button
                 onClick={permission === 'granted' ? undefined : requestPermission}
                 title={
                   permission === 'granted'
-                    ? 'Notificaciones de partido activas'
-                    : 'Activar notificaciones cuando River juegue'
+                    ? 'Push activo'
+                    : 'Activar notificaciones push'
                 }
                 className={`p-2 rounded-xl border text-sm transition-all duration-200 ${
                   permission === 'granted'
@@ -100,7 +105,7 @@ export default function Layout() {
                     : 'border-neutral-800 text-neutral-400 hover:text-white hover:border-neutral-600 cursor-pointer'
                 }`}
               >
-                {permission === 'granted' ? '🔔' : '🔕'}
+                {permission === 'granted' ? '📳' : '🔕'}
               </button>
             )}
             {/* Avatar dropdown */}
@@ -148,6 +153,21 @@ export default function Layout() {
           </div>
         </div>
       </nav>
+
+      {canInstall && (
+        <div className="bg-riverRed/10 border-b border-riverRed/20 px-4 py-2.5 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm">
+            <span>📲</span>
+            <span className="text-neutral-200">Instalá River App en tu celular para acceso rápido</span>
+          </div>
+          <button
+            onClick={install}
+            className="bg-riverRed hover:bg-red-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-all shrink-0"
+          >
+            Instalar
+          </button>
+        </div>
+      )}
 
       <Outlet />
 

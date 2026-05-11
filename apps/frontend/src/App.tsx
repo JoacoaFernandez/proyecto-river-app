@@ -1,6 +1,7 @@
 // apps/frontend/src/App.tsx
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import Login from './pages/Login';
+import Register from './pages/Register';
 import Home from './pages/Home';
 import Plantel from './pages/Plantel';
 import JugadorDetalle from './pages/JugadorDetalle';
@@ -37,6 +38,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
 
         {/* App pública (autenticada) */}
         <Route

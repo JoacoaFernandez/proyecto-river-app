@@ -200,8 +200,14 @@ export default function Home() {
                     className="bg-neutral-900 border border-neutral-800 hover:border-riverRed rounded-2xl p-4 transition-all duration-300 group flex flex-col justify-between shadow-lg h-full"
                   >
                     <div>
-                      <div className="w-full h-32 bg-neutral-950 border border-neutral-800 rounded-xl mb-4 flex items-center justify-center overflow-hidden group-hover:border-riverRed/50 transition-colors">
-                        <span className="text-4xl opacity-50">📰</span>
+                      <div className="w-full h-32 rounded-xl mb-4 overflow-hidden border border-neutral-800 group-hover:border-riverRed/50 transition-colors">
+                        {item.imageUrl ? (
+                          <img src={item.imageUrl} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                        ) : (
+                          <div className="w-full h-full bg-neutral-950 flex items-center justify-center">
+                            <span className="text-4xl opacity-50">📰</span>
+                          </div>
+                        )}
                       </div>
                       <div className="flex justify-between items-center mb-2">
                         <span className="text-[10px] font-bold text-riverRed uppercase tracking-wider bg-red-950/30 border border-red-900/30 px-2 py-0.5 rounded-full">
