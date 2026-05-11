@@ -6,6 +6,59 @@ import { getLineup, type LineupResponse } from '../services/formations.service';
 import { getH2H, type Match } from '../services/matches.service';
 import CanchaTactica from '../components/CanchaTactica';
 
+const TEAM_COLORS: Record<string, { bg: string; text: string }> = {
+  'boca juniors': { bg: '#1a3f9e', text: '#f5c518' },
+  'racing club': { bg: '#1a1a2e', text: '#e0e0e0' },
+  'independiente': { bg: '#b01c2e', text: '#ffffff' },
+  'san lorenzo': { bg: '#1c3d8f', text: '#d32f2f' },
+  'estudiantes': { bg: '#e8c12a', text: '#1a1a1a' },
+  'vélez sársfield': { bg: '#0d5c2f', text: '#ffffff' },
+  'velez sarsfield': { bg: '#0d5c2f', text: '#ffffff' },
+  'lanús': { bg: '#1b5e20', text: '#ffffff' },
+  'lanus': { bg: '#1b5e20', text: '#ffffff' },
+  'talleres': { bg: '#0a4a8c', text: '#ffffff' },
+  'huracán': { bg: '#c62828', text: '#f5f5f5' },
+  'huracan': { bg: '#c62828', text: '#f5f5f5' },
+  'belgrano': { bg: '#1a56a0', text: '#ffffff' },
+  'rosario central': { bg: '#f5c518', text: '#1a1a1a' },
+};
+
+function teamStyle(name: string): { bg: string; text: string } {
+  if (/river\s*plate|^river$/i.test(name)) return { bg: '#E30613', text: '#ffffff' };
+  const key = name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  for (const [k, v] of Object.entries(TEAM_COLORS)) {
+    if (key.includes(k)) return v;
+  }
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  const hue = Math.abs(hash) % 360;
+  return { bg: `hsl(${hue}, 55%, 28%)`, text: '#f5f5f5' };
+}
+
+function abbrev(name: string) {
+  const words = name.split(/\s+/).filter(Boolean);
+  if (words.length === 1) return words[0].slice(0, 3).toUpperCase();
+  if (words.length === 2) return (words[0][0] + words[1].slice(0, 2)).toUpperCase();
+  return (words[0][0] + words[1][0] + words[2][0]).toUpperCase();
+}
+
+function TeamBadge({ name }: { name: string }) {
+  const { bg, text } = teamStyle(name);
+  const isRiver = /river\s*plate|^river$/i.test(name);
+  return (
+    <div
+      className="w-24 h-24 md:w-28 md:h-28 rounded-3xl flex items-center justify-center font-black text-2xl md:text-3xl mx-auto flex-shrink-0 shadow-xl"
+      style={{
+        background: isRiver ? 'linear-gradient(135deg, #E30613 0%, #a00000 100%)' : bg,
+        color: text,
+        boxShadow: isRiver ? '0 8px 32px rgba(227,6,19,0.45)' : `0 4px 16px rgba(0,0,0,0.4)`,
+      }}
+    >
+      {abbrev(name)}
+    </div>
+  );
+}
+
 type Pred = 'home' | 'draw' | 'away' | null;
 
 function FormacionSection() {
@@ -313,25 +366,19 @@ export default function ProximoPartido() {
         )}
 
         {/* Equipos */}
-        <div className="flex items-center justify-between max-w-3xl mx-auto">
-          <div className="text-center w-1/3">
-            <div className="w-20 h-20 mx-auto bg-white rounded-full flex items-center justify-center mb-3 shadow-inner">
-              <span className="text-riverRed font-black text-base">
-                {match.homeTeam.substring(0, 3).toUpperCase()}
-              </span>
-            </div>
-            <div className="font-bold text-sm">{match.homeTeam}</div>
-            <div className="text-xs text-neutral-500 mt-1">Local</div>
+        <div className="flex items-center justify-between max-w-3xl mx-auto gap-4">
+          <div className="flex flex-col items-center gap-3 flex-1">
+            <TeamBadge name={match.homeTeam} />
+            <div className="font-bold text-base text-center">{match.homeTeam}</div>
+            <div className="text-xs text-neutral-500 uppercase tracking-wider">Local</div>
           </div>
-          <div className="text-3xl text-neutral-700 font-black">VS</div>
-          <div className="text-center w-1/3">
-            <div className="w-20 h-20 mx-auto bg-neutral-800 border border-neutral-700 rounded-full flex items-center justify-center mb-3">
-              <span className="text-neutral-400 font-black text-base">
-                {match.awayTeam.substring(0, 3).toUpperCase()}
-              </span>
-            </div>
-            <div className="font-bold text-sm">{match.awayTeam}</div>
-            <div className="text-xs text-neutral-500 mt-1">Visitante</div>
+          <div className="flex flex-col items-center gap-1">
+            <div className="text-2xl font-black text-neutral-700">VS</div>
+          </div>
+          <div className="flex flex-col items-center gap-3 flex-1">
+            <TeamBadge name={match.awayTeam} />
+            <div className="font-bold text-base text-center">{match.awayTeam}</div>
+            <div className="text-xs text-neutral-500 uppercase tracking-wider">Visitante</div>
           </div>
         </div>
       </section>
