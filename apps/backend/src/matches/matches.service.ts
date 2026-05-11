@@ -690,6 +690,7 @@ export class MatchesService implements OnModuleInit {
         minute:      status === 'live' ? (m.minute ?? 0) : status === 'finished' ? 90 : 0,
         date:        new Date(m.date),
         competition: m.competition || 'Competición',
+        updatedAt:   new Date(),
       };
     });
 

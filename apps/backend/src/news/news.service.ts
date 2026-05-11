@@ -56,7 +56,8 @@ export class NewsService {
         category: createNewsDto.category || 'Actualidad',
         status: createNewsDto.status || 'published',
         slug,
-        authorId: createNewsDto.authorId || author.id, // <-- ¡Solución definitiva a la fkey obligatoria!
+        authorId: createNewsDto.authorId || author.id,
+        updatedAt: new Date(),
       },
     });
   }

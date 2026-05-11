@@ -100,6 +100,7 @@ export class NewsAiService implements OnModuleInit {
             authorId: author.id,
             status: 'published',
             publishedAt: item.pubDate ? new Date(item.pubDate) : new Date(),
+            updatedAt: new Date(),
           },
         });
 

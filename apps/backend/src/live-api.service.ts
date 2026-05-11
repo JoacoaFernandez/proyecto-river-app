@@ -17,7 +17,6 @@ export class LiveApiService {
       return this.cache;
     }
 
-    // 1. Próximo partido y último resultado: leemos de la BD que ya está sincronizada
     const [latest, upcomingList, pastList] = await Promise.all([
       this.matchesService.getLatestMatch(),
       this.matchesService.getUpcomingMatches(10),
@@ -26,7 +25,6 @@ export class LiveApiService {
 
     const nextMatch = upcomingList.find((m) => m.status !== 'finished') ?? null;
     const lastFinished = pastList.find((m) => m.status === 'finished') ?? null;
-    // El "lastMatch" del home es el último jugado; "latest" puede ser el live/próximo
     const lastMatch = lastFinished;
 
     const formatMatch = (m: any) => {
@@ -44,7 +42,6 @@ export class LiveApiService {
       };
     };
 
-    // 2. Tabla de posiciones + stats: ESPN
     const { table, stats } = await this.fetchStandingsAndStats(pastList);
 
     this.cache = {
@@ -59,10 +56,6 @@ export class LiveApiService {
     return this.cache;
   }
 
-  /**
-   * Tabla de posiciones de la Liga Profesional Argentina desde ESPN.
-   * Si falla, computa stats desde los partidos pasados de River en la BD.
-   */
   private async fetchStandingsAndStats(pastMatches: any[]) {
     let table: any[] = [];
     let stats = this.computeStatsFromMatches(pastMatches);
@@ -111,10 +104,60 @@ export class LiveApiService {
         };
       }
     } catch (e: any) {
-      this.logger.warn(`⚠️ ESPN standings falló: ${e?.message}. Usando stats locales.`);
+      this.logger.warn(`ESPN standings falló: ${e?.message}. Usando stats locales.`);
     }
 
     return { table, stats };
+  }
+
+  async getLiveMatch() {
+    try {
+      const leagues = ['arg.1', 'conmebol.libertadores', 'conmebol.sudamericana'];
+      for (const league of leagues) {
+        const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/${league}/scoreboard`;
+        const res = await axios.get(url, { headers: ESPN_HEADERS, timeout: 8000 });
+        const events: any[] = res.data?.events ?? [];
+        const event = events.find((e: any) => {
+          const comps = e.competitions?.[0];
+          const home = comps?.competitors?.find((c: any) => c.homeAway === 'home');
+          const away = comps?.competitors?.find((c: any) => c.homeAway === 'away');
+          const names = [home?.team?.displayName, away?.team?.displayName].map((n) => (n ?? '').toLowerCase());
+          return names.some((n) => n.includes('river plate'));
+        });
+        if (!event) continue;
+
+        const comp = event.competitions?.[0];
+        const status = comp?.status?.type;
+        if (!status?.state || status.state === 'post') continue;
+
+        const home = comp.competitors?.find((c: any) => c.homeAway === 'home');
+        const away = comp.competitors?.find((c: any) => c.homeAway === 'away');
+        const scoringPlays = (comp.scoringPlays ?? []).map((sp: any) => ({
+          team: sp.team?.displayName ?? '',
+          scorer: sp.athletesInvolved?.[0]?.displayName ?? 'Desconocido',
+          minute: sp.clock?.displayValue ? parseInt(sp.clock.displayValue) : 0,
+          period: sp.period?.number ?? 1,
+          type: sp.scoringType?.displayName?.toLowerCase().includes('penalty') ? 'penalty'
+            : sp.scoringType?.displayName?.toLowerCase().includes('own') ? 'own-goal' : 'goal',
+        }));
+
+        return {
+          homeTeam: home?.team?.displayName ?? '',
+          awayTeam: away?.team?.displayName ?? '',
+          homeScore: parseInt(home?.score ?? '0'),
+          awayScore: parseInt(away?.score ?? '0'),
+          displayClock: comp.status?.displayClock ?? status?.description ?? '0',
+          period: comp.status?.period ?? 1,
+          competition: event.name ?? league,
+          venue: comp.venue?.fullName ?? null,
+          scoringPlays,
+        };
+      }
+      return null;
+    } catch (e: any) {
+      this.logger.warn(`getLiveMatch falló: ${e?.message}`);
+      return null;
+    }
   }
 
   private computeStatsFromMatches(past: any[]) {
