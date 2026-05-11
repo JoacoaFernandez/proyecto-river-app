@@ -1,6 +1,7 @@
 // apps/frontend/src/pages/admin/AdminDashboard.tsx
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Newspaper, PenLine, Users, Calendar, Globe, FileText } from 'lucide-react';
 import { getNews } from '../../services/news.service';
 import { getPlayers } from '../../services/players.service';
 import { getLiveDashboard } from '../../services/live.service';
@@ -57,14 +58,14 @@ export default function AdminDashboard() {
       {/* Métricas */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Noticias', value: metrics?.noticias ?? 0, sub: `${metrics?.publicadas ?? 0} publicadas`, icon: '📰', color: 'text-blue-400' },
-          { label: 'Borradores', value: metrics?.borradores ?? 0, sub: 'Pendientes de revisión', icon: '✍️', color: 'text-yellow-400' },
-          { label: 'Plantel', value: metrics?.jugadores ?? 0, sub: 'Jugadores cargados', icon: '🏃', color: 'text-green-400' },
-          { label: 'Partidos próximos', value: metrics?.proximosPartidos ?? 0, sub: 'En el fixture', icon: '⚽', color: 'text-riverRed' },
+          { label: 'Noticias', value: metrics?.noticias ?? 0, sub: `${metrics?.publicadas ?? 0} publicadas`, Icon: Newspaper, color: 'text-blue-400' },
+          { label: 'Borradores', value: metrics?.borradores ?? 0, sub: 'Pendientes de revisión', Icon: PenLine, color: 'text-yellow-400' },
+          { label: 'Plantel', value: metrics?.jugadores ?? 0, sub: 'Jugadores cargados', Icon: Users, color: 'text-green-400' },
+          { label: 'Partidos próximos', value: metrics?.proximosPartidos ?? 0, sub: 'En el fixture', Icon: Calendar, color: 'text-riverRed' },
         ].map((m) => (
           <div key={m.label} className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 hover:border-neutral-700 transition-all">
-            <div className="flex justify-between items-start mb-2">
-              <span className={`text-2xl ${m.color}`}>{m.icon}</span>
+            <div className="flex justify-between items-start mb-3">
+              <m.Icon className={`w-5 h-5 ${m.color}`} />
             </div>
             <div className="text-3xl font-black">{m.value}</div>
             <div className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mt-1">{m.label}</div>
@@ -81,7 +82,7 @@ export default function AdminDashboard() {
             to="/admin/partidos"
             className="bg-neutral-900 border border-neutral-800 hover:border-riverRed rounded-2xl p-5 transition-all group"
           >
-            <div className="text-3xl mb-2">⚽</div>
+            <Calendar className="w-6 h-6 mb-3 text-neutral-400 group-hover:text-riverRed transition-colors" />
             <div className="font-bold mb-1 group-hover:text-riverRed transition-colors">Gestionar partidos</div>
             <div className="text-xs text-neutral-500">Crear, editar estado y resultado de partidos.</div>
           </Link>
@@ -90,7 +91,7 @@ export default function AdminDashboard() {
             to="/admin/noticias"
             className="bg-neutral-900 border border-neutral-800 hover:border-riverRed rounded-2xl p-5 transition-all group"
           >
-            <div className="text-3xl mb-2">📰</div>
+            <Newspaper className="w-6 h-6 mb-3 text-neutral-400 group-hover:text-riverRed transition-colors" />
             <div className="font-bold mb-1 group-hover:text-riverRed transition-colors">Gestionar noticias</div>
             <div className="text-xs text-neutral-500">Crear, editar y eliminar artículos publicados.</div>
           </Link>
@@ -99,7 +100,7 @@ export default function AdminDashboard() {
             to="/admin/plantel"
             className="bg-neutral-900 border border-neutral-800 hover:border-riverRed rounded-2xl p-5 transition-all group"
           >
-            <div className="text-3xl mb-2">🏃</div>
+            <Users className="w-6 h-6 mb-3 text-neutral-400 group-hover:text-riverRed transition-colors" />
             <div className="font-bold mb-1 group-hover:text-riverRed transition-colors">Ver plantel</div>
             <div className="text-xs text-neutral-500">Revisar y administrar jugadores del primer equipo.</div>
           </Link>
@@ -108,7 +109,7 @@ export default function AdminDashboard() {
             to="/"
             className="bg-neutral-900 border border-neutral-800 hover:border-riverRed rounded-2xl p-5 transition-all group"
           >
-            <div className="text-3xl mb-2">🌐</div>
+            <Globe className="w-6 h-6 mb-3 text-neutral-400 group-hover:text-riverRed transition-colors" />
             <div className="font-bold mb-1 group-hover:text-riverRed transition-colors">Ver app pública</div>
             <div className="text-xs text-neutral-500">Volver a la vista que ven los hinchas.</div>
           </Link>
@@ -138,8 +139,8 @@ export default function AdminDashboard() {
                   i !== latestNews.length - 1 ? 'border-b border-neutral-800' : ''
                 }`}
               >
-                <div className="w-10 h-10 rounded-lg bg-neutral-950 border border-neutral-800 flex items-center justify-center text-xl flex-shrink-0">
-                  📰
+                <div className="w-10 h-10 rounded-lg bg-neutral-950 border border-neutral-800 flex items-center justify-center flex-shrink-0">
+                  <FileText className="w-4 h-4 text-neutral-500" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-semibold truncate">{n.title}</div>

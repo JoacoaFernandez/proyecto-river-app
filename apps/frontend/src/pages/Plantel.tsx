@@ -1,16 +1,17 @@
 // apps/frontend/src/pages/Plantel.tsx
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Search, X, User } from 'lucide-react';
 import { getPlayers, type Player } from '../services/players.service';
 
 type PositionFilter = 'all' | 'Goalkeeper' | 'Defender' | 'Midfielder' | 'Attacker';
 
-const positionFilters: { key: PositionFilter; label: string; emoji: string }[] = [
-  { key: 'all', label: 'Todos', emoji: '⚽' },
-  { key: 'Goalkeeper', label: 'Arqueros', emoji: '🧤' },
-  { key: 'Defender', label: 'Defensores', emoji: '🛡️' },
-  { key: 'Midfielder', label: 'Mediocampistas', emoji: '🧠' },
-  { key: 'Attacker', label: 'Delanteros', emoji: '⚡' },
+const positionFilters: { key: PositionFilter; label: string }[] = [
+  { key: 'all', label: 'Todos' },
+  { key: 'Goalkeeper', label: 'Arqueros' },
+  { key: 'Defender', label: 'Defensores' },
+  { key: 'Midfielder', label: 'Mediocampistas' },
+  { key: 'Attacker', label: 'Delanteros' },
 ];
 
 const positionLabel: Record<string, string> = {
@@ -78,7 +79,6 @@ export default function Plantel() {
                     : 'bg-neutral-900 border border-neutral-800 text-neutral-300 hover:border-riverRed hover:text-white'
                 }`}
               >
-                <span>{opt.emoji}</span>
                 <span>{opt.label}</span>
                 <span
                   className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
@@ -93,7 +93,7 @@ export default function Plantel() {
         </div>
 
         <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500">🔍</span>
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
           <input
             type="text"
             value={search}
@@ -104,9 +104,9 @@ export default function Plantel() {
           {search && (
             <button
               onClick={() => setSearch('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-white text-sm"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-white"
             >
-              ✕
+              <X className="w-4 h-4" />
             </button>
           )}
         </div>
@@ -122,7 +122,7 @@ export default function Plantel() {
         <div className="text-center py-16 bg-neutral-900 border border-neutral-800 rounded-2xl text-neutral-500 text-sm">
           {search.trim() || filter !== 'all'
             ? 'No hay jugadores que coincidan con esos criterios.'
-            : 'Aún no hay jugadores registrados en el plantel. 🏃‍♂️💨'}
+            : 'Aún no hay jugadores registrados en el plantel.'}
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
@@ -149,7 +149,7 @@ export default function Plantel() {
                     }}
                   />
                 ) : (
-                  <span className="text-2xl font-black text-neutral-600">⚽</span>
+                  <User className="w-8 h-8 text-neutral-700" />
                 )}
               </div>
 

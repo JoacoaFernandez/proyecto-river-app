@@ -1,6 +1,7 @@
 // apps/frontend/src/pages/admin/AdminNoticias.tsx
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { X, Plus } from 'lucide-react';
 import {
   createNews,
   deleteNews,
@@ -129,7 +130,7 @@ export default function AdminNoticias() {
     if (!confirm(`¿Eliminar "${titleToDelete}"? Esta acción no se puede deshacer.`)) return;
     try {
       await deleteNews(id);
-      flash('🗑️ Noticia eliminada.');
+      flash('Noticia eliminada.');
       await loadNews();
     } catch (err: any) {
       flash(err?.response?.data?.message || 'Error al eliminar.', true);
@@ -172,7 +173,10 @@ export default function AdminNoticias() {
             onClick={() => setShowForm((s) => !s)}
             className="bg-riverRed hover:bg-red-700 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-red-900/30"
           >
-            {showForm ? '✕ Cancelar' : '+ Nueva noticia'}
+            {showForm
+              ? <><X className="w-4 h-4" /> Cancelar</>
+              : <><Plus className="w-4 h-4" /> Nueva noticia</>
+            }
           </button>
         </div>
       </div>
@@ -299,7 +303,7 @@ export default function AdminNoticias() {
           >
             <div className="flex items-center justify-between">
               <h2 className="font-black text-lg">Editar noticia</h2>
-              <button type="button" onClick={() => setEditing(null)} className="text-neutral-500 hover:text-white text-xl leading-none">✕</button>
+              <button type="button" onClick={() => setEditing(null)} className="text-neutral-500 hover:text-white p-1 rounded-lg hover:bg-neutral-800 transition-colors"><X className="w-5 h-5" /></button>
             </div>
 
             <div>

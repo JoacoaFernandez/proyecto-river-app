@@ -1,6 +1,7 @@
 // apps/frontend/src/pages/JugadorDetalle.tsx
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { UserX, Star, User } from 'lucide-react';
 import { getPlayer, getPlayerStats, type Player, type PlayerStats } from '../services/players.service';
 
 const positionLabel: Record<string, string> = {
@@ -8,13 +9,6 @@ const positionLabel: Record<string, string> = {
   Defender: 'Defensor',
   Midfielder: 'Mediocampista',
   Attacker: 'Delantero',
-};
-
-const positionEmoji: Record<string, string> = {
-  Goalkeeper: '🧤',
-  Defender: '🛡️',
-  Midfielder: '🧠',
-  Attacker: '⚡',
 };
 
 function StatBox({
@@ -77,7 +71,9 @@ export default function JugadorDetalle() {
   if (!player) {
     return (
       <div className="max-w-4xl mx-auto px-4 mt-12 text-center">
-        <div className="text-6xl mb-4">🤷</div>
+        <div className="w-16 h-16 rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-center mx-auto mb-4">
+          <UserX className="w-7 h-7 text-neutral-500" />
+        </div>
         <h2 className="text-xl font-bold mb-2">Jugador no encontrado</h2>
         <p className="text-neutral-400 mb-6">No pudimos encontrar a ese jugador en el plantel.</p>
         <Link to="/plantel" className="text-riverRed font-semibold hover:underline">
@@ -88,7 +84,6 @@ export default function JugadorDetalle() {
   }
 
   const positionDisplay = positionLabel[player.position] ?? player.position;
-  const positionIcon = positionEmoji[player.position] ?? '⚽';
   const showPhoto = !!player.photo && !imgError;
   const statsLoading = stats === undefined;
 
@@ -118,15 +113,14 @@ export default function JugadorDetalle() {
                 onError={() => setImgError(true)}
               />
             ) : (
-              <span className="text-6xl font-black text-neutral-600">⚽</span>
+              <User className="w-16 h-16 text-neutral-700" />
             )}
           </div>
 
           {/* Info principal */}
           <div className="flex-1 text-center md:text-left">
             <div className="inline-flex items-center gap-2 bg-red-950/40 text-riverRed border border-red-900/50 px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-widest mb-3">
-              <span>{positionIcon}</span>
-              <span>{positionDisplay}</span>
+              {positionDisplay}
             </div>
 
             <h1 className="text-3xl md:text-4xl font-black mb-3">{player.name}</h1>
@@ -166,7 +160,7 @@ export default function JugadorDetalle() {
 
             {stats?.rating && (
               <div className="mt-4 inline-flex items-center gap-2 bg-yellow-950/30 border border-yellow-800/40 px-4 py-1.5 rounded-xl">
-                <span className="text-yellow-400 text-sm">⭐</span>
+                <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
                 <span className="text-yellow-300 font-black text-lg">{stats.rating}</span>
                 <span className="text-neutral-500 text-xs">Rating promedio {stats.season}</span>
               </div>

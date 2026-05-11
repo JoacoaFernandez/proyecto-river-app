@@ -1,6 +1,7 @@
 // apps/frontend/src/pages/Home.tsx
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { Clock, CalendarDays, Trophy, BarChart2, FileText } from 'lucide-react';
 import { getNews } from '../services/news.service';
 import { getLiveDashboard } from '../services/live.service';
 import { timeAgo } from '../utils/time';
@@ -87,7 +88,7 @@ export default function Home() {
           setStats(dashboard.stats || null);
         }
       } catch (err) {
-        console.error('❌ Error cargando datos en el Home:', err);
+        console.error('Error cargando datos en el Home:', err);
         setNextMatch(null);
         setLastMatch(null);
         setTable([]);
@@ -147,8 +148,9 @@ export default function Home() {
             <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-neutral-800">
               <h2 className="text-xs font-bold text-neutral-400 uppercase tracking-widest">Próximo Partido</h2>
               {countdown && (
-                <span className="bg-red-950/40 text-riverRed border border-red-900/50 px-3 py-1 rounded-full text-xs font-bold tabular-nums">
-                  ⏱ {countdown}
+                <span className="flex items-center gap-1.5 bg-red-950/40 text-riverRed border border-red-900/50 px-3 py-1 rounded-full text-xs font-bold tabular-nums">
+                  <Clock className="w-3 h-3" />
+                  {countdown}
                 </span>
               )}
             </div>
@@ -193,9 +195,11 @@ export default function Home() {
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-10 px-5 gap-3">
-                <div className="w-14 h-14 rounded-2xl bg-neutral-800 flex items-center justify-center text-2xl">📅</div>
+                <div className="w-14 h-14 rounded-2xl bg-neutral-800 flex items-center justify-center">
+                  <CalendarDays className="w-6 h-6 text-neutral-500" />
+                </div>
                 <p className="text-sm text-neutral-400 font-semibold">Sin partido programado</p>
-                <p className="text-xs text-neutral-600 text-center">El calendario se actualiza automáticamente cuando ESPN publica el próximo fixture.</p>
+                <p className="text-xs text-neutral-600 text-center">El calendario se actualiza automáticamente cuando se confirma el próximo fixture.</p>
                 <Link to="/partidos" className="text-xs text-riverRed font-semibold hover:underline mt-1">Ver fixture completo →</Link>
               </div>
             )}
@@ -275,7 +279,7 @@ export default function Home() {
                           />
                         ) : null}
                         <div className={`w-full h-full flex items-center justify-center ${item.imageUrl ? 'hidden' : ''}`}>
-                          <span className="text-4xl opacity-30">📰</span>
+                          <FileText className="w-8 h-8 text-neutral-700" />
                         </div>
                       </div>
                       <div className="flex justify-between items-center mb-2">
@@ -295,7 +299,7 @@ export default function Home() {
               </div>
             ) : (
               <div className="text-center py-8 bg-neutral-900 border border-neutral-800 rounded-2xl text-neutral-500 text-sm">
-                Buscando primicias... ✍️
+                Sin noticias disponibles todavía.
               </div>
             )}
           </section>
@@ -306,7 +310,7 @@ export default function Home() {
           {/* 4. Tabla de Posiciones */}
           <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl">
             <h2 className="text-xs font-semibold text-neutral-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-              <span>🏆</span> Liga Profesional
+              <Trophy className="w-3.5 h-3.5 text-riverRed" /> Liga Profesional
             </h2>
             <div className="w-full text-sm">
               <div className="flex text-neutral-500 border-b border-neutral-800 pb-2 mb-2 font-semibold text-xs uppercase tracking-wider">
@@ -348,7 +352,7 @@ export default function Home() {
           {/* 5. Estadísticas Rápidas */}
           <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl">
             <h2 className="text-xs font-semibold text-neutral-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-              <span>📊</span> Estadísticas de Temporada
+              <BarChart2 className="w-3.5 h-3.5 text-riverRed" /> Estadísticas de Temporada
             </h2>
             {stats ? (
               <div className="space-y-5">

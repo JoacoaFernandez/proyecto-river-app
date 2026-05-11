@@ -76,6 +76,15 @@ export const deleteMatchAdmin = async (id: string): Promise<void> => {
   await api.delete(`/matches/${id}`);
 };
 
+export const getMatchById = async (id: string): Promise<Match | null> => {
+  try {
+    const res = await api.get(`/matches/by-id/${id}`);
+    return res.data ?? null;
+  } catch {
+    return null;
+  }
+};
+
 export const getH2H = async (rival: string, limit = 6): Promise<Match[]> => {
   try {
     const res = await api.get(`/matches/h2h?rival=${encodeURIComponent(rival)}&limit=${limit}`);

@@ -4,7 +4,27 @@ import { Link } from 'react-router-dom';
 import { getCurrentUser, updateCurrentUser } from '../services/me.service';
 import type { CurrentUser } from '../services/me.service';
 import { getNews } from '../services/news.service';
+import { getMatchById } from '../services/matches.service';
+import type { Match } from '../services/matches.service';
 import { timeAgo } from '../utils/time';
+
+interface PredEntry {
+  matchId: string;
+  pred: 'home' | 'draw' | 'away';
+  match: Match | null;
+}
+
+const PRED_LABELS: Record<string, string> = {
+  home: 'Local gana',
+  draw: 'Empate',
+  away: 'Visitante gana',
+};
+
+const PRED_COLORS: Record<string, string> = {
+  home: 'text-green-400 border-green-800/50 bg-green-950/20',
+  draw: 'text-yellow-400 border-yellow-800/50 bg-yellow-950/20',
+  away: 'text-red-400 border-red-800/50 bg-red-950/20',
+};
 
 const ROLE_LABELS: Record<string, { label: string; color: string }> = {
   admin: { label: 'Administrador', color: 'bg-red-950/40 text-riverRed border-red-900/40' },
@@ -23,6 +43,7 @@ export default function Perfil() {
   const [flash, setFlash] = useState<{ msg: string; error: boolean } | null>(null);
 
   const [newsCount, setNewsCount] = useState<number | null>(null);
+  const [predictions, setPredictions] = useState<PredEntry[]>([]);
 
   useEffect(() => {
     Promise.all([getCurrentUser(true), getNews()]).then(([u, news]) => {
@@ -34,6 +55,23 @@ export default function Perfil() {
       }
       setLoading(false);
     });
+
+    const predKeys = Object.keys(localStorage).filter((k) => k.startsWith('river_pred_'));
+    const entries: PredEntry[] = predKeys.map((k) => ({
+      matchId: k.replace('river_pred_', ''),
+      pred: localStorage.getItem(k) as 'home' | 'draw' | 'away',
+      match: null,
+    }));
+    if (entries.length > 0) {
+      Promise.allSettled(entries.map((e) => getMatchById(e.matchId))).then((results) => {
+        setPredictions(
+          entries.map((e, i) => ({
+            ...e,
+            match: results[i].status === 'fulfilled' ? results[i].value : null,
+          })),
+        );
+      });
+    }
   }, []);
 
   const showFlash = (msg: string, error = false) => {
@@ -83,7 +121,9 @@ export default function Perfil() {
   if (!user) {
     return (
       <div className="max-w-2xl mx-auto px-4 mt-12 text-center">
-        <div className="text-6xl mb-4">🔒</div>
+        <div className="w-16 h-16 rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-center mx-auto mb-4">
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-7 h-7 text-neutral-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
         <h2 className="text-xl font-bold mb-2">Sesión no iniciada</h2>
         <Link to="/login" className="text-riverRed font-semibold hover:underline">
           Ir al login →
@@ -249,6 +289,54 @@ export default function Perfil() {
           <div className="text-[11px] text-neutral-500 uppercase tracking-wider mt-1">En la comunidad</div>
         </div>
       </div>
+
+      {/* Historial de predicciones */}
+      {predictions.length > 0 && (
+        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
+          <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-3">
+            Mis predicciones ({predictions.length})
+          </h3>
+          <div className="space-y-2">
+            {predictions.map((entry) => {
+              const m = entry.match;
+              return (
+                <div
+                  key={entry.matchId}
+                  className="flex items-center justify-between gap-3 p-3 bg-neutral-950 border border-neutral-800 rounded-xl text-sm"
+                >
+                  <div className="flex-1 min-w-0">
+                    {m ? (
+                      <>
+                        <Link
+                          to={`/partidos/${m.id}`}
+                          className="font-semibold truncate block hover:text-riverRed transition-colors"
+                        >
+                          {m.homeTeam} vs {m.awayTeam}
+                        </Link>
+                        <div className="text-[11px] text-neutral-500 mt-0.5">
+                          {m.competition} · {new Date(m.date).toLocaleDateString('es-AR')}
+                          {m.status === 'finished' && m.homeScore !== null && (
+                            <span className="ml-1 font-bold text-neutral-400">
+                              ({m.homeScore}–{m.awayScore})
+                            </span>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <span className="text-neutral-500 text-xs">Partido no disponible</span>
+                    )}
+                  </div>
+                  <span
+                    className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border flex-shrink-0 ${PRED_COLORS[entry.pred]}`}
+                  >
+                    {PRED_LABELS[entry.pred]}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Accesos rápidos para admin/editor */}
       {(user.role === 'admin' || user.role === 'editor') && (
