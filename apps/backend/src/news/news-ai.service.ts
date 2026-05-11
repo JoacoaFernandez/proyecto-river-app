@@ -10,7 +10,14 @@ export class NewsAiService implements OnModuleInit {
   private readonly parser: Parser;
 
   constructor(private readonly prisma: PrismaService) {
-    this.parser = new Parser();
+    this.parser = new Parser({
+      customFields: {
+        item: [
+          ['media:thumbnail', 'mediaThumbnail'],
+          ['media:content', 'mediaContent'],
+        ],
+      },
+    });
   }
 
   async onModuleInit() {
@@ -68,8 +75,17 @@ export class NewsAiService implements OnModuleInit {
         const title = item.title || '';
         const rawBody = item.contentSnippet || item.content || '';
         const body = rawBody.replace(/<[^>]*>/g, '').trim();
-        const articleUrl = item.link || null; // 👈 CAPTURAMOS EL LINK ORIGINAL DEL FEED
-        
+        const articleUrl = item.link || null;
+
+        // Extraer imagen: enclosure → media:thumbnail → media:content → <img> en content
+        const anyItem = item as any;
+        const imageUrl: string | null =
+          item.enclosure?.url ||
+          anyItem.mediaThumbnail?.$.url ||
+          anyItem.mediaContent?.$.url ||
+          (item.content ? (item.content.match(/<img[^>]+src=["']([^"']+)/)?.[1] ?? null) : null) ||
+          null;
+
         if (!title || !body) continue;
 
         const generatedSlug = this.generateSlug(title);
@@ -78,25 +94,24 @@ export class NewsAiService implements OnModuleInit {
           where: { slug: generatedSlug },
         });
 
-        // Si ya existe pero por alguna razón no tenía URL, se la actualizamos
         if (exists) {
-          if (!exists.url && articleUrl) {
-            await this.prisma.news.update({
-              where: { id: exists.id },
-              data: { url: articleUrl }
-            });
+          const updates: Record<string, any> = {};
+          if (!exists.url && articleUrl) updates.url = articleUrl;
+          if (!exists.imageUrl && imageUrl) updates.imageUrl = imageUrl;
+          if (Object.keys(updates).length > 0) {
+            await this.prisma.news.update({ where: { id: exists.id }, data: updates });
           }
           continue;
         }
 
-        // Guardamos la noticia incluyendo la URL original de Olé
         await this.prisma.news.create({
           data: {
             title,
             body,
             category: 'Actualidad',
             slug: generatedSlug,
-            url: articleUrl, // 👈 GUARDAMOS LA URL EN BASE DE DATOS
+            url: articleUrl,
+            imageUrl,
             authorId: author.id,
             status: 'published',
             publishedAt: item.pubDate ? new Date(item.pubDate) : new Date(),

@@ -1,5 +1,5 @@
 // apps/backend/src/auth/auth.controller.ts
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -38,5 +38,16 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Token inválido o expirado.' })
   me(@CurrentUser() user: AuthUser) {
     return this.authService.getProfile(user.id);
+  }
+
+  @Patch('me')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Editar el perfil del usuario logueado' })
+  updateMe(
+    @CurrentUser() user: AuthUser,
+    @Body() body: { display_name?: string; avatar_url?: string },
+  ) {
+    return this.authService.updateProfile(user.id, body);
   }
 }

@@ -82,6 +82,68 @@ export class MatchesService implements OnModuleInit {
     await this.syncMatches();
   }
 
+  // ── CRUD admin ───────────────────────────────────────────────────────────────
+
+  async findAll() {
+    return this.prisma.match.findMany({ orderBy: { date: 'asc' } });
+  }
+
+  async findOne(id: string) {
+    return this.prisma.match.findUnique({ where: { id } });
+  }
+
+  async createManual(data: {
+    homeTeam: string;
+    awayTeam: string;
+    date: string;
+    competition?: string;
+    stadium?: string;
+    status?: string;
+  }) {
+    const type = `MANUAL_${Date.now()}`;
+    return this.prisma.match.create({
+      data: {
+        type,
+        homeTeam: data.homeTeam,
+        awayTeam: data.awayTeam,
+        date: new Date(data.date),
+        competition: data.competition ?? 'Amistoso',
+        stadium: data.stadium,
+        status: data.status ?? 'scheduled',
+        homeScore: 0,
+        awayScore: 0,
+        manualOverride: true,
+      },
+    });
+  }
+
+  async updateMatch(
+    id: string,
+    data: {
+      status?: string;
+      homeScore?: number;
+      awayScore?: number;
+      minute?: number;
+      competition?: string;
+      stadium?: string;
+      date?: string;
+    },
+  ) {
+    const update: any = {};
+    if (data.status !== undefined) update.status = data.status;
+    if (data.homeScore !== undefined) update.homeScore = data.homeScore;
+    if (data.awayScore !== undefined) update.awayScore = data.awayScore;
+    if (data.minute !== undefined) update.minute = data.minute;
+    if (data.competition !== undefined) update.competition = data.competition;
+    if (data.stadium !== undefined) update.stadium = data.stadium;
+    if (data.date !== undefined) update.date = new Date(data.date);
+    return this.prisma.match.update({ where: { id }, data: update });
+  }
+
+  async removeMatch(id: string) {
+    return this.prisma.match.delete({ where: { id } });
+  }
+
   // ── Queries públicas ─────────────────────────────────────────────────────────
 
   async getUpcomingMatches(limit = 10) {
@@ -104,6 +166,22 @@ export class MatchesService implements OnModuleInit {
   async getPastMatches(limit = 20) {
     return this.prisma.match.findMany({
       where: { status: 'finished' },
+      orderBy: { date: 'desc' },
+      take: limit,
+    });
+  }
+
+  async getH2H(rival: string, limit = 6) {
+    if (!rival?.trim()) return [];
+    const term = rival.trim();
+    return this.prisma.match.findMany({
+      where: {
+        status: 'finished',
+        OR: [
+          { homeTeam: { contains: term, mode: 'insensitive' } },
+          { awayTeam: { contains: term, mode: 'insensitive' } },
+        ],
+      },
       orderBy: { date: 'desc' },
       take: limit,
     });
@@ -704,9 +782,9 @@ export class MatchesService implements OnModuleInit {
     }
 
     try {
-      // FIX: usar createMany en vez de loop de creates para evitar transaction timeout
+      // Respetar partidos con manualOverride=true (no los borramos)
       await this.prisma.$transaction([
-        this.prisma.match.deleteMany(),
+        this.prisma.match.deleteMany({ where: { manualOverride: false } }),
         this.prisma.match.createMany({ data: records }),
       ]);
       this.logger.log(`🎉 Sincronizados ${fixtures.length} partidos.`);

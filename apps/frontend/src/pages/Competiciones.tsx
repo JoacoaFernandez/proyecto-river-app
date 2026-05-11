@@ -13,8 +13,18 @@ import {
 
 const RIVER_RX = /river\s*plate|^river$/i;
 
-function zoneFor(pos: number, totalRows: number): { color: string; label: string } | null {
-  if (pos <= 8) return { color: 'bg-green-500/10 border-l-2 border-green-500', label: 'Octavos' };
+function zoneFor(
+  pos: number,
+  totalRows: number,
+  advanceTop: number,
+): { color: string; label: string } | null {
+  if (advanceTop <= 3) {
+    // Grupos de Copa: Top 2 avanzan al Round of 16
+    if (pos <= 2) return { color: 'bg-green-500/10 border-l-2 border-green-500', label: 'R16' };
+    return null;
+  }
+  // Liga Argentina
+  if (pos <= advanceTop) return { color: 'bg-green-500/10 border-l-2 border-green-500', label: 'Octavos' };
   if (totalRows >= 15 && pos > totalRows - 4)
     return { color: 'bg-red-500/10 border-l-2 border-red-500', label: 'Descenso' };
   return null;
@@ -24,7 +34,7 @@ function isRiver(team: string | undefined | null): boolean {
   return !!team && RIVER_RX.test(team);
 }
 
-function ZoneTable({ group }: { group: StandingsGroup }) {
+function ZoneTable({ group, advanceTop = 8 }: { group: StandingsGroup; advanceTop?: number }) {
   const totalRows = group.standings.length;
   const hasRiver = group.standings.some((r) => isRiver(r.team));
   return (
@@ -59,7 +69,7 @@ function ZoneTable({ group }: { group: StandingsGroup }) {
           <tbody>
             {group.standings.map((row: StandingRow) => {
               const river = isRiver(row.team);
-              const zone = zoneFor(row.pos, totalRows);
+              const zone = zoneFor(row.pos, totalRows, advanceTop);
               return (
                 <tr
                   key={`${group.key}-${row.pos}-${row.team}`}
@@ -279,6 +289,8 @@ export default function Competiciones() {
   }, [selected]);
 
   const selectedMeta = competitions.find((c) => c.code === selected) ?? null;
+  const isCopa = selectedMeta?.type === 'cup';
+  const advanceTop = isCopa ? 2 : 8;
 
   const orderedGroups = useMemo(() => {
     if (groups.length < 2) return groups;
@@ -341,7 +353,7 @@ export default function Competiciones() {
                   <span className="text-xs text-neutral-500">
                     {orderedGroups.length === 1
                       ? `${orderedGroups[0].standings.length} equipos`
-                      : `${orderedGroups.length} zonas · ${orderedGroups.reduce(
+                      : `${orderedGroups.length} ${isCopa ? 'grupos' : 'zonas'} · ${orderedGroups.reduce(
                           (acc, g) => acc + g.standings.length,
                           0,
                         )} equipos`}
@@ -374,9 +386,11 @@ export default function Competiciones() {
               <div className="flex flex-wrap gap-3 text-xs">
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 bg-green-500/40 border-l-2 border-green-500"></div>
-                  <span className="text-neutral-400">Clasifican a octavos (Top 8)</span>
+                  <span className="text-neutral-400">
+                    {isCopa ? 'Clasifican al Round of 16 (Top 2 por grupo)' : 'Clasifican a octavos (Top 8)'}
+                  </span>
                 </div>
-                {orderedGroups.some((g) => g.standings.length >= 15) && (
+                {!isCopa && orderedGroups.some((g) => g.standings.length >= 15) && (
                   <div className="flex items-center gap-2">
                     <div className="w-3 h-3 bg-red-500/40 border-l-2 border-red-500"></div>
                     <span className="text-neutral-400">Zona de descenso (orientativo)</span>
@@ -390,7 +404,7 @@ export default function Competiciones() {
                 }`}
               >
                 {orderedGroups.map((g) => (
-                  <ZoneTable key={g.key} group={g} />
+                  <ZoneTable key={g.key} group={g} advanceTop={advanceTop} />
                 ))}
               </div>
 

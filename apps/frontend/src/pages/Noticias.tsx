@@ -1,6 +1,7 @@
 // apps/frontend/src/pages/Noticias.tsx
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Search, X, FileText, Star } from 'lucide-react';
 import { getNews, type NewsItem } from '../services/news.service';
 import { timeAgo } from '../utils/time';
 
@@ -98,7 +99,7 @@ export default function Noticias() {
           )}
 
           <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500">🔍</span>
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
             <input
               type="text"
               value={search}
@@ -109,9 +110,9 @@ export default function Noticias() {
             {search && (
               <button
                 onClick={() => setSearch('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-white text-sm"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-white"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             )}
           </div>
@@ -128,7 +129,7 @@ export default function Noticias() {
         <div className="text-center py-16 bg-neutral-900 border border-neutral-800 rounded-2xl text-neutral-500 text-sm">
           {search.trim() || category !== 'all'
             ? 'No hay noticias que coincidan con esos criterios.'
-            : 'Todavía no hay noticias publicadas. ✍️'}
+            : 'Todavía no hay noticias publicadas.'}
         </div>
       ) : (
         <>
@@ -139,13 +140,19 @@ export default function Noticias() {
               className="block bg-neutral-900 border border-neutral-800 hover:border-riverRed rounded-2xl overflow-hidden mb-6 group transition-all"
             >
               <div className="md:flex">
-                <div className="md:w-1/2 aspect-video md:aspect-auto bg-gradient-to-br from-red-950/40 to-neutral-950 flex items-center justify-center">
-                  <span className="text-7xl opacity-30">📰</span>
+                <div className="md:w-1/2 aspect-video md:aspect-auto overflow-hidden">
+                  {featured.imageUrl ? (
+                    <img src={featured.imageUrl} alt={featured.title} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-red-950/40 to-neutral-950 flex items-center justify-center">
+                      <FileText className="w-14 h-14 text-neutral-700" />
+                    </div>
+                  )}
                 </div>
                 <div className="md:w-1/2 p-6 md:p-8 flex flex-col justify-center">
                   <div className="flex items-center gap-2 mb-3">
-                    <span className="text-[10px] font-bold text-riverRed uppercase tracking-widest bg-red-950/30 border border-red-900/40 px-2 py-1 rounded-full">
-                      ⭐ Destacada
+                    <span className="flex items-center gap-1 text-[10px] font-bold text-riverRed uppercase tracking-widest bg-red-950/30 border border-red-900/40 px-2 py-1 rounded-full">
+                      <Star className="w-2.5 h-2.5" /> Destacada
                     </span>
                     <span className="text-[10px] text-neutral-500">{featured.category}</span>
                   </div>
@@ -170,8 +177,14 @@ export default function Noticias() {
                 to={`/noticias/${n.id}`}
                 className="bg-neutral-900 border border-neutral-800 hover:border-riverRed rounded-2xl overflow-hidden group transition-all flex flex-col"
               >
-                <div className="aspect-video bg-gradient-to-br from-neutral-800 to-neutral-950 flex items-center justify-center border-b border-neutral-800">
-                  <span className="text-5xl opacity-30 group-hover:opacity-50 transition-opacity">📰</span>
+                <div className="aspect-video overflow-hidden border-b border-neutral-800">
+                  {n.imageUrl ? (
+                    <img src={n.imageUrl} alt={n.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-neutral-800 to-neutral-950 flex items-center justify-center">
+                      <FileText className="w-10 h-10 text-neutral-700 group-hover:text-neutral-600 transition-colors" />
+                    </div>
+                  )}
                 </div>
                 <div className="p-4 flex flex-col flex-1">
                   <div className="flex items-center justify-between mb-2">

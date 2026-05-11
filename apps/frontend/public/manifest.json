@@ -1,0 +1,49 @@
+{
+  "name": "River App",
+  "short_name": "River",
+  "description": "App para hinchas de River Plate — partidos, noticias, plantel y más.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#E30613",
+  "orientation": "portrait-primary",
+  "categories": ["sports", "entertainment"],
+  "icons": [
+    {
+      "src": "/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Partidos",
+      "short_name": "Partidos",
+      "description": "Ver fixture y resultados",
+      "url": "/partidos",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "Noticias",
+      "short_name": "Noticias",
+      "description": "Últimas noticias de River",
+      "url": "/noticias",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    }
+  ]
+}

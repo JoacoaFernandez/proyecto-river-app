@@ -33,4 +33,9 @@ export class CreateNewsDto {
   @IsString()
   @IsOptional()
   authorId?: string;
+
+  @ApiProperty({ description: 'URL de la imagen de portada', required: false })
+  @IsString()
+  @IsOptional()
+  imageUrl?: string;
 }

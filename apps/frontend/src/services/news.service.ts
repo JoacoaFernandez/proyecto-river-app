@@ -14,12 +14,22 @@ export interface NewsItem {
   category: string;
   slug: string;
   url: string | null;
+  imageUrl: string | null;
   status: string;
   publishedAt: string | null;
   authorId: string;
   author: NewsAuthor;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface NewsComment {
+  id: string;
+  newsId: string;
+  userId: string;
+  body: string;
+  createdAt: string;
+  user: { id: string; display_name: string; avatar_url: string | null };
 }
 
 export const getNews = async (): Promise<NewsItem[]> => {
@@ -47,11 +57,20 @@ export interface CreateNewsInput {
   body: string;
   category?: string;
   status?: 'draft' | 'published';
+  imageUrl?: string;
 }
 
 export const createNews = async (input: CreateNewsInput): Promise<NewsItem> => {
   const response = await api.post<NewsItem>('/news', input);
   return response.data;
+};
+
+export const updateNews = async (
+  id: string,
+  data: Partial<Pick<NewsItem, 'title' | 'body' | 'category' | 'status' | 'imageUrl'>>,
+): Promise<NewsItem> => {
+  const res = await api.patch<NewsItem>(`/news/${id}`, data);
+  return res.data;
 };
 
 export const deleteNews = async (id: string): Promise<void> => {
@@ -61,4 +80,40 @@ export const deleteNews = async (id: string): Promise<void> => {
 export const triggerAiNews = async (): Promise<unknown> => {
   const response = await api.post('/news/trigger-ai');
   return response.data;
+};
+
+// ── Comentarios ───────────────────────────────────────────────────────────────
+
+export const getComments = async (newsId: string): Promise<NewsComment[]> => {
+  try {
+    const res = await api.get<NewsComment[]>(`/news/${newsId}/comments`);
+    return res.data ?? [];
+  } catch {
+    return [];
+  }
+};
+
+export const addComment = async (newsId: string, body: string): Promise<NewsComment> => {
+  const res = await api.post<NewsComment>(`/news/${newsId}/comments`, { body });
+  return res.data;
+};
+
+export const deleteComment = async (newsId: string, commentId: string): Promise<void> => {
+  await api.delete(`/news/${newsId}/comments/${commentId}`);
+};
+
+// ── Likes ─────────────────────────────────────────────────────────────────────
+
+export const toggleLike = async (newsId: string): Promise<{ liked: boolean; count: number }> => {
+  const res = await api.post<{ liked: boolean; count: number }>(`/news/${newsId}/like`);
+  return res.data;
+};
+
+export const getLikes = async (newsId: string): Promise<{ liked: boolean; count: number }> => {
+  try {
+    const res = await api.get<{ liked: boolean; count: number }>(`/news/${newsId}/likes`);
+    return res.data;
+  } catch {
+    return { liked: false, count: 0 };
+  }
 };

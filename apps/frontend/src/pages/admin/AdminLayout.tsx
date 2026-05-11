@@ -1,12 +1,14 @@
 // apps/frontend/src/pages/admin/AdminLayout.tsx
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { LayoutDashboard, Calendar, Newspaper, Users, LogOut, ArrowLeft } from 'lucide-react';
 import { clearCurrentUser, getCurrentUser, type CurrentUser } from '../../services/me.service';
 
 const navItems = [
-  { to: '/admin', label: 'Dashboard', icon: '📊', end: true },
-  { to: '/admin/noticias', label: 'Noticias', icon: '📰', end: false },
-  { to: '/admin/plantel', label: 'Plantel', icon: '🏃', end: false },
+  { to: '/admin', label: 'Dashboard', Icon: LayoutDashboard, end: true },
+  { to: '/admin/partidos', label: 'Partidos', Icon: Calendar, end: false },
+  { to: '/admin/noticias', label: 'Noticias', Icon: Newspaper, end: false },
+  { to: '/admin/plantel', label: 'Plantel', Icon: Users, end: false },
 ];
 
 export default function AdminLayout() {
@@ -30,9 +32,7 @@ export default function AdminLayout() {
         {/* Brand */}
         <div className="p-6 border-b border-neutral-800">
           <Link to="/" className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-white text-riverRed font-black flex items-center justify-center border border-riverRed">
-              CARP
-            </div>
+            <img src="/favicon.svg" alt="River App" className="w-9 h-9 rounded-full border border-neutral-700" />
             <div>
               <div className="font-bold text-sm tracking-wide">River App</div>
               <div className="text-[10px] text-riverRed font-bold uppercase tracking-widest">Admin Panel</div>
@@ -55,7 +55,7 @@ export default function AdminLayout() {
                 }`
               }
             >
-              <span className="text-lg">{item.icon}</span>
+              <item.Icon className="w-4 h-4 flex-shrink-0" />
               <span>{item.label}</span>
             </NavLink>
           ))}
@@ -77,15 +77,15 @@ export default function AdminLayout() {
           <div className="space-y-1">
             <Link
               to="/"
-              className="block text-center text-xs bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 px-3 py-2 rounded-lg transition-all"
+              className="flex items-center gap-2 justify-center text-xs bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 px-3 py-2 rounded-lg transition-all"
             >
-              ← Volver a la app
+              <ArrowLeft className="w-3.5 h-3.5" /> Volver a la app
             </Link>
             <button
               onClick={handleLogout}
-              className="block w-full text-center text-xs bg-neutral-950 hover:bg-red-950/40 border border-neutral-800 hover:border-riverRed text-neutral-300 hover:text-riverRed px-3 py-2 rounded-lg transition-all"
+              className="flex items-center gap-2 justify-center w-full text-xs bg-neutral-950 hover:bg-red-950/40 border border-neutral-800 hover:border-riverRed text-neutral-300 hover:text-riverRed px-3 py-2 rounded-lg transition-all"
             >
-              Cerrar sesión
+              <LogOut className="w-3.5 h-3.5" /> Cerrar sesión
             </button>
           </div>
         </div>

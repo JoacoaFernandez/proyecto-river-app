@@ -52,6 +52,16 @@ export class AuthService {
     return safe;
   }
 
+  // EDITAR PERFIL
+  async updateProfile(userId: string, data: { display_name?: string; avatar_url?: string }) {
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data,
+    });
+    const { password_hash: _, ...safe } = updated;
+    return safe;
+  }
+
   // INICIO DE SESIÓN (LOGIN)
   async login(loginDto: LoginDto) {
     const { email, password } = loginDto;

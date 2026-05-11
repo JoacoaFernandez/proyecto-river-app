@@ -20,7 +20,7 @@ export class LiveApiGateway implements OnGatewayInit, OnGatewayConnection {
   constructor(private readonly liveApiService: LiveApiService) {}
 
   afterInit() {
-    this.logger.log('WebSocket Gateway inicializado');
+    this.logger.log('🔌 WebSocket Gateway inicializado');
   }
 
   async handleConnection(client: Socket) {
@@ -34,13 +34,14 @@ export class LiveApiGateway implements OnGatewayInit, OnGatewayConnection {
     client.emit('live:update', data);
   }
 
+  /** Broadcast a todos los clientes cada 30 segundos */
   @Cron('*/30 * * * * *')
   async broadcastLiveMatch() {
     const data = await this.liveApiService.getLiveMatch();
     this.server.emit('live:update', data);
     if (data) {
       this.logger.log(
-        `Live: ${data.homeTeam} ${data.homeScore}-${data.awayScore} ${data.awayTeam} (${data.displayClock})`,
+        `📡 Live: ${data.homeTeam} ${data.homeScore}-${data.awayScore} ${data.awayTeam} (${data.displayClock})`,
       );
     }
   }

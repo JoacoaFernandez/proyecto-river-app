@@ -38,3 +38,12 @@ export function clearCurrentUser() {
   cached = null;
   inflight = null;
 }
+
+export async function updateCurrentUser(data: {
+  display_name?: string;
+  avatar_url?: string;
+}): Promise<CurrentUser | null> {
+  const res = await api.patch<CurrentUser>('/auth/me', data);
+  cached = res.data;
+  return cached;
+}

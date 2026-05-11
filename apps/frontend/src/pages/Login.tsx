@@ -1,6 +1,6 @@
 // apps/frontend/src/pages/Login.tsx
 import { useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { login } from '../services/auth.service';
 
 export default function Login() {
@@ -91,7 +91,10 @@ export default function Login() {
 
         {/* Footer del login */}
         <p className="text-center text-xs text-neutral-500 mt-6">
-          ¿No tenés cuenta? <span className="text-riverRed cursor-pointer hover:underline">Registrate acá</span>
+          ¿No tenés cuenta?{' '}
+          <Link to="/register" className="text-riverRed hover:underline font-semibold">
+            Registrate acá
+          </Link>
         </p>
       </div>
     </div>
