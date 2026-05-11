@@ -113,6 +113,7 @@ model Match {
   competition    String? // Ej: "Liga Profesional", "Copa Libertadores"
   stadium        String?
   manualOverride Boolean     @default(false) // Si true, el sync no lo sobreescribe
+  penaltyWinner  String?     // Nombre del equipo ganador por penales (cuando scores iguales)
   updatedAt      DateTime    @updatedAt
   Formation      Formation[]
 }

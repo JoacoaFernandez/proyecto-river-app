@@ -61,6 +61,7 @@ export class LiveApiService {
         status: m.status,
         competition: m.competition,
         minute: m.minute,
+        penaltyWinner: m.penaltyWinner ?? null,
       };
     };
 

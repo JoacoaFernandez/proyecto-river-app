@@ -84,6 +84,7 @@ export interface PlayoffMatch {
   status: PlayoffStatus;
   date: string | null;
   winner: 'home' | 'away' | null;
+  penaltyDecided: boolean;
 }
 
 export interface PlayoffsBracket {
@@ -109,6 +110,7 @@ interface EspnPlayoffMatch {
   awayTeam: string;
   homeScore: number | null;
   awayScore: number | null;
+  penaltyWinner: string | null;
   status: PlayoffStatus;
   date: string;
   round: PlayoffRound | null;
@@ -284,11 +286,20 @@ export class CompetitionsService {
         const homeScore = hasScore ? this.parseScore(homeScoreRaw) : null;
         const awayScore = hasScore ? this.parseScore(awayScoreRaw) : null;
 
+        // Detectar ganador por penales: scores iguales pero competitors[].winner = true
+        const homeWins: boolean = home?.winner === true;
+        const awayWins: boolean = away?.winner === true;
+        const tiedScore = homeScore !== null && awayScore !== null && homeScore === awayScore;
+        const penaltyWinner = (status === 'finished' && tiedScore && (homeWins || awayWins))
+          ? (homeWins ? (home?.team?.displayName ?? '') : (away?.team?.displayName ?? ''))
+          : null;
+
         matches.push({
           homeTeam: home?.team?.displayName ?? '',
           awayTeam: away?.team?.displayName ?? '',
           homeScore,
           awayScore,
+          penaltyWinner,
           status,
           date: ev?.date ?? '',
           round,
@@ -405,6 +416,7 @@ export class CompetitionsService {
           status: 'pending',
           date: null,
           winner: null,
+          penaltyDecided: false,
         };
       }
 
@@ -413,14 +425,19 @@ export class CompetitionsService {
       const homeScore = flipped ? espnMatch.awayScore : espnMatch.homeScore;
       const awayScore = flipped ? espnMatch.homeScore : espnMatch.awayScore;
 
-      const winner =
-        espnMatch.status === 'finished' && homeScore != null && awayScore != null
-          ? homeScore > awayScore
-            ? 'home'
-            : awayScore > homeScore
-              ? 'away'
-              : null
-          : null;
+      let winner: 'home' | 'away' | null = null;
+      if (espnMatch.status === 'finished' && homeScore != null && awayScore != null) {
+        if (homeScore > awayScore) {
+          winner = 'home';
+        } else if (awayScore > homeScore) {
+          winner = 'away';
+        } else if (espnMatch.penaltyWinner) {
+          // Partido decidido por penales — mapear nombre del equipo a 'home'/'away'
+          const penNorm = this.normalize(espnMatch.penaltyWinner);
+          const homeNorm = this.normalize(home!.team);
+          winner = penNorm === homeNorm ? 'home' : 'away';
+        }
+      }
 
       return {
         round,
@@ -432,6 +449,7 @@ export class CompetitionsService {
         status: espnMatch.status,
         date: espnMatch.date || null,
         winner,
+        penaltyDecided: winner !== null && homeScore === awayScore,
       };
     };
 
@@ -578,13 +596,23 @@ export class CompetitionsService {
           ? 'scheduled'
           : first.status;
 
-      const winner: 'home' | 'away' | null = bothDone
-        ? homeAgg > awayAgg
-          ? 'home'
-          : awayAgg > homeAgg
-            ? 'away'
-            : null
-        : null;
+      let winner: 'home' | 'away' | null = null;
+      if (bothDone) {
+        if (homeAgg > awayAgg) {
+          winner = 'home';
+        } else if (awayAgg > homeAgg) {
+          winner = 'away';
+        } else {
+          // Agregado empatado — buscar si la vuelta fue definida por penales
+          const penLeg = legs.find((l) => l.penaltyWinner != null);
+          if (penLeg) {
+            const penNorm = this.normalize(penLeg.penaltyWinner!);
+            const firstHomeNorm = this.normalize(first.homeTeam);
+            winner = penNorm === firstHomeNorm ? 'home' : 'away';
+          }
+        }
+      }
+      const penaltyDecided = winner !== null && homeAgg === awayAgg;
 
       result.push({
         round,
@@ -596,6 +624,7 @@ export class CompetitionsService {
         status,
         date: first.date,
         winner,
+        penaltyDecided,
       });
     }
 
@@ -611,6 +640,7 @@ export class CompetitionsService {
         status: 'pending',
         date: null,
         winner: null,
+        penaltyDecided: false,
       });
     }
 

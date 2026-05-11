@@ -205,6 +205,11 @@ function BracketCard({ match }: { match: PlayoffMatch }) {
         isLoser={awayLost}
         score={match.awayScore}
       />
+      {match.penaltyDecided && finished && (
+        <div className="px-3 py-1 text-[10px] text-yellow-500/80 text-center">
+          definido por penales
+        </div>
+      )}
     </div>
   );
 }

@@ -215,12 +215,15 @@ export default function Home() {
               const isHome = RIVER_RX.test(lastMatch.homeTeam);
               const ourScore = isHome ? (lastMatch.homeScore ?? 0) : (lastMatch.awayScore ?? 0);
               const theirScore = isHome ? (lastMatch.awayScore ?? 0) : (lastMatch.homeScore ?? 0);
-              const result = ourScore > theirScore ? 'G' : ourScore === theirScore ? 'E' : 'P';
+              const riverWonPen = lastMatch.penaltyWinner && RIVER_RX.test(lastMatch.penaltyWinner);
+              const result = ourScore > theirScore || riverWonPen ? 'G' : ourScore === theirScore ? 'E' : 'P';
               const resultColor = result === 'G' ? 'bg-green-500/20 text-green-400 border-green-700/40' : result === 'E' ? 'bg-yellow-500/20 text-yellow-400 border-yellow-700/40' : 'bg-red-500/20 text-red-400 border-red-700/40';
               return (
                 <div className="p-5">
                   <div className="flex items-center gap-2 justify-center mb-4">
-                    <span className={`text-xs font-black uppercase px-2.5 py-1 rounded-lg border ${resultColor}`}>{result === 'G' ? 'Victoria' : result === 'E' ? 'Empate' : 'Derrota'}</span>
+                    <span className={`text-xs font-black uppercase px-2.5 py-1 rounded-lg border ${resultColor}`}>
+                      {result === 'G' ? (riverWonPen ? 'Victoria (pen.)' : 'Victoria') : result === 'E' ? 'Empate' : 'Derrota'}
+                    </span>
                     <span className="text-[10px] text-neutral-500">{lastMatch.competition} · {new Date(lastMatch.date).toLocaleDateString('es-AR')}</span>
                   </div>
 

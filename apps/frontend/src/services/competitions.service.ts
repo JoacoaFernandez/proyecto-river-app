@@ -52,6 +52,7 @@ export interface PlayoffMatch {
   status: PlayoffStatus;
   date: string | null;
   winner: 'home' | 'away' | null;
+  penaltyDecided: boolean;
 }
 
 export interface PlayoffsBracket {
