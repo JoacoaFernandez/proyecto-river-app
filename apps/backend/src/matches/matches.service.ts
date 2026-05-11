@@ -262,15 +262,15 @@ export class MatchesService implements OnModuleInit {
       let matches: any[] = [];
 
       if (!matches.length) {
-        this.logger.log('📡 [1/4] TheSportsDB...');
-        matches = await this.fetchFromTheSportsDB();
-        this.logger.log(matches.length ? `✅ TheSportsDB: ${matches.length} partidos.` : '❌ TheSportsDB: 0 partidos.');
+        this.logger.log('📡 [1/4] ESPN API...');
+        matches = await this.fetchFromEspnApi();
+        this.logger.log(matches.length ? `✅ ESPN: ${matches.length} partidos.` : '❌ ESPN: 0 partidos.');
       }
 
       if (!matches.length) {
-        this.logger.log('📡 [2/4] ESPN API...');
-        matches = await this.fetchFromEspnApi();
-        this.logger.log(matches.length ? `✅ ESPN: ${matches.length} partidos.` : '❌ ESPN: 0 partidos.');
+        this.logger.log('📡 [2/4] TheSportsDB...');
+        matches = await this.fetchFromTheSportsDB();
+        this.logger.log(matches.length ? `✅ TheSportsDB: ${matches.length} partidos.` : '❌ TheSportsDB: 0 partidos.');
       }
 
       if (!matches.length) {
@@ -390,10 +390,30 @@ export class MatchesService implements OnModuleInit {
             continue;
           }
 
+          // Detect penalty winner from TheSportsDB fields
+          const tiedScore = homeScoreRaw !== null && awayScoreRaw !== null && homeScoreRaw === awayScoreRaw;
+          const penStatusRaw = (ev.strStatus || '').toLowerCase();
+          const isPenResult = penStatusRaw === 'pen' || penStatusRaw === 'aet';
+          let penaltyWinner: string | null = null;
+          if (status === 'finished' && tiedScore && isPenResult) {
+            const homePen = ev.intHomeScorePenalty != null ? parseInt(ev.intHomeScorePenalty, 10) : null;
+            const awayPen = ev.intAwayScorePenalty != null ? parseInt(ev.intAwayScorePenalty, 10) : null;
+            if (homePen != null && awayPen != null) {
+              penaltyWinner = homePen > awayPen ? homeTeamRaw : awayTeamRaw;
+            } else if (ev.strResult) {
+              const resultLower = (ev.strResult || '').toLowerCase();
+              const homeLower = homeTeamRaw.toLowerCase();
+              const awayLower = awayTeamRaw.toLowerCase();
+              if (resultLower.includes(homeLower)) penaltyWinner = homeTeamRaw;
+              else if (resultLower.includes(awayLower)) penaltyWinner = awayTeamRaw;
+            }
+          }
+
           allMatches.push({
             ...normalized,
             status,
             date,
+            penaltyWinner,
             competition: ev.strLeague || ev.strSeason || 'Competición',
           });
         }
