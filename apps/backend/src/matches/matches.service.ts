@@ -171,6 +171,22 @@ export class MatchesService implements OnModuleInit {
     });
   }
 
+  async getH2H(rival: string, limit = 6) {
+    if (!rival?.trim()) return [];
+    const term = rival.trim();
+    return this.prisma.match.findMany({
+      where: {
+        status: 'finished',
+        OR: [
+          { homeTeam: { contains: term, mode: 'insensitive' } },
+          { awayTeam: { contains: term, mode: 'insensitive' } },
+        ],
+      },
+      orderBy: { date: 'desc' },
+      take: limit,
+    });
+  }
+
   async getLatestMatch() {
     const now = new Date();
 

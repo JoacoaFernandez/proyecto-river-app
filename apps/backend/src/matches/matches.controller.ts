@@ -34,6 +34,13 @@ export class MatchesController {
     return this.matchesService.getPastMatches(n);
   }
 
+  @Get('h2h')
+  @ApiOperation({ summary: 'Historial cara a cara vs un rival' })
+  async getH2H(@Query('rival') rival: string, @Query('limit') limit = '6') {
+    const n = parseInt(limit as string, 10) || 6;
+    return this.matchesService.getH2H(rival, n);
+  }
+
   // ── Admin ───────────────────────────────────────────────────────────────────
 
   @Get()

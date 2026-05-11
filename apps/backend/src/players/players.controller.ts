@@ -29,6 +29,12 @@ export class PlayersController {
     return this.playersService.findAll();
   }
 
+  @Get('leaderboard')
+  @ApiOperation({ summary: 'Ranking de goleadores y asistidores del plantel' })
+  getLeaderboard() {
+    return this.playersService.getLeaderboard();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Obtener ficha técnica de un jugador específico' })
   findOne(@Param('id') id: string) {

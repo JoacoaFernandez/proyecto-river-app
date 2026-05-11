@@ -55,7 +55,43 @@ export class PlayersService {
     });
   }
 
-  // 6. Estadísticas desde API-Football (caché 10 min por jugador)
+  // 6. Leaderboard de goleadores (caché 1 hora)
+  private leaderboardCache: { data: LeaderboardEntry[]; ts: number } | null = null;
+
+  async getLeaderboard(): Promise<LeaderboardEntry[]> {
+    if (this.leaderboardCache && Date.now() - this.leaderboardCache.ts < 3_600_000) {
+      return this.leaderboardCache.data;
+    }
+
+    const players = await this.prisma.player.findMany({ orderBy: { number: 'asc' } });
+    const settled = await Promise.allSettled(
+      players.map(async (p) => {
+        const stats = await this.getPlayerStats(p.id);
+        if (!stats) return null;
+        return {
+          id: p.id,
+          name: p.name,
+          position: p.position,
+          number: p.number,
+          photo: p.photo,
+          goals: stats.goals,
+          assists: stats.assists,
+          appearances: stats.appearances,
+          season: stats.season,
+        } as LeaderboardEntry;
+      }),
+    );
+
+    const data = (settled as PromiseFulfilledResult<LeaderboardEntry | null>[])
+      .filter((r) => r.status === 'fulfilled' && r.value !== null)
+      .map((r) => r.value as LeaderboardEntry)
+      .sort((a, b) => b.goals - a.goals || b.assists - a.assists);
+
+    this.leaderboardCache = { data, ts: Date.now() };
+    return data;
+  }
+
+  // 7. Estadísticas desde API-Football (caché 10 min por jugador)
   async getPlayerStats(id: string): Promise<PlayerStatsDto | null> {
     const cached = this.statsCache.get(id);
     if (cached && Date.now() - cached.ts < 600_000) return cached.data;
@@ -120,6 +156,18 @@ export class PlayersService {
     this.statsCache.set(id, { data: null, ts: Date.now() });
     return null;
   }
+}
+
+export interface LeaderboardEntry {
+  id: string;
+  name: string;
+  position: string;
+  number: number | null;
+  photo: string | null;
+  goals: number;
+  assists: number;
+  appearances: number;
+  season: number;
 }
 
 export interface PlayerStatsDto {
