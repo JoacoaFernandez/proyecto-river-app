@@ -81,6 +81,8 @@ export interface PlayoffMatch {
   away: PlayoffSeed | null;
   homeScore: number | null;
   awayScore: number | null;
+  homePenScore: number | null;
+  awayPenScore: number | null;
   status: PlayoffStatus;
   date: string | null;
   winner: 'home' | 'away' | null;
@@ -111,6 +113,8 @@ interface EspnPlayoffMatch {
   homeScore: number | null;
   awayScore: number | null;
   penaltyWinner: string | null;
+  homePenScore: number | null;
+  awayPenScore: number | null;
   status: PlayoffStatus;
   date: string;
   round: PlayoffRound | null;
@@ -294,12 +298,42 @@ export class CompetitionsService {
           ? (homeWins ? (home?.team?.displayName ?? '') : (away?.team?.displayName ?? ''))
           : null;
 
+        // Intentar extraer score de penales
+        let homePenScore: number | null = null;
+        let awayPenScore: number | null = null;
+        if (penaltyWinner) {
+          // 1. Desde competitors[].statistics (stat name = 'penalties' o 'pk')
+          const penStatNames = ['penalties', 'pk', 'penaltygoals', 'penalty kicks'];
+          const hps = home?.statistics?.find((s: any) => penStatNames.includes((s.name ?? '').toLowerCase()));
+          const aps = away?.statistics?.find((s: any) => penStatNames.includes((s.name ?? '').toLowerCase()));
+          if (hps != null || aps != null) {
+            homePenScore = hps != null ? Number(hps.value ?? hps.displayValue ?? null) : null;
+            awayPenScore = aps != null ? Number(aps.value ?? aps.displayValue ?? null) : null;
+          }
+          // 2. Desde notes/headline: e.g. "(3-1)" o "3-1 en penales"
+          if (homePenScore == null) {
+            const notes: any[] = comp?.notes ?? [];
+            for (const note of notes) {
+              const m = (note.headline ?? note.text ?? '').match(/\((\d+)[–\-](\d+)\)|(\d+)[–\-](\d+)\s*(?:pen|pk)/i);
+              if (m) {
+                const a = parseInt(m[1] ?? m[3]);
+                const b = parseInt(m[2] ?? m[4]);
+                homePenScore = homeWins ? Math.max(a, b) : Math.min(a, b);
+                awayPenScore = awayWins ? Math.max(a, b) : Math.min(a, b);
+                break;
+              }
+            }
+          }
+        }
+
         matches.push({
           homeTeam: home?.team?.displayName ?? '',
           awayTeam: away?.team?.displayName ?? '',
           homeScore,
           awayScore,
           penaltyWinner,
+          homePenScore,
+          awayPenScore,
           status,
           date: ev?.date ?? '',
           round,
@@ -334,7 +368,8 @@ export class CompetitionsService {
 
   private mapStatus(statusName: string, completed: boolean): PlayoffStatus {
     const s = statusName.toUpperCase();
-    if (completed || s === 'STATUS_FULL_TIME' || s === 'STATUS_FINAL') return 'finished';
+    const finishedNames = ['STATUS_FINAL', 'STATUS_FULL_TIME', 'STATUS_FINAL_PEN', 'STATUS_FINAL_AET', 'STATUS_FINAL_PEN_AET'];
+    if (completed || finishedNames.includes(s)) return 'finished';
     if (
       s === 'STATUS_IN_PROGRESS' ||
       s === 'STATUS_HALFTIME' ||
@@ -413,6 +448,8 @@ export class CompetitionsService {
           away,
           homeScore: null,
           awayScore: null,
+          homePenScore: null,
+          awayPenScore: null,
           status: 'pending',
           date: null,
           winner: null,
@@ -420,10 +457,11 @@ export class CompetitionsService {
         };
       }
 
-      // Si ESPN tiene el partido invertido, alineamos a (home, away) según el seed pedido
       const flipped = this.normalize(espnMatch.homeTeam) !== this.normalize(home!.team);
       const homeScore = flipped ? espnMatch.awayScore : espnMatch.homeScore;
       const awayScore = flipped ? espnMatch.homeScore : espnMatch.awayScore;
+      const homePenScore = flipped ? espnMatch.awayPenScore : espnMatch.homePenScore;
+      const awayPenScore = flipped ? espnMatch.homePenScore : espnMatch.awayPenScore;
 
       let winner: 'home' | 'away' | null = null;
       if (espnMatch.status === 'finished' && homeScore != null && awayScore != null) {
@@ -432,7 +470,6 @@ export class CompetitionsService {
         } else if (awayScore > homeScore) {
           winner = 'away';
         } else if (espnMatch.penaltyWinner) {
-          // Partido decidido por penales — mapear nombre del equipo a 'home'/'away'
           const penNorm = this.normalize(espnMatch.penaltyWinner);
           const homeNorm = this.normalize(home!.team);
           winner = penNorm === homeNorm ? 'home' : 'away';
@@ -446,6 +483,8 @@ export class CompetitionsService {
         away,
         homeScore: homeScore ?? null,
         awayScore: awayScore ?? null,
+        homePenScore: homePenScore ?? null,
+        awayPenScore: awayPenScore ?? null,
         status: espnMatch.status,
         date: espnMatch.date || null,
         winner,
@@ -613,6 +652,17 @@ export class CompetitionsService {
         }
       }
       const penaltyDecided = winner !== null && homeAgg === awayAgg;
+      // Score de penales del leg decisivo
+      const penLegFinal = legs.find((l) => l.penaltyWinner != null);
+      const flippedPen = penLegFinal
+        ? this.normalize(penLegFinal.homeTeam) !== this.normalize(first.homeTeam)
+        : false;
+      const homePenScore = penLegFinal
+        ? (flippedPen ? penLegFinal.awayPenScore : penLegFinal.homePenScore)
+        : null;
+      const awayPenScore = penLegFinal
+        ? (flippedPen ? penLegFinal.homePenScore : penLegFinal.awayPenScore)
+        : null;
 
       result.push({
         round,
@@ -621,6 +671,8 @@ export class CompetitionsService {
         away: { team: first.awayTeam, teamLogo: null, seed: '' },
         homeScore: legsPlayed > 0 ? homeAgg : null,
         awayScore: legsPlayed > 0 ? awayAgg : null,
+        homePenScore: homePenScore ?? null,
+        awayPenScore: awayPenScore ?? null,
         status,
         date: first.date,
         winner,
@@ -637,6 +689,8 @@ export class CompetitionsService {
         away: null,
         homeScore: null,
         awayScore: null,
+        homePenScore: null,
+        awayPenScore: null,
         status: 'pending',
         date: null,
         winner: null,

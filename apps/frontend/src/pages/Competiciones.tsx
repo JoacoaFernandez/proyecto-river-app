@@ -206,8 +206,15 @@ function BracketCard({ match }: { match: PlayoffMatch }) {
         score={match.awayScore}
       />
       {match.penaltyDecided && finished && (
-        <div className="px-3 py-1 text-[10px] text-yellow-500/80 text-center">
-          definido por penales
+        <div className="px-3 py-1.5 flex items-center justify-center gap-1.5 bg-neutral-950/60">
+          <span className="text-[10px] text-neutral-500 uppercase tracking-wide">Penales</span>
+          {match.homePenScore != null && match.awayPenScore != null ? (
+            <span className="text-[11px] font-bold tabular-nums text-yellow-400">
+              {match.homePenScore} – {match.awayPenScore}
+            </span>
+          ) : (
+            <span className="text-[10px] text-yellow-400/70">pen.</span>
+          )}
         </div>
       )}
     </div>

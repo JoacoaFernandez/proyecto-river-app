@@ -448,7 +448,10 @@ export class MatchesService implements OnModuleInit {
   // ── Mapeo de status ESPN unificado ───────────────────────────────────────────
 
   private mapEspnStatus(statusName: string): 'scheduled' | 'live' | 'finished' {
-    const finishedStates = ['STATUS_FINAL', 'STATUS_FULL_TIME', 'STATUS_POSTPONED', 'STATUS_CANCELED'];
+    const finishedStates = [
+      'STATUS_FINAL', 'STATUS_FULL_TIME', 'STATUS_POSTPONED', 'STATUS_CANCELED',
+      'STATUS_FINAL_PEN', 'STATUS_FINAL_AET', 'STATUS_FINAL_PEN_AET',
+    ];
     const liveStates = ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_FIRST_HALF', 'STATUS_SECOND_HALF'];
     if (finishedStates.includes(statusName)) return 'finished';
     if (liveStates.includes(statusName)) return 'live';

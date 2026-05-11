@@ -49,6 +49,8 @@ export interface PlayoffMatch {
   away: PlayoffSeed | null;
   homeScore: number | null;
   awayScore: number | null;
+  homePenScore: number | null;
+  awayPenScore: number | null;
   status: PlayoffStatus;
   date: string | null;
   winner: 'home' | 'away' | null;
