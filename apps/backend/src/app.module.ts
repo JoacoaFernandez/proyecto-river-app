@@ -9,6 +9,8 @@ import { PlayersModule } from './players/players.module';
 import { FormationsModule } from './formations/formations.module';
 import { CompetitionsModule } from './competitions/competitions.module';
 import { LiveApiModule } from './live-api.module';
+import { PredictionsModule } from './predictions/predictions.module';
+import { AiModule } from './ai/ai.module';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -25,6 +27,8 @@ import { AppService } from './app.service';
     FormationsModule,
     CompetitionsModule,
     LiveApiModule,
+    PredictionsModule,
+    AiModule,
   ],
   controllers: [AppController],
   providers: [AppService],

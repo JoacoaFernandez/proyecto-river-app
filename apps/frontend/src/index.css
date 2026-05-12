@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 /* Ocultar scrollbar para Chrome, Safari y Opera */
 .hide-scrollbar::-webkit-scrollbar {
   display: none;

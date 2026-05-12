@@ -4,8 +4,8 @@ import { Link } from 'react-router-dom';
 import { getCurrentUser, updateCurrentUser } from '../services/me.service';
 import type { CurrentUser } from '../services/me.service';
 import { getNews } from '../services/news.service';
-import { getMatchById } from '../services/matches.service';
 import type { Match } from '../services/matches.service';
+import { getMyAllPredictions } from '../services/predictions.service';
 import { timeAgo } from '../utils/time';
 
 interface PredEntry {
@@ -56,22 +56,15 @@ export default function Perfil() {
       setLoading(false);
     });
 
-    const predKeys = Object.keys(localStorage).filter((k) => k.startsWith('river_pred_'));
-    const entries: PredEntry[] = predKeys.map((k) => ({
-      matchId: k.replace('river_pred_', ''),
-      pred: localStorage.getItem(k) as 'home' | 'draw' | 'away',
-      match: null,
-    }));
-    if (entries.length > 0) {
-      Promise.allSettled(entries.map((e) => getMatchById(e.matchId))).then((results) => {
-        setPredictions(
-          entries.map((e, i) => ({
-            ...e,
-            match: results[i].status === 'fulfilled' ? results[i].value : null,
-          })),
-        );
-      });
-    }
+    getMyAllPredictions().then((preds) => {
+      setPredictions(
+        preds.map((p) => ({
+          matchId: p.matchId,
+          pred: p.choice,
+          match: p.match || null,
+        }))
+      );
+    });
   }, []);
 
   const showFlash = (msg: string, error = false) => {

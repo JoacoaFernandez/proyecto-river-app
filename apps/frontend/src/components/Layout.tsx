@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   Home, Calendar, Users, Newspaper, BookOpen, Settings, User,
-  Download, Bell, BellOff, LogOut,
+  Download, Bell, BellOff, LogOut, Trophy,
 } from 'lucide-react';
 import { clearCurrentUser, getCurrentUser } from '../services/me.service';
 import type { CurrentUser } from '../services/me.service';
@@ -17,6 +17,7 @@ const baseNavItems = [
   { to: '/plantel', label: 'Plantel', Icon: Users, end: false },
   { to: '/noticias', label: 'Noticias', Icon: Newspaper, end: false },
   { to: '/historia', label: 'Historia', Icon: BookOpen, end: false },
+  { to: '/prode', label: 'Prode', Icon: Trophy, end: false },
 ];
 
 const adminNavItem = { to: '/admin', label: 'Admin', Icon: Settings, end: false };

@@ -3,6 +3,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import axios from 'axios';
+import { PredictionsService } from '../predictions/predictions.service';
 
 const RIVER_CANON = 'River Plate';
 const RIVER_NAMES = ['river plate', 'club atletico river plate', 'club atlético river plate'];
@@ -70,7 +71,10 @@ export class MatchesService implements OnModuleInit {
   private sportsDbTeamId: string | null = null;
   private espnTeamId: string | null = null;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly predictionsService: PredictionsService,
+  ) {}
 
   async onModuleInit() {
     this.logger.log('⚡ Motor de Fixture River Plate iniciando...');
@@ -785,14 +789,13 @@ export class MatchesService implements OnModuleInit {
 
     fixtures.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    const now            = new Date();
-    let nextAssigned     = false;
-    const finished       = fixtures.filter(f => f.status === 'finished');
+    const now = new Date();
+    let nextAssigned = false;
+    const finished = fixtures.filter(f => f.status === 'finished');
     const latestFinished = finished[finished.length - 1];
 
     const records = fixtures.map((m, i) => {
       const status = (m.status || 'scheduled').toLowerCase();
-
       let type: string;
       if (status === 'live') {
         type = 'LIVE';
@@ -822,22 +825,52 @@ export class MatchesService implements OnModuleInit {
       };
     });
 
-    // Si NEXT no se asignó, asignarlo al primer scheduled disponible
     if (!nextAssigned) {
       const firstScheduled = records.find(r => r.status === 'scheduled');
       if (firstScheduled) {
         firstScheduled.type = 'NEXT';
-        this.logger.warn('⚠️ NEXT asignado por fallback (partido scheduled con fecha pasada).');
+        this.logger.warn('⚠️ NEXT asignado por fallback.');
       }
     }
 
     try {
-      // Respetar partidos con manualOverride=true (no los borramos)
-      await this.prisma.$transaction([
-        this.prisma.match.deleteMany({ where: { manualOverride: false } }),
-        this.prisma.match.createMany({ data: records }),
-      ]);
-      this.logger.log(`🎉 Sincronizados ${fixtures.length} partidos.`);
+      const existingMatches = await this.prisma.match.findMany({ where: { manualOverride: false } });
+
+      for (const record of records) {
+        // Find by type to keep the old logic but update the team names if needed, 
+        // OR better: if we change the LATEST to PAST, type changes!
+        // So we should find by homeTeam + awayTeam + similar date (same day).
+        let match = existingMatches.find(m => 
+          m.homeTeam === record.homeTeam && 
+          m.awayTeam === record.awayTeam && 
+          Math.abs(m.date.getTime() - record.date.getTime()) < 1000 * 60 * 60 * 48 // within 48h
+        );
+
+        if (!match) {
+           // Fallback to type if not found by teams (dangerous but preserves logic)
+           match = existingMatches.find(m => m.type === record.type);
+        }
+
+        if (match) {
+          const wasFinished = match.status === 'finished';
+          const isNowFinished = record.status === 'finished';
+          const justFinished = !wasFinished && isNowFinished;
+
+          const updatedMatch = await this.prisma.match.update({
+            where: { id: match.id },
+            data: record,
+          });
+
+          if (justFinished) {
+            this.logger.log(`⚽ Partido finalizado detectado: ${updatedMatch.homeTeam} vs ${updatedMatch.awayTeam}`);
+            this.predictionsService.resolvePredictions(updatedMatch.id, updatedMatch.homeScore ?? 0, updatedMatch.awayScore ?? 0)
+              .catch(e => this.logger.error('Error resolviendo predicciones:', e));
+          }
+        } else {
+          await this.prisma.match.create({ data: record });
+        }
+      }
+      this.logger.log(`🎉 Sincronizados ${fixtures.length} partidos de forma segura.`);
     } catch (err: any) {
       this.logger.error(`❌ Error guardando en BD: ${err?.message}`);
     }
