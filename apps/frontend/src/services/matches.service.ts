@@ -14,6 +14,7 @@ export interface Match {
   competition: string | null;
   stadium: string | null;
   manualOverride: boolean;
+  aiPrediction?: string | null;
 }
 
 export const getLatestMatch = async () => {

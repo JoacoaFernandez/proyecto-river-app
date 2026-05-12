@@ -5,7 +5,10 @@ import { Calendar } from 'lucide-react';
 import { getLiveDashboard } from '../services/live.service';
 import { getLineup, type LineupResponse } from '../services/formations.service';
 import { getH2H, type Match } from '../services/matches.service';
+import { getMatchPrediction } from '../services/ai.service';
+import ReactMarkdown from 'react-markdown';
 import CanchaTactica from '../components/CanchaTactica';
+import { Bot, Sparkles, AlertCircle } from 'lucide-react';
 
 const TEAM_COLORS: Record<string, { bg: string; text: string }> = {
   'boca juniors': { bg: '#1a3f9e', text: '#f5c518' },
@@ -246,12 +249,88 @@ function H2HSection({ rival }: { rival: string }) {
   );
 }
 
+function AiPredictionSection({ matchId }: { matchId: string }) {
+  const [prediction, setPrediction] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    if (!matchId) return;
+    setLoading(true);
+    setError(false);
+    getMatchPrediction(matchId)
+      .then((res) => {
+        if (res) setPrediction(res);
+        else setError(true);
+      })
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
+  }, [matchId]);
+
+  return (
+    <section className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden shadow-2xl">
+      <div className="bg-gradient-to-r from-red-600/10 to-transparent p-5 border-b border-neutral-800 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-red-600/20 flex items-center justify-center text-red-500 border border-red-900/30">
+            <Bot size={24} />
+          </div>
+          <div>
+            <h3 className="text-xs font-bold text-neutral-200 uppercase tracking-widest flex items-center gap-2">
+              El Oráculo Millonario
+              <span className="bg-red-600 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black animate-pulse">
+                IA LIVE
+              </span>
+            </h3>
+            <p className="text-[10px] text-neutral-500 uppercase font-medium tracking-tighter mt-0.5">
+              Análisis predictivo basado en datos
+            </p>
+          </div>
+        </div>
+        <Sparkles className="text-red-500/30" size={20} />
+      </div>
+
+      <div className="p-5">
+        {loading ? (
+          <div className="space-y-4 py-4">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-neutral-800 animate-pulse" />
+              <div className="h-4 bg-neutral-800 rounded w-1/3 animate-pulse" />
+            </div>
+            <div className="space-y-2">
+              <div className="h-3 bg-neutral-800 rounded w-full animate-pulse" />
+              <div className="h-3 bg-neutral-800 rounded w-5/6 animate-pulse" />
+              <div className="h-3 bg-neutral-800 rounded w-4/5 animate-pulse" />
+            </div>
+          </div>
+        ) : error ? (
+          <div className="flex flex-col items-center justify-center py-8 text-center space-y-3">
+            <AlertCircle className="text-neutral-600" size={32} />
+            <p className="text-sm text-neutral-500 max-w-[200px]">
+              No se pudo conectar con el Oráculo en este momento.
+            </p>
+          </div>
+        ) : (
+          <div className="prose prose-invert prose-sm max-w-none prose-p:text-neutral-300 prose-strong:text-white prose-strong:font-black">
+            <ReactMarkdown>{prediction || ''}</ReactMarkdown>
+          </div>
+        )}
+      </div>
+
+      <div className="px-5 py-3 bg-neutral-950/50 border-t border-neutral-800 text-[9px] text-neutral-500 italic text-center">
+        Nota: Esta predicción es generada por IA y no garantiza resultados reales. Juega con responsabilidad.
+      </div>
+    </section>
+  );
+}
+
 export default function ProximoPartido() {
   const [match, setMatch] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [countdown, setCountdown] = useState<{ d: number; h: number; m: number; s: number } | null>(null);
   const [prediction, setPrediction] = useState<Pred>(null);
   const [predStored, setPredStored] = useState<Pred>(null);
+  const [predLoading, setPredLoading] = useState(false);
+  const isAuthenticated = !!localStorage.getItem('river_app_token');
 
   useEffect(() => {
     getLiveDashboard()
@@ -281,16 +360,34 @@ export default function ProximoPartido() {
   }, [match]);
 
   useEffect(() => {
-    if (!match) return;
-    const stored = localStorage.getItem(`river_pred_${match.id}`) as Pred;
-    if (stored) setPredStored(stored);
-  }, [match]);
+    if (!match || !isAuthenticated) return;
+    import('../services/predictions.service').then(({ getMyPrediction }) => {
+      getMyPrediction(match.id).then((res) => {
+        if (res) setPredStored(res.choice as Pred);
+      });
+    });
+  }, [match, isAuthenticated]);
 
-  const handlePredict = (p: Pred) => {
+  const handlePredict = async (p: Pred) => {
     if (!match || predStored) return;
+    if (!isAuthenticated) {
+      alert('Inicia sesión para participar del Prode');
+      return;
+    }
+    
+    setPredLoading(true);
     setPrediction(p);
-    localStorage.setItem(`river_pred_${match.id}`, p as string);
-    setPredStored(p);
+    
+    try {
+      const { createPrediction } = await import('../services/predictions.service');
+      await createPrediction(match.id, p as 'home' | 'draw' | 'away');
+      setPredStored(p);
+    } catch (e) {
+      alert('Hubo un error al guardar tu predicción.');
+      setPrediction(null);
+    } finally {
+      setPredLoading(false);
+    }
   };
 
   if (loading) {
@@ -436,6 +533,7 @@ export default function ProximoPartido() {
                   <button
                     key={opt.key}
                     onClick={() => handlePredict(opt.key)}
+                    disabled={predLoading}
                     className={`border rounded-xl py-3 text-center text-xs font-bold transition-all ${
                       prediction === opt.key
                         ? 'bg-red-950/40 text-riverRed border-red-900'
@@ -451,6 +549,9 @@ export default function ProximoPartido() {
           )}
         </div>
       </section>
+
+      {/* Oráculo de IA */}
+      <AiPredictionSection matchId={match.id} />
 
       {/* Formación probable: cancha SVG con XI titular */}
       <FormacionSection />

@@ -1,6 +1,7 @@
 // apps/frontend/src/pages/PartidoEnVivo.tsx
 import { Link } from 'react-router-dom';
 import { useLiveMatch, type ScoringPlay } from '../hooks/useLiveMatch';
+import LiveChat from '../components/LiveChat';
 
 function GoalIcon({ type }: { type: ScoringPlay['type'] }) {
   if (type === 'own-goal') return <span title="En propia" className="text-red-400">⚽</span>;
@@ -58,12 +59,10 @@ function NoLiveMatch({ connected }: { connected: boolean }) {
 
 function TeamBlock({
   name,
-  score,
   side,
   isRiver,
 }: {
   name: string;
-  score: number;
   side: 'home' | 'away';
   isRiver: boolean;
 }) {
@@ -109,8 +108,10 @@ export default function PartidoEnVivo() {
   );
 
   return (
-    <div className="max-w-3xl mx-auto px-4 mt-8 space-y-5 pb-12">
-      {/* Breadcrumb */}
+    <div className="max-w-6xl mx-auto px-4 mt-8 pb-12 flex flex-col lg:flex-row gap-8">
+      {/* Columna Izquierda: Partido en Vivo */}
+      <div className="flex-1 space-y-5">
+        {/* Breadcrumb */}
       <div className="text-sm text-neutral-500">
         <Link to="/partidos" className="hover:text-white">Partidos</Link>
         <span className="mx-2">/</span>
@@ -137,7 +138,6 @@ export default function PartidoEnVivo() {
         <div className="flex items-center justify-between gap-2">
           <TeamBlock
             name={match.homeTeam}
-            score={match.homeScore}
             side="home"
             isRiver={isHome}
           />
@@ -166,7 +166,6 @@ export default function PartidoEnVivo() {
 
           <TeamBlock
             name={match.awayTeam}
-            score={match.awayScore}
             side="away"
             isRiver={!isHome}
           />
@@ -214,10 +213,16 @@ export default function PartidoEnVivo() {
         </section>
       )}
 
-      {/* Info actualización */}
-      <p className="text-center text-[10px] text-neutral-600">
-        Marcador actualizado automáticamente cada 30 segundos vía ESPN.
-      </p>
+        {/* Info actualización */}
+        <p className="text-center text-[10px] text-neutral-600">
+          Marcador actualizado automáticamente cada 30 segundos vía ESPN.
+        </p>
+      </div>
+
+      {/* Columna Derecha: Chat en Vivo */}
+      <div className="w-full lg:w-[400px] shrink-0">
+        <LiveChat />
+      </div>
     </div>
   );
 }

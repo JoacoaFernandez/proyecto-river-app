@@ -86,8 +86,44 @@ export class SyncService {
 
       this.logger.log(`Base de datos de Render sincronizada para el partido: ${dbMatch.id}`);
 
+      // Resolver predicciones si el partido acaba de terminar
+      if (newStatus === 'finished' && dbMatch.status !== 'finished') {
+        await this.resolvePredictions(dbMatch.id, homeGoals, awayGoals);
+      }
+
     } catch (error) {
       this.logger.error('Error al sincronizar con API-Football:', error.message);
     }
+  }
+
+  private async resolvePredictions(matchId: string, homeGoals: number, awayGoals: number) {
+    this.logger.log(`Resolviendo predicciones para el partido ${matchId}...`);
+    
+    let result: 'home' | 'draw' | 'away' = 'draw';
+    if (homeGoals > awayGoals) result = 'home';
+    else if (awayGoals > homeGoals) result = 'away';
+
+    const pendingPredictions = await this.prisma.prediction.findMany({
+      where: { matchId, status: 'pending' },
+    });
+
+    for (const pred of pendingPredictions) {
+      const isWinner = pred.choice === result;
+      const newStatus = isWinner ? 'won' : 'lost';
+      
+      await this.prisma.prediction.update({
+        where: { id: pred.id },
+        data: { status: newStatus },
+      });
+
+      if (isWinner) {
+        await this.prisma.user.update({
+          where: { id: pred.userId },
+          data: { points: { increment: 10 } }, // Asigna 10 puntos por acierto
+        });
+      }
+    }
+
+    this.logger.log(`Predicciones resueltas: ${pendingPredictions.length} procesadas.`);
   }
 }
