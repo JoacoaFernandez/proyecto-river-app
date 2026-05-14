@@ -140,6 +140,7 @@ export class PlayersService {
           minutes: st.games?.minutes ?? 0,
           rating: st.games?.rating ? parseFloat(st.games.rating).toFixed(1) : null,
           goals: st.goals?.total ?? 0,
+          penaltyGoals: st.penalty?.scored ?? 0,
           assists: st.goals?.assists ?? 0,
           yellowCards: st.cards?.yellow ?? 0,
           redCards: st.cards?.red ?? 0,
@@ -181,6 +182,7 @@ export interface PlayerStatsDto {
   minutes: number;
   rating: string | null;
   goals: number;
+  penaltyGoals: number;
   assists: number;
   yellowCards: number;
   redCards: number;

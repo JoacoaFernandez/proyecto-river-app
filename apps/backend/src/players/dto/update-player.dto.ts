@@ -1,17 +1,12 @@
 // apps/backend/src/players/dto/update-player.dto.ts
-import { IsOptional, IsString, IsInt, Min, Max, IsNumber } from 'class-validator';
+import { IsOptional, IsString, IsInt, Min, Max, IsDateString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class UpdatePlayerDto {
   @ApiProperty({ example: 'Franco Armani', required: false })
   @IsString()
   @IsOptional()
-  fullName?: string;
-
-  @ApiProperty({ example: 'Pulpo', required: false })
-  @IsString()
-  @IsOptional()
-  alias?: string;
+  name?: string;
 
   @ApiProperty({ example: 'Arquero', required: false })
   @IsString()
@@ -23,7 +18,12 @@ export class UpdatePlayerDto {
   @Min(1)
   @Max(99)
   @IsOptional()
-  jerseyNumber?: number;
+  number?: number;
+
+  @ApiProperty({ example: 37, required: false })
+  @IsInt()
+  @IsOptional()
+  age?: number;
 
   @ApiProperty({ example: 'Argentina', required: false })
   @IsString()
@@ -33,15 +33,40 @@ export class UpdatePlayerDto {
   @ApiProperty({ example: 'https://ejemplo.com/fotos/armani.png', required: false })
   @IsString()
   @IsOptional()
-  photoUrl?: string;
+  photo?: string;
 
-  @ApiProperty({ example: 'active', required: false })
+  @ApiProperty({ description: 'Estado: available, injured, loaned, suspended', required: false })
   @IsString()
   @IsOptional()
   status?: string;
 
-  @ApiProperty({ example: 1200000.00, required: false })
-  @IsNumber()
+  @ApiProperty({ example: 'Pulpo', required: false })
+  @IsString()
   @IsOptional()
-  marketValueUsd?: number;
+  nickname?: string;
+
+  @ApiProperty({ example: 'right', required: false })
+  @IsString()
+  @IsOptional()
+  preferredFoot?: string;
+
+  @ApiProperty({ required: false })
+  @IsDateString()
+  @IsOptional()
+  joinedAt?: string;
+
+  @ApiProperty({ example: 'Muscular', required: false })
+  @IsString()
+  @IsOptional()
+  injuryType?: string;
+
+  @ApiProperty({ example: 'Muslo derecho', required: false })
+  @IsString()
+  @IsOptional()
+  injuryZone?: string;
+
+  @ApiProperty({ required: false })
+  @IsDateString()
+  @IsOptional()
+  injuryReturnDate?: string;
 }
