@@ -78,16 +78,27 @@ function FormacionSection() {
   }, [scheme]);
 
   const schemes = data?.schemes ?? ['4-3-3', '4-4-2', '4-2-3-1', '3-5-2', '3-4-3', '5-3-2'];
+  const alertedIds = new Set((data?.alerts ?? []).map((a) => a.playerId));
+  const replacementIds = new Set((data?.alerts ?? []).filter((a) => a.replacementId).map((a) => a.replacementId!));
 
   return (
     <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest">
-            Formación probable
-          </h3>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest">
+              Formación probable
+            </h3>
+            {data?.source === 'last-match' && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-950/60 text-emerald-400 border border-emerald-800/50">
+                Último partido
+              </span>
+            )}
+          </div>
           <p className="text-[11px] text-neutral-500 mt-0.5">
-            XI derivado del plantel actual. La alineación oficial se confirma antes del partido.
+            {data?.source === 'last-match' && data.lastMatchInfo
+              ? `Basada en el último partido vs ${data.lastMatchInfo.opponent} · ${new Date(data.lastMatchInfo.date).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}`
+              : 'XI derivado del plantel actual. La alineación oficial se confirma antes del partido.'}
           </p>
         </div>
         <div className="flex gap-1.5 flex-wrap">
@@ -106,6 +117,21 @@ function FormacionSection() {
           ))}
         </div>
       </div>
+
+      {/* Alertas de lesión / suspensión */}
+      {data && data.alerts && data.alerts.length > 0 && (
+        <div className="space-y-1.5">
+          {data.alerts.map((alert) => (
+            <div
+              key={alert.playerId}
+              className="flex items-center gap-2 bg-amber-950/30 border border-amber-800/40 rounded-xl px-3 py-2 text-[11px]"
+            >
+              <span>{alert.type === 'injury' ? '🤕' : '🟥'}</span>
+              <span className="text-amber-300 flex-1">{alert.detail}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-20">
@@ -131,8 +157,19 @@ function FormacionSection() {
                 {data.bench.map((p) => (
                   <li
                     key={p.id}
-                    className="flex items-center gap-2 py-1 border-b border-neutral-800/50 last:border-0"
+                    className={`flex items-center gap-2 py-1 border-b border-neutral-800/50 last:border-0 ${
+                      replacementIds.has(p.id) ? 'bg-emerald-950/20 rounded px-1' : ''
+                    }`}
                   >
+                    {replacementIds.has(p.id) && (
+                      <span className="text-emerald-400 font-bold text-[10px]">↑</span>
+                    )}
+                    {alertedIds.has(p.id) && !replacementIds.has(p.id) && (
+                      <span className="text-amber-400 text-[10px]">⚠</span>
+                    )}
+                    {!replacementIds.has(p.id) && !alertedIds.has(p.id) && (
+                      <span className="w-3" />
+                    )}
                     <span className="w-6 text-center font-bold tabular-nums text-neutral-500">
                       {p.number ?? '–'}
                     </span>
