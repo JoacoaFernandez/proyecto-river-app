@@ -144,10 +144,24 @@ export class MatchesService implements OnModuleInit {
   }
 
   async findOne(id: string) {
-    return this.prisma.match.findUnique({
+    let match = await this.prisma.match.findUnique({
       where: { id },
       include: { events: { orderBy: [{ period: 'asc' }, { minute: 'asc' }] } },
     });
+    const GOAL_TYPES = new Set(['goal', 'own-goal', 'penalty-goal']);
+    const hasGoalEvents = match?.events?.some(e => GOAL_TYPES.has(e.type)) ?? false;
+    const totalGoals = (match?.homeScore ?? 0) + (match?.awayScore ?? 0);
+    const needsSync = match?.status === 'finished' && (!match.statistics || (totalGoals > 0 && !hasGoalEvents));
+    if (match && needsSync) {
+      try {
+        await this.autoSyncEventsForMatch(match.id, match.homeTeam, match.awayTeam, match.date);
+        match = await this.prisma.match.findUnique({
+          where: { id },
+          include: { events: { orderBy: [{ period: 'asc' }, { minute: 'asc' }] } },
+        });
+      } catch { /* si falla el sync, devolver match sin stats */ }
+    }
+    return match;
   }
 
   async createManual(data: {
@@ -331,6 +345,7 @@ export class MatchesService implements OnModuleInit {
       const dayAfter = new Date(matchDate.getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10).replace(/-/g, '');
 
       let espnEventId: string | null = null;
+      let espnLeague = 'arg.1';
 
       // Search across all leagues
       for (const league of ESPN_LEAGUES) {
@@ -349,6 +364,7 @@ export class MatchesService implements OnModuleInit {
 
           if (riverEvent) {
             espnEventId = String(riverEvent.id);
+            espnLeague = league.code;
             break;
           }
         } catch { /* try next league */ }
@@ -359,23 +375,25 @@ export class MatchesService implements OnModuleInit {
         return;
       }
 
-      // Fetch ESPN summary and parse all events
-      const summaryUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/arg.1/summary?event=${espnEventId}`;
+      // Fetch ESPN summary — intentar primero con la liga donde se encontró el evento,
+      // luego con las demás, priorizando la que devuelva estadísticas completas
+      const leaguesToTry = [espnLeague, ...ESPN_LEAGUES.map(l => l.code).filter(c => c !== espnLeague)];
       let summaryData: any;
-      try {
-        const summaryRes = await axios.get(summaryUrl, { headers: AXIOS_HEADERS, timeout: 8000 });
-        summaryData = summaryRes.data;
-      } catch {
-        // Try other leagues
-        for (const league of ESPN_LEAGUES) {
-          try {
-            const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.code}/summary?event=${espnEventId}`;
-            const res = await axios.get(url, { headers: AXIOS_HEADERS, timeout: 8000 });
-            summaryData = res.data;
-            break;
-          } catch { /* try next */ }
-        }
+      for (const leagueCode of leaguesToTry) {
+        try {
+          const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/${leagueCode}/summary?event=${espnEventId}`;
+          const res = await axios.get(url, { headers: AXIOS_HEADERS, timeout: 8000 });
+          const hasStats =
+            (res.data?.boxScore?.teams?.length ?? 0) >= 2 ||
+            (res.data?.statistics?.[0]?.teams?.length ?? 0) >= 2;
+          if (!summaryData) summaryData = res.data;
+          if (hasStats) { summaryData = res.data; break; }
+        } catch { /* try next */ }
       }
+
+      this.logger.log(
+        `📊 Summary [${espnLeague}/${espnEventId}]: keys=[${Object.keys(summaryData || {}).join(', ')}]`,
+      );
 
       if (!summaryData) {
         this.logger.warn(`📋 No se pudo obtener summary ESPN para evento ${espnEventId}`);
@@ -426,8 +444,40 @@ export class MatchesService implements OnModuleInit {
   /** Parse ESPN boxScore statistics into a normalized object */
   private parseEspnMatchStats(summary: any): Record<string, any> | null {
     try {
-      const teams: any[] = summary?.boxScore?.teams ?? [];
-      if (teams.length < 2) return null;
+      // Ruta 1: boxscore.teams (ESPN usa minúsculas)
+      const boxTeams: any[] = summary?.boxscore?.teams ?? summary?.boxScore?.teams ?? [];
+
+      // Ruta 2: statistics[n].teams — iterar todos los grupos
+      let statTeams: any[] = [];
+      if (Array.isArray(summary?.statistics)) {
+        for (const group of summary.statistics) {
+          if (Array.isArray(group?.teams) && group.teams.length >= 2) {
+            statTeams = group.teams;
+            break;
+          }
+        }
+      }
+
+      // Ruta 3: statistics.teams — objeto directo (sin array)
+      const directStatTeams: any[] =
+        !Array.isArray(summary?.statistics) && Array.isArray(summary?.statistics?.teams)
+          ? summary.statistics.teams
+          : [];
+
+      // Ruta 4: format.teams (algunos torneos ESPN)
+      const formatTeams: any[] = summary?.format?.teams ?? [];
+
+      const teams: any[] =
+        boxTeams.length >= 2 ? boxTeams :
+        statTeams.length >= 2 ? statTeams :
+        directStatTeams.length >= 2 ? directStatTeams :
+        formatTeams.length >= 2 ? formatTeams :
+        [];
+
+      if (teams.length < 2) {
+        this.logger.warn(`📊 parseEspnMatchStats: sin datos (box=${boxTeams.length}, stat=${statTeams.length}, direct=${directStatTeams.length})`);
+        return null;
+      }
 
       const home = teams.find((t: any) => t.homeAway === 'home') ?? teams[0];
       const away = teams.find((t: any) => t.homeAway === 'away') ?? teams[1];
@@ -504,6 +554,8 @@ export class MatchesService implements OnModuleInit {
       playerInName: string | null; assistName: string | null; detail: string | null; period: number;
     }> = [];
 
+    const normalizeTeam = (t: string) => /river plate/i.test(t) ? RIVER_CANON : t;
+
     // Goals from scoringPlays
     for (const sp of (summary.scoringPlays ?? [])) {
       const typeText: string = (sp.type?.text ?? '').toLowerCase();
@@ -516,7 +568,7 @@ export class MatchesService implements OnModuleInit {
 
       events.push({
         type, minute,
-        team: sp.team?.displayName ?? '',
+        team: normalizeTeam(sp.team?.displayName ?? ''),
         playerName: sp.participants?.[0]?.athlete?.displayName ?? sp.text ?? null,
         playerInName: null,
         assistName: sp.participants?.[1]?.athlete?.displayName ?? null,
@@ -525,12 +577,14 @@ export class MatchesService implements OnModuleInit {
       });
     }
 
-    // Cards, substitutions, VAR from keyEvents
+    const scoringPlayMinutes = new Set(events.map(e => `${e.minute}-${e.period}`));
+
+    // Cards, substitutions, VAR from keyEvents — also extract goals if scoringPlays was empty
     for (const ke of (summary.keyEvents ?? [])) {
       const typeText: string = (ke.type?.text ?? ke.text ?? '').toLowerCase();
       const clock = ke.clock?.displayValue ?? ke.time?.displayValue ?? '0';
       const minute = parseInt(clock.replace("'", ''), 10) || 0;
-      const team = ke.team?.displayName ?? '';
+      const team = normalizeTeam(ke.team?.displayName ?? '');
       const player = ke.participants?.[0]?.athlete?.displayName ?? null;
       const period = ke.period?.number ?? 1;
 
@@ -549,6 +603,15 @@ export class MatchesService implements OnModuleInit {
           type: 'var', minute, team, playerName: player,
           playerInName: null, assistName: null, detail: ke.text ?? null, period,
         });
+      } else if (
+        (typeText.includes('goal') || typeText.includes('gol') || typeText.includes('score')) &&
+        !typeText.includes('yellow') && !typeText.includes('red') &&
+        !scoringPlayMinutes.has(`${minute}-${period}`)
+      ) {
+        let type = 'goal';
+        if (typeText.includes('own') || typeText.includes('propia') || typeText.includes('contra')) type = 'own-goal';
+        else if (typeText.includes('penalty') || typeText.includes('penal')) type = 'penalty-goal';
+        events.push({ type, minute, team, playerName: player, playerInName: null, assistName: null, detail: null, period });
       }
     }
 

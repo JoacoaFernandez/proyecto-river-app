@@ -299,6 +299,46 @@ export default function PartidoDetalle() {
             <MapPin className="w-3.5 h-3.5" /> {match.stadium}
           </div>
         )}
+
+        {/* Goleadores */}
+        {(isFinished || isLive) && match.events && (() => {
+          const GOAL_TYPES = ['goal', 'own-goal', 'penalty-goal'];
+          const allGoals = match.events!.filter(e => GOAL_TYPES.includes(e.type));
+          if (allGoals.length === 0) return null;
+          // Usar RIVER_RX para identificar goles de River independientemente del nombre exacto
+          const homeGoals = allGoals.filter(e => isRiverHome ? RIVER_RX.test(e.team) : !RIVER_RX.test(e.team));
+          const awayGoals = allGoals.filter(e => isRiverHome ? !RIVER_RX.test(e.team) : RIVER_RX.test(e.team));
+          return (
+            <div className="mt-5 border-t border-neutral-800 pt-4">
+              <div className="grid grid-cols-[1fr_2px_1fr] gap-x-4 max-w-lg mx-auto text-xs">
+                {/* Goles local */}
+                <div className="space-y-1.5 text-right">
+                  {homeGoals.map(e => (
+                    <div key={e.id} className="flex items-center justify-end gap-1.5">
+                      <span className={e.type === 'own-goal' ? 'text-orange-400' : 'text-neutral-300'}>
+                        {e.playerName ?? '?'} {e.minute}'
+                      </span>
+                      <span>⚽</span>
+                    </div>
+                  ))}
+                </div>
+                {/* Separador */}
+                <div className="bg-neutral-800 self-stretch" />
+                {/* Goles visitante */}
+                <div className="space-y-1.5 text-left">
+                  {awayGoals.map(e => (
+                    <div key={e.id} className="flex items-center gap-1.5">
+                      <span>⚽</span>
+                      <span className={e.type === 'own-goal' ? 'text-orange-400' : 'text-neutral-300'}>
+                        {e.playerName ?? '?'} {e.minute}'
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </section>
 
       {/* Info adicional */}
