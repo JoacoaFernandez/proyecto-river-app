@@ -7,6 +7,8 @@ import type { Match } from '../services/matches.service';
 import EventTimeline from '../components/EventTimeline';
 import MatchStatsPanel from '../components/MatchStatsPanel';
 
+type DetailTab = 'resumen' | 'estadisticas' | 'h2h';
+
 const RIVER_RX = /river\s*plate|^river$/i;
 
 const TEAM_COLORS: Record<string, { bg: string; text: string }> = {
@@ -153,6 +155,7 @@ export default function PartidoDetalle() {
   const [match, setMatch] = useState<Match | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [detailTab, setDetailTab] = useState<DetailTab>('resumen');
 
   useEffect(() => {
     if (!id) return;
@@ -164,9 +167,7 @@ export default function PartidoDetalle() {
       await navigator.clipboard.writeText(window.location.href);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* no clipboard */
-    }
+    } catch { /* no clipboard */ }
   };
 
   if (loading) {
@@ -196,6 +197,7 @@ export default function PartidoDetalle() {
   const rival = isRiverHome ? match.awayTeam : match.homeTeam;
   const isFinished = match.status === 'finished';
   const isLive = match.status === 'live';
+  const isScheduled = !isFinished && !isLive;
 
   const riverScore = isRiverHome ? match.homeScore : match.awayScore;
   const rivalScore = isRiverHome ? match.awayScore : match.homeScore;
@@ -215,6 +217,15 @@ export default function PartidoDetalle() {
   const dayName = matchDate.toLocaleDateString('es-AR', { weekday: 'long' });
   const dayDate = matchDate.toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' });
   const time = matchDate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+
+  const hasEvents = match.events && match.events.length > 0;
+  const hasStats = isFinished && !!match.statistics;
+
+  const tabs: { id: DetailTab; label: string }[] = [
+    { id: 'resumen', label: 'Resumen' },
+    { id: 'estadisticas', label: 'Estadísticas' },
+    { id: 'h2h', label: `H2H vs ${rival.split(' ')[0]}` },
+  ];
 
   return (
     <div className="max-w-4xl mx-auto px-4 mt-6 pb-12 space-y-5">
@@ -252,7 +263,7 @@ export default function PartidoDetalle() {
                 {resultBadge.label}
               </span>
             )}
-            {!isLive && !isFinished && (
+            {isScheduled && (
               <span className="bg-red-950/40 text-riverRed border border-red-900/50 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-widest">
                 Próximo partido
               </span>
@@ -305,13 +316,11 @@ export default function PartidoDetalle() {
           const GOAL_TYPES = ['goal', 'own-goal', 'penalty-goal'];
           const allGoals = match.events!.filter(e => GOAL_TYPES.includes(e.type));
           if (allGoals.length === 0) return null;
-          // Usar RIVER_RX para identificar goles de River independientemente del nombre exacto
           const homeGoals = allGoals.filter(e => isRiverHome ? RIVER_RX.test(e.team) : !RIVER_RX.test(e.team));
           const awayGoals = allGoals.filter(e => isRiverHome ? !RIVER_RX.test(e.team) : RIVER_RX.test(e.team));
           return (
             <div className="mt-5 border-t border-neutral-800 pt-4">
               <div className="grid grid-cols-[1fr_2px_1fr] gap-x-4 max-w-lg mx-auto text-xs">
-                {/* Goles local */}
                 <div className="space-y-1.5 text-right">
                   {homeGoals.map(e => (
                     <div key={e.id} className="flex items-center justify-end gap-1.5">
@@ -322,9 +331,7 @@ export default function PartidoDetalle() {
                     </div>
                   ))}
                 </div>
-                {/* Separador */}
                 <div className="bg-neutral-800 self-stretch" />
-                {/* Goles visitante */}
                 <div className="space-y-1.5 text-left">
                   {awayGoals.map(e => (
                     <div key={e.id} className="flex items-center gap-1.5">
@@ -341,40 +348,100 @@ export default function PartidoDetalle() {
         })()}
       </section>
 
-      {/* Info adicional */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {[
-          { label: 'Estado', value: isLive ? 'En vivo' : isFinished ? 'Finalizado' : 'Programado' },
-          { label: 'Tipo', value: match.type ?? '—' },
-          { label: 'Estadio', value: match.stadium ?? '—' },
-          { label: 'Competición', value: match.competition ?? '—' },
-        ].map((item) => (
-          <div key={item.label} className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 text-center">
-            <div className="text-[10px] text-neutral-500 uppercase tracking-widest mb-1">{item.label}</div>
-            <div className="text-sm font-semibold truncate">{item.value}</div>
-          </div>
+      {/* Tab bar */}
+      <div className="flex gap-2 border-b border-neutral-800 pb-0">
+        {tabs.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setDetailTab(t.id)}
+            className={`px-4 py-2.5 text-sm font-bold transition-all border-b-2 -mb-px ${
+              detailTab === t.id
+                ? 'border-riverRed text-white'
+                : 'border-transparent text-neutral-500 hover:text-neutral-300'
+            }`}
+          >
+            {t.label}
+          </button>
         ))}
       </div>
 
-      {/* Cronología de eventos */}
-      {match.events && match.events.length > 0 && (
-        <EventTimeline events={match.events} />
+      {/* Tab: Resumen */}
+      {detailTab === 'resumen' && (
+        <div className="space-y-5">
+          {/* Info rápida */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { label: 'Estado', value: isLive ? 'En vivo' : isFinished ? 'Finalizado' : 'Programado' },
+              { label: 'Tipo', value: match.type ?? '—' },
+              { label: 'Estadio', value: match.stadium ?? '—' },
+              { label: 'Competición', value: match.competition ?? '—' },
+            ].map((item) => (
+              <div key={item.label} className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 text-center">
+                <div className="text-[10px] text-neutral-500 uppercase tracking-widest mb-1">{item.label}</div>
+                <div className="text-sm font-semibold truncate">{item.value}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Formación probable (solo si es próximo) */}
+          {isScheduled && (
+            <Link
+              to="/partidos/proximo"
+              className="flex items-center justify-between bg-neutral-900 border border-neutral-800 hover:border-neutral-700 rounded-2xl px-5 py-4 transition-all group"
+            >
+              <div>
+                <div className="text-sm font-bold text-white">Formación probable</div>
+                <div className="text-xs text-neutral-500 mt-0.5">Ver alineación táctica del Millonario</div>
+              </div>
+              <span className="text-neutral-500 group-hover:text-white transition-colors text-sm">→</span>
+            </Link>
+          )}
+
+          {/* Cronología de eventos */}
+          {hasEvents && <EventTimeline events={match.events!} />}
+
+          {!hasEvents && (isFinished || isLive) && (
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-8 text-center text-sm text-neutral-500">
+              Sin eventos registrados para este partido.
+            </div>
+          )}
+
+          {isScheduled && !hasEvents && (
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-8 text-center text-sm text-neutral-500">
+              Los eventos del partido estarán disponibles una vez iniciado.
+            </div>
+          )}
+        </div>
       )}
 
-      {/* Estadísticas del partido — solo partidos finalizados */}
-      {isFinished && match.statistics && (
-        <MatchStatsPanel
-          stats={match.statistics}
-          homeTeam={match.homeTeam}
-          awayTeam={match.awayTeam}
-        />
+      {/* Tab: Estadísticas */}
+      {detailTab === 'estadisticas' && (
+        <div className="space-y-5">
+          {hasStats ? (
+            <MatchStatsPanel
+              stats={match.statistics!}
+              homeTeam={match.homeTeam}
+              awayTeam={match.awayTeam}
+            />
+          ) : (
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-12 text-center text-sm text-neutral-500">
+              {isScheduled
+                ? 'Las estadísticas estarán disponibles una vez finalizado el partido.'
+                : isLive
+                  ? 'Las estadísticas se actualizarán al finalizar el partido.'
+                  : 'No hay estadísticas disponibles para este partido.'}
+            </div>
+          )}
+        </div>
       )}
 
-      {/* H2H */}
-      <H2HSection rival={rival} />
+      {/* Tab: H2H */}
+      {detailTab === 'h2h' && (
+        <H2HSection rival={rival} />
+      )}
 
       {/* Links de acción */}
-      <div className="flex gap-3 flex-wrap">
+      <div className="flex gap-3 flex-wrap pt-2">
         {isLive && (
           <Link
             to="/partidos/en-vivo"

@@ -17,6 +17,7 @@ import Competiciones from './pages/Competiciones';
 import Historia from './pages/Historia';
 import Perfil from './pages/Perfil';
 import RankingProde from './pages/RankingProde';
+import Formaciones from './pages/Formaciones';
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminNoticias from './pages/admin/AdminNoticias';
@@ -68,6 +69,7 @@ export default function App() {
           <Route path="historia" element={<Historia />} />
           <Route path="perfil" element={<Perfil />} />
           <Route path="prode" element={<RankingProde />} />
+          <Route path="formaciones" element={<Formaciones />} />
           <Route path="mas" element={<ComingSoon title="Más" />} />
         </Route>
 

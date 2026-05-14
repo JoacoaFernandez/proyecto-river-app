@@ -9,6 +9,7 @@ import { getMatchPrediction } from '../services/ai.service';
 import { getPredictionSummary, type PredictionSummary } from '../services/predictions.service';
 import ReactMarkdown from 'react-markdown';
 import CanchaTactica from '../components/CanchaTactica';
+import PlayerInfoPanel from '../components/PlayerInfoPanel';
 import { Bot, Sparkles, AlertCircle } from 'lucide-react';
 
 const TEAM_COLORS: Record<string, { bg: string; text: string }> = {
@@ -70,6 +71,7 @@ function FormacionSection() {
   const [data, setData] = useState<LineupResponse | null>(null);
   const [scheme, setScheme] = useState('4-3-3');
   const [loading, setLoading] = useState(true);
+  const [selectedSlot, setSelectedSlot] = useState<import('../services/formations.service').LineupEntry | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -145,7 +147,10 @@ function FormacionSection() {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4 items-start">
           <div className="max-w-md mx-auto lg:max-w-none">
-            <CanchaTactica data={data} />
+            <CanchaTactica
+                data={data}
+                onPlayerClick={(slot, alert) => setSelectedSlot(slot)}
+              />
           </div>
           <div className="bg-neutral-950 border border-neutral-800 rounded-xl p-3 space-y-2">
             <h4 className="text-[10px] uppercase tracking-widest text-neutral-500 font-bold pb-2 border-b border-neutral-800">
@@ -184,6 +189,15 @@ function FormacionSection() {
             )}
           </div>
         </div>
+      )}
+
+      {/* Player info panel */}
+      {selectedSlot && data && (
+        <PlayerInfoPanel
+          slot={selectedSlot}
+          alert={data.alerts?.find((a) => a.playerId === selectedSlot.player?.id)}
+          onClose={() => setSelectedSlot(null)}
+        />
       )}
     </section>
   );

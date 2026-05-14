@@ -11,6 +11,13 @@ export interface ScoringPlay {
   type: 'goal' | 'own-goal' | 'penalty';
 }
 
+export interface MatchStatLine {
+  label: string;
+  home: string;
+  away: string;
+  homePct?: number;
+}
+
 export interface LiveMatchData {
   id: string;
   status: string;
@@ -24,6 +31,7 @@ export interface LiveMatchData {
   venue: string;
   scoringPlays: ScoringPlay[];
   events: MatchEvent[];
+  statistics: MatchStatLine[];
 }
 
 const SOCKET_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
@@ -47,8 +55,8 @@ export function useLiveMatch() {
 
     socket.on('live:update', (data: LiveMatchData | null) => {
       if (data) {
-        // Ensure events array exists (backward compat)
         data.events = data.events ?? [];
+        data.statistics = data.statistics ?? [];
       }
       setMatch(data ?? null);
     });

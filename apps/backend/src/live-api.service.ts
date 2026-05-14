@@ -25,6 +25,13 @@ export interface MatchEventPayload {
   period: number;
 }
 
+export interface MatchStatLine {
+  label: string;
+  home: string;
+  away: string;
+  homePct?: number; // 0-100 for progress bar
+}
+
 export interface LiveMatchPayload {
   id: string;
   status: 'pre' | 'in' | 'post';
@@ -38,6 +45,7 @@ export interface LiveMatchPayload {
   venue: string;
   scoringPlays: ScoringPlay[];
   events: MatchEventPayload[];
+  statistics: MatchStatLine[];
 }
 
 
@@ -114,7 +122,8 @@ export class LiveApiService {
 
   private async fetchStandingsAndStats(pastMatches: any[]) {
     let table: any[] = [];
-    let stats = this.computeStatsFromMatches(pastMatches);
+    let stats: any = this.computeStatsFromMatches(pastMatches);
+    const localStats = stats; // preserve bestStreak computed from DB
 
     // Calcular goleador de temporada desde la DB
     try {
@@ -130,6 +139,11 @@ export class LiveApiService {
       const top = [...scorerMap.entries()].sort((a, b) => b[1] - a[1])[0];
       if (top) stats.topScorer = `${top[0]} (${top[1]})`;
     } catch { /* mantener N/A */ }
+
+    // Contar goles de penal en la DB
+    try {
+      stats = { ...stats, penaltyGoals: await this.prisma.matchEvent.count({ where: { type: 'penalty-goal' } }) };
+    } catch { /* ignore */ }
 
     try {
       const url = 'https://site.api.espn.com/apis/v2/sports/soccer/arg.1/standings';
@@ -170,7 +184,9 @@ export class LiveApiService {
           pp: get('losses'),
           gf: get('pointsFor'),
           gc: get('pointsAgainst'),
-          streak: stats.streak,
+          streak: localStats.streak,
+          bestStreak: localStats.bestStreak,
+          penaltyGoals: stats.penaltyGoals ?? 0,
           topScorer: stats.topScorer,
         };
       }
@@ -185,6 +201,7 @@ export class LiveApiService {
     const finished = past.filter((m) => m.status === 'finished').slice(0, 38);
     let pg = 0, pe = 0, pp = 0, gf = 0, gc = 0;
     const streakBuf: ('W' | 'D' | 'L')[] = [];
+    let maxWinStreak = 0, curWinStreak = 0;
 
     for (const m of finished) {
       const isHome = /river/i.test(m.homeTeam);
@@ -192,15 +209,22 @@ export class LiveApiService {
       const them = isHome ? (m.awayScore ?? 0) : (m.homeScore ?? 0);
       gf += our;
       gc += them;
-      if (our > them) { pg++; streakBuf.push('W'); }
-      else if (our === them) { pe++; streakBuf.push('D'); }
-      else { pp++; streakBuf.push('L'); }
+      if (our > them) {
+        pg++; streakBuf.push('W');
+        curWinStreak++;
+        maxWinStreak = Math.max(maxWinStreak, curWinStreak);
+      } else {
+        if (our === them) { pe++; streakBuf.push('D'); }
+        else { pp++; streakBuf.push('L'); }
+        curWinStreak = 0;
+      }
     }
 
     return {
       pj: finished.length,
       pg, pe, pp, gf, gc,
       streak: this.parseForm(streakBuf.slice(0, 5).join('')),
+      bestStreak: maxWinStreak > 0 ? `${maxWinStreak} victorias seguidas` : '-',
       topScorer: 'N/A',
     };
   }
@@ -345,6 +369,7 @@ export class LiveApiService {
     });
 
     const events = this.parseEspnKeyEvents(summary);
+    const statistics = this.parseEspnStatistics(summary);
 
     return {
       id: event.id,
@@ -359,7 +384,66 @@ export class LiveApiService {
       venue: comp.venue?.fullName ?? '',
       scoringPlays,
       events,
+      statistics,
     };
+  }
+
+  private parseEspnStatistics(summary: any): MatchStatLine[] {
+    const STAT_MAP: Record<string, string> = {
+      possessionPct: 'Posesión',
+      totalShots: 'Tiros',
+      shotsOnTarget: 'Al arco',
+      blockedShots: 'Bloqueados',
+      cornerKicks: 'Córners',
+      fouls: 'Faltas',
+      offsides: 'Offsides',
+      yellowCards: 'Tarjetas amarillas',
+      saves: 'Atajadas',
+      passAccuracy: 'Precisión de pases',
+    };
+
+    try {
+      // ESPN boxscore.teams has per-team stats
+      const teams: any[] = summary?.boxscore?.teams ?? [];
+      if (teams.length < 2) return [];
+
+      // teams[0] = home, teams[1] = away (standard ESPN layout)
+      const homeStats: any[] = teams[0]?.statistics ?? [];
+      const awayStats: any[] = teams[1]?.statistics ?? [];
+
+      const result: MatchStatLine[] = [];
+
+      for (const hs of homeStats) {
+        const name: string = hs.name ?? '';
+        const label = STAT_MAP[name];
+        if (!label) continue;
+
+        const as_ = awayStats.find((s: any) => s.name === name);
+        if (!as_) continue;
+
+        const homeVal = String(hs.displayValue ?? hs.value ?? '0');
+        const awayVal = String(as_.displayValue ?? as_.value ?? '0');
+
+        // Compute percentage bar (for possession-style stats)
+        let homePct: number | undefined;
+        const hNum = parseFloat(homeVal.replace('%', ''));
+        const aNum = parseFloat(awayVal.replace('%', ''));
+        if (!isNaN(hNum) && !isNaN(aNum)) {
+          if (homeVal.includes('%')) {
+            homePct = hNum; // already a percentage
+          } else {
+            const total = hNum + aNum;
+            homePct = total > 0 ? Math.round((hNum / total) * 100) : 50;
+          }
+        }
+
+        result.push({ label, home: homeVal, away: awayVal, homePct });
+      }
+
+      return result;
+    } catch {
+      return [];
+    }
   }
 
   private parseEspnKeyEvents(summary: any): MatchEventPayload[] {

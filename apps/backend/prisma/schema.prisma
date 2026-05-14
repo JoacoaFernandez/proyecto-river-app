@@ -24,15 +24,22 @@ model User {
 }
 
 model Player {
-  id          String   @id @default(uuid())
-  name        String
-  position    String
-  number      Int?
-  age         Int?
-  photo       String?
-  nationality String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id               String    @id @default(uuid())
+  name             String
+  position         String
+  number           Int?
+  age              Int?
+  photo            String?
+  nationality      String?
+  status           String    @default("available")
+  nickname         String?
+  preferredFoot    String?
+  joinedAt         DateTime?
+  injuryType       String?
+  injuryZone       String?
+  injuryReturnDate DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 }
 
 model Formation {

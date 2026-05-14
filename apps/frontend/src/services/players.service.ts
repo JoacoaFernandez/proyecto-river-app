@@ -9,6 +9,13 @@ export interface Player {
   age: number | null;
   photo: string | null;
   nationality: string | null;
+  status: string;
+  nickname: string | null;
+  preferredFoot: string | null;
+  joinedAt: string | null;
+  injuryType: string | null;
+  injuryZone: string | null;
+  injuryReturnDate: string | null;
 }
 
 export interface PlayerStats {
@@ -22,6 +29,7 @@ export interface PlayerStats {
   minutes: number;
   rating: string | null;
   goals: number;
+  penaltyGoals: number;
   assists: number;
   yellowCards: number;
   redCards: number;
