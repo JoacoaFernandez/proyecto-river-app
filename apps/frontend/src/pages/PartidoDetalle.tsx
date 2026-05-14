@@ -4,6 +4,8 @@ import { Link, useParams } from 'react-router-dom';
 import { Inbox, Link2, Check, MapPin } from 'lucide-react';
 import { getMatchById, getH2H } from '../services/matches.service';
 import type { Match } from '../services/matches.service';
+import EventTimeline from '../components/EventTimeline';
+import MatchStatsPanel from '../components/MatchStatsPanel';
 
 const RIVER_RX = /river\s*plate|^river$/i;
 
@@ -313,6 +315,20 @@ export default function PartidoDetalle() {
           </div>
         ))}
       </div>
+
+      {/* Cronología de eventos */}
+      {match.events && match.events.length > 0 && (
+        <EventTimeline events={match.events} />
+      )}
+
+      {/* Estadísticas del partido — solo partidos finalizados */}
+      {isFinished && match.statistics && (
+        <MatchStatsPanel
+          stats={match.statistics}
+          homeTeam={match.homeTeam}
+          awayTeam={match.awayTeam}
+        />
+      )}
 
       {/* H2H */}
       <H2HSection rival={rival} />

@@ -4,10 +4,12 @@ import { LiveApiService } from './live-api.service';
 import { LiveApiGateway } from './live-api.gateway';
 import { MatchesModule } from './matches/matches.module';
 import { AuthModule } from './auth/auth.module';
+import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
-  imports: [MatchesModule, AuthModule],
+  imports: [MatchesModule, AuthModule, PrismaModule],
   controllers: [LiveApiController],
   providers: [LiveApiService, LiveApiGateway],
+  exports: [LiveApiService],
 })
 export class LiveApiModule {}

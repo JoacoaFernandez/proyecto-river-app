@@ -1,12 +1,23 @@
 // apps/frontend/src/pages/PartidoEnVivo.tsx
 import { Link } from 'react-router-dom';
-import { useLiveMatch, type ScoringPlay } from '../hooks/useLiveMatch';
+import { useLiveMatch, type LiveMatchData } from '../hooks/useLiveMatch';
 import LiveChat from '../components/LiveChat';
+import EventTimeline from '../components/EventTimeline';
+import type { MatchEvent } from '../services/matches.service';
 
-function GoalIcon({ type }: { type: ScoringPlay['type'] }) {
-  if (type === 'own-goal') return <span title="En propia" className="text-red-400">⚽</span>;
-  if (type === 'penalty') return <span title="Penal" className="text-yellow-400">🎯</span>;
-  return <span className="text-green-400">⚽</span>;
+/** Convert legacy scoringPlays to MatchEvent[] for backward compatibility */
+function scoringPlaysToEvents(match: LiveMatchData): MatchEvent[] {
+  return match.scoringPlays.map((sp, i) => ({
+    id: `sp-${i}`,
+    type: sp.type === 'penalty' ? 'penalty-goal' : sp.type,
+    minute: parseInt(sp.minute.replace("'", ''), 10) || 0,
+    team: sp.team,
+    playerName: sp.scorer,
+    playerInName: null,
+    assistName: null,
+    detail: null,
+    period: sp.period,
+  }));
 }
 
 function LiveBadge() {
@@ -99,13 +110,8 @@ export default function PartidoEnVivo() {
     return <NoLiveMatch connected={connected} />;
   }
 
+
   const isHome = /river plate/i.test(match.homeTeam);
-  const riverGoals = match.scoringPlays.filter((sp) =>
-    /river plate/i.test(sp.team),
-  );
-  const rivalGoals = match.scoringPlays.filter((sp) =>
-    !/river plate/i.test(sp.team),
-  );
 
   return (
     <div className="max-w-6xl mx-auto px-4 mt-8 pb-12 flex flex-col lg:flex-row gap-8">
@@ -172,45 +178,12 @@ export default function PartidoEnVivo() {
         </div>
       </section>
 
-      {/* Goles */}
-      {match.scoringPlays.length > 0 && (
-        <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 space-y-3">
-          <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest">
-            Goles
-          </h3>
-
-          {/* River */}
-          {riverGoals.length > 0 && (
-            <div className="space-y-1">
-              <div className="text-[10px] text-neutral-600 uppercase tracking-widest mb-1">River Plate</div>
-              {riverGoals.map((g, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm py-1 border-b border-neutral-800/50 last:border-0">
-                  <GoalIcon type={g.type} />
-                  <span className="flex-1 font-medium text-white">{g.scorer}</span>
-                  <span className="text-xs text-neutral-500 tabular-nums">{g.minute}'</span>
-                  {g.period === 2 && <span className="text-[9px] text-neutral-600">2T</span>}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Rival */}
-          {rivalGoals.length > 0 && (
-            <div className="space-y-1">
-              <div className="text-[10px] text-neutral-600 uppercase tracking-widest mb-1">
-                {isHome ? match.awayTeam : match.homeTeam}
-              </div>
-              {rivalGoals.map((g, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm py-1 border-b border-neutral-800/50 last:border-0">
-                  <GoalIcon type={g.type} />
-                  <span className="flex-1 font-medium text-neutral-300">{g.scorer}</span>
-                  <span className="text-xs text-neutral-500 tabular-nums">{g.minute}'</span>
-                  {g.period === 2 && <span className="text-[9px] text-neutral-600">2T</span>}
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+      {/* Cronología de eventos */}
+      {(match.events.length > 0 || match.scoringPlays.length > 0) && (
+        <EventTimeline
+          events={match.events.length > 0 ? match.events : scoringPlaysToEvents(match)}
+          compact
+        />
       )}
 
         {/* Info actualización */}

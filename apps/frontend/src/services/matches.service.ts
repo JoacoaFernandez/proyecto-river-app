@@ -1,6 +1,34 @@
 // apps/frontend/src/services/matches.service.ts
 import { api } from './api';
 
+export interface MatchEvent {
+  id: string;
+  type: string;
+  minute: number;
+  team: string;
+  playerName: string | null;
+  playerInName: string | null;
+  assistName: string | null;
+  detail: string | null;
+  period: number;
+}
+
+export interface MatchStatSide { home: number | null; away: number | null; }
+
+export interface MatchStatistics {
+  homeTeam: string;
+  awayTeam: string;
+  possession: MatchStatSide;
+  shotsOnTarget: MatchStatSide;
+  totalShots: MatchStatSide;
+  fouls: MatchStatSide;
+  yellowCards: MatchStatSide;
+  redCards: MatchStatSide;
+  corners: MatchStatSide;
+  saves: MatchStatSide;
+  offsides?: MatchStatSide;
+}
+
 export interface Match {
   id: string;
   type: string;
@@ -15,6 +43,8 @@ export interface Match {
   stadium: string | null;
   manualOverride: boolean;
   aiPrediction?: string | null;
+  events?: MatchEvent[];
+  statistics?: MatchStatistics | null;
 }
 
 export const getLatestMatch = async () => {
@@ -93,4 +123,30 @@ export const getH2H = async (rival: string, limit = 6): Promise<Match[]> => {
   } catch {
     return [];
   }
+};
+
+// ── Match Events ──────────────────────────────────────────────────────────────
+
+export const getMatchEvents = async (matchId: string): Promise<MatchEvent[]> => {
+  try {
+    const res = await api.get(`/matches/${matchId}/events`);
+    return Array.isArray(res.data) ? res.data : [];
+  } catch {
+    return [];
+  }
+};
+
+export const createMatchEventAdmin = async (
+  matchId: string,
+  data: Omit<MatchEvent, 'id'>,
+): Promise<MatchEvent> => {
+  const res = await api.post(`/matches/${matchId}/events`, data);
+  return res.data;
+};
+
+export const deleteMatchEventAdmin = async (
+  matchId: string,
+  eventId: string,
+): Promise<void> => {
+  await api.delete(`/matches/${matchId}/events/${eventId}`);
 };

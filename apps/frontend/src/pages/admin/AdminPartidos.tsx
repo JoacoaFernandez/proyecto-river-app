@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { X, Plus } from 'lucide-react';
-import type { Match } from '../../services/matches.service';
+import type { Match, MatchEvent } from '../../services/matches.service';
 import {
   createMatchAdmin,
   deleteMatchAdmin,
   getAllMatchesAdmin,
   updateMatchAdmin,
+  getMatchEvents,
 } from '../../services/matches.service';
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -58,6 +59,10 @@ export default function AdminPartidos() {
     stadium: '',
     date: '',
   });
+
+  // Events (read-only, auto-synced from ESPN)
+  const [events, setEvents] = useState<MatchEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
 
   const showFlash = (msg: string, error = false) => {
     setFlash({ msg, error });
@@ -114,6 +119,12 @@ export default function AdminPartidos() {
       competition: m.competition ?? '',
       stadium: m.stadium ?? '',
       date: toLocalInputValue(m.date),
+    });
+    // Load events for this match
+    setEventsLoading(true);
+    getMatchEvents(m.id).then((ev) => {
+      setEvents(ev);
+      setEventsLoading(false);
     });
   };
 
@@ -301,7 +312,7 @@ export default function AdminPartidos() {
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <form
             onSubmit={handleSave}
-            className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 w-full max-w-lg space-y-4 shadow-2xl"
+            className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 w-full max-w-2xl space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto"
           >
             <div className="flex items-center justify-between mb-2">
               <h2 className="font-black text-lg">Editar partido</h2>
@@ -345,6 +356,49 @@ export default function AdminPartidos() {
             <div>
               <label className={labelClass}>Fecha y hora</label>
               <input type="datetime-local" className={inputClass} value={editForm.date} onChange={(e) => setEditForm({ ...editForm, date: e.target.value })} />
+            </div>
+
+            {/* ── Eventos del Partido (auto-sync desde ESPN) ── */}
+            <div className="border-t border-neutral-800 pt-4 mt-2">
+              <h3 className="text-sm font-bold uppercase tracking-wider text-riverRed mb-1 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-riverRed" />
+                Eventos del partido
+              </h3>
+              <p className="text-[10px] text-neutral-600 mb-3">
+                Los eventos se importan automáticamente desde ESPN.
+              </p>
+
+              {eventsLoading ? (
+                <div className="text-center py-4">
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-riverRed mx-auto" />
+                </div>
+              ) : events.length === 0 ? (
+                <p className="text-xs text-neutral-500 text-center py-3 bg-neutral-950 border border-neutral-800 rounded-xl">
+                  Sin eventos registrados. Se importarán automáticamente cuando finalice el partido.
+                </p>
+              ) : (
+                <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                  {events.map((ev) => (
+                    <div key={ev.id} className="flex items-center gap-2 bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs">
+                      <span className="font-bold text-neutral-500 tabular-nums w-8">{ev.minute}'</span>
+                      <span className={`font-bold uppercase tracking-wider text-[10px] ${
+                        ev.type.includes('goal') ? 'text-green-400' :
+                        ev.type.includes('card') ? (ev.type === 'yellow-card' ? 'text-yellow-400' : 'text-red-400') :
+                        ev.type === 'substitution' ? 'text-blue-400' :
+                        ev.type === 'var' ? 'text-purple-400' : 'text-neutral-400'
+                      }`}>
+                        {ev.type}
+                      </span>
+                      <span className="flex-1 text-neutral-300 truncate">
+                        {ev.playerName ?? ''}
+                        {ev.type === 'substitution' && ev.playerInName ? ` → ${ev.playerInName}` : ''}
+                        {ev.assistName ? ` (${ev.assistName})` : ''}
+                      </span>
+                      <span className="text-[10px] text-neutral-600 truncate max-w-[80px]">{ev.team}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="flex gap-2 justify-end pt-2">
