@@ -4,11 +4,16 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { MatchesService } from './matches.service';
+import { MatchEventsService } from './match-events.service';
+import type { CreateMatchEventDto } from './match-events.service';
 
 @ApiTags('Matches')
 @Controller('matches')
 export class MatchesController {
-  constructor(private readonly matchesService: MatchesService) {}
+  constructor(
+    private readonly matchesService: MatchesService,
+    private readonly matchEventsService: MatchEventsService,
+  ) {}
 
   // ── Públicos ────────────────────────────────────────────────────────────────
 
@@ -92,5 +97,47 @@ export class MatchesController {
   @ApiOperation({ summary: 'Eliminar partido (admin)' })
   async remove(@Param('id') id: string) {
     return this.matchesService.removeMatch(id);
+  }
+
+  // ── Match Events ────────────────────────────────────────────────────────────
+
+  @Get(':id/events')
+  @ApiOperation({ summary: 'Listar eventos de un partido (público)' })
+  async getEvents(@Param('id') id: string) {
+    return this.matchEventsService.findByMatch(id);
+  }
+
+  @Post(':id/events')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Crear evento de partido (admin)' })
+  async createEvent(@Param('id') id: string, @Body() body: CreateMatchEventDto) {
+    return this.matchEventsService.create(id, body);
+  }
+
+  @Patch(':id/events/:eventId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Editar evento de partido (admin)' })
+  async updateEvent(
+    @Param('id') _matchId: string,
+    @Param('eventId') eventId: string,
+    @Body() body: Partial<CreateMatchEventDto>,
+  ) {
+    return this.matchEventsService.update(eventId, body);
+  }
+
+  @Delete(':id/events/:eventId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Eliminar evento de partido (admin)' })
+  async removeEvent(
+    @Param('id') _matchId: string,
+    @Param('eventId') eventId: string,
+  ) {
+    return this.matchEventsService.remove(eventId);
   }
 }

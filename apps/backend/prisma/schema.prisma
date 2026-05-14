@@ -100,6 +100,8 @@ model Match {
   Formation        Formation[]
   LiveChatMessage  LiveChatMessage[]
   predictions Prediction[]
+  events      MatchEvent[]
+  statistics  Json?             // ESPN match stats snapshot
 }
 
 model LiveChatMessage {
@@ -123,4 +125,21 @@ model Prediction {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, matchId])
+}
+
+model MatchEvent {
+  id           String   @id @default(uuid())
+  matchId      String
+  type         String   // goal, own-goal, penalty-goal, penalty-miss, yellow-card, red-card, substitution, var, period-start, period-end
+  minute       Int
+  team         String
+  playerName   String?
+  playerInName String?  // player entering (substitutions only)
+  assistName   String?  // assist provider (goals only)
+  detail       String?  // free text (VAR reason, penalty detail, etc.)
+  period       Int      @default(1)
+  createdAt    DateTime @default(now())
+  match        Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@index([matchId, minute])
 }

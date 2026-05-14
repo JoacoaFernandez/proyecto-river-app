@@ -79,11 +79,62 @@ export class MatchesService implements OnModuleInit {
   async onModuleInit() {
     this.logger.log('⚡ Motor de Fixture River Plate iniciando...');
     setTimeout(() => this.syncMatches(), 3000);
+    // Backfill events/stats for finished matches that don't have them yet
+    setTimeout(() => this.backfillMissingEventsAndStats(), 20000);
   }
 
   @Cron(CronExpression.EVERY_10_MINUTES)
   async handleCron() {
     await this.syncMatches();
+  }
+
+  /** One-time startup backfill: populate events + stats for finished matches without data */
+  private async backfillMissingEventsAndStats(): Promise<void> {
+    try {
+      this.logger.log('🔁 Iniciando backfill de eventos y estadísticas...');
+
+      // Find finished matches without events
+      const matchesWithoutEvents = await this.prisma.match.findMany({
+        where: {
+          status: 'finished',
+          events: { none: {} },
+        },
+        orderBy: { date: 'desc' },
+        take: 30, // Process the 30 most recent first
+      });
+
+      this.logger.log(`🔁 ${matchesWithoutEvents.length} partidos sin eventos para backfill.`);
+
+      let processed = 0;
+      for (const match of matchesWithoutEvents) {
+        // Small delay between requests to avoid rate limiting
+        await new Promise((r) => setTimeout(r, 1500));
+        await this.autoSyncEventsForMatch(match.id, match.homeTeam, match.awayTeam, match.date);
+        processed++;
+      }
+
+      // Also backfill stats for matches that have events but no stats
+      const matchesWithoutStats = await this.prisma.match.findMany({
+        where: {
+          status: 'finished',
+          statistics: { equals: null as any },
+          events: { some: {} },
+        },
+        orderBy: { date: 'desc' },
+        take: 20,
+      });
+
+      this.logger.log(`📊 ${matchesWithoutStats.length} partidos sin estadísticas para backfill.`);
+
+      for (const match of matchesWithoutStats) {
+        await new Promise((r) => setTimeout(r, 1500));
+        await this.autoSyncEventsForMatch(match.id, match.homeTeam, match.awayTeam, match.date);
+      }
+
+      this.logger.log(`✅ Backfill completado: ${processed} partidos procesados.`);
+    } catch (e: any) {
+      this.logger.warn(`Backfill falló: ${e?.message}`);
+    }
   }
 
   // ── CRUD admin ───────────────────────────────────────────────────────────────
@@ -93,7 +144,10 @@ export class MatchesService implements OnModuleInit {
   }
 
   async findOne(id: string) {
-    return this.prisma.match.findUnique({ where: { id } });
+    return this.prisma.match.findUnique({
+      where: { id },
+      include: { events: { orderBy: [{ period: 'asc' }, { minute: 'asc' }] } },
+    });
   }
 
   async createManual(data: {
@@ -256,6 +310,250 @@ export class MatchesService implements OnModuleInit {
         .slice(0, 3)
         .map(m => ({ date: m.date, home: m.homeTeam, away: m.awayTeam, status: m.status })),
     };
+  }
+
+  // ── Auto-sync de eventos desde ESPN ──────────────────────────────────────────
+
+  /**
+   * Search ESPN for a River Plate match by date/teams and sync all events (goals,
+   * cards, substitutions, VAR) into the MatchEvent table. Fully autonomous.
+   */
+  private async autoSyncEventsForMatch(
+    matchId: string,
+    homeTeam: string,
+    awayTeam: string,
+    matchDate: Date,
+  ): Promise<void> {
+    try {
+      // Search ESPN scoreboard for this match date
+      const dateStr = matchDate.toISOString().slice(0, 10).replace(/-/g, '');
+      const dayBefore = new Date(matchDate.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10).replace(/-/g, '');
+      const dayAfter = new Date(matchDate.getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10).replace(/-/g, '');
+
+      let espnEventId: string | null = null;
+
+      // Search across all leagues
+      for (const league of ESPN_LEAGUES) {
+        try {
+          const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.code}/scoreboard?dates=${dayBefore}-${dayAfter}`;
+          const res = await axios.get(url, { headers: AXIOS_HEADERS, timeout: 8000 });
+          const events: any[] = res.data?.events ?? [];
+
+          // Find the event matching River Plate
+          const riverEvent = events.find((ev) => {
+            const competitors: any[] = ev.competitions?.[0]?.competitors ?? [];
+            return competitors.some((c) =>
+              /river plate/i.test(c.team?.displayName ?? ''),
+            );
+          });
+
+          if (riverEvent) {
+            espnEventId = String(riverEvent.id);
+            break;
+          }
+        } catch { /* try next league */ }
+      }
+
+      if (!espnEventId) {
+        this.logger.warn(`📋 No se encontró evento ESPN para ${homeTeam} vs ${awayTeam} (${dateStr})`);
+        return;
+      }
+
+      // Fetch ESPN summary and parse all events
+      const summaryUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/arg.1/summary?event=${espnEventId}`;
+      let summaryData: any;
+      try {
+        const summaryRes = await axios.get(summaryUrl, { headers: AXIOS_HEADERS, timeout: 8000 });
+        summaryData = summaryRes.data;
+      } catch {
+        // Try other leagues
+        for (const league of ESPN_LEAGUES) {
+          try {
+            const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.code}/summary?event=${espnEventId}`;
+            const res = await axios.get(url, { headers: AXIOS_HEADERS, timeout: 8000 });
+            summaryData = res.data;
+            break;
+          } catch { /* try next */ }
+        }
+      }
+
+      if (!summaryData) {
+        this.logger.warn(`📋 No se pudo obtener summary ESPN para evento ${espnEventId}`);
+        return;
+      }
+
+      // Parse events from ESPN summary (goals from scoringPlays, cards/subs from keyEvents)
+      const parsedEvents = this.parseEspnSummaryEvents(summaryData);
+
+      // Persist events
+      if (parsedEvents.length > 0) {
+        const existingCount = await this.prisma.matchEvent.count({ where: { matchId } });
+        if (parsedEvents.length >= existingCount || existingCount === 0) {
+          await this.prisma.matchEvent.deleteMany({ where: { matchId } });
+          await this.prisma.matchEvent.createMany({
+            data: parsedEvents.map((e) => ({
+              matchId,
+              type: e.type,
+              minute: e.minute,
+              team: e.team,
+              playerName: e.playerName,
+              playerInName: e.playerInName,
+              assistName: e.assistName,
+              detail: e.detail,
+              period: e.period,
+            })),
+          });
+          this.logger.log(`📋 ${parsedEvents.length} eventos auto-sincronizados para ${homeTeam} vs ${awayTeam}`);
+        }
+      } else {
+        this.logger.log(`📋 Sin eventos ESPN para ${homeTeam} vs ${awayTeam}`);
+      }
+
+      // Parse and persist match statistics
+      const stats = this.parseEspnMatchStats(summaryData);
+      if (stats) {
+        await this.prisma.match.update({
+          where: { id: matchId },
+          data: { statistics: stats as any },
+        });
+        this.logger.log(`📊 Estadísticas guardadas para ${homeTeam} vs ${awayTeam}`);
+      }
+    } catch (e: any) {
+      this.logger.warn(`📋 autoSyncEventsForMatch falló: ${e?.message}`);
+    }
+  }
+
+  /** Parse ESPN boxScore statistics into a normalized object */
+  private parseEspnMatchStats(summary: any): Record<string, any> | null {
+    try {
+      const teams: any[] = summary?.boxScore?.teams ?? [];
+      if (teams.length < 2) return null;
+
+      const home = teams.find((t: any) => t.homeAway === 'home') ?? teams[0];
+      const away = teams.find((t: any) => t.homeAway === 'away') ?? teams[1];
+
+      const extractStat = (teamData: any, statName: string): number | null => {
+        const stats: any[] = teamData?.statistics ?? [];
+        const found = stats.find((s: any) =>
+          s.name?.toLowerCase().includes(statName.toLowerCase()) ||
+          s.label?.toLowerCase().includes(statName.toLowerCase()),
+        );
+        return found ? (parseFloat(found.value ?? found.displayValue) || null) : null;
+      };
+
+      const possession = (teamData: any): number | null => {
+        const stats: any[] = teamData?.statistics ?? [];
+        const p = stats.find((s: any) =>
+          s.name === 'possessionPct' || s.label?.toLowerCase().includes('possession'),
+        );
+        return p ? parseFloat(p.displayValue ?? p.value) || null : null;
+      };
+
+      return {
+        homeTeam: home?.team?.displayName ?? '',
+        awayTeam: away?.team?.displayName ?? '',
+        possession: {
+          home: possession(home),
+          away: possession(away),
+        },
+        shotsOnTarget: {
+          home: extractStat(home, 'shotsOnTarget') ?? extractStat(home, 'shot on target'),
+          away: extractStat(away, 'shotsOnTarget') ?? extractStat(away, 'shot on target'),
+        },
+        totalShots: {
+          home: extractStat(home, 'totalShots') ?? extractStat(home, 'shots'),
+          away: extractStat(away, 'totalShots') ?? extractStat(away, 'shots'),
+        },
+        fouls: {
+          home: extractStat(home, 'fouls') ?? extractStat(home, 'foul'),
+          away: extractStat(away, 'fouls') ?? extractStat(away, 'foul'),
+        },
+        yellowCards: {
+          home: extractStat(home, 'yellowCard') ?? extractStat(home, 'yellow'),
+          away: extractStat(away, 'yellowCard') ?? extractStat(away, 'yellow'),
+        },
+        redCards: {
+          home: extractStat(home, 'redCard') ?? extractStat(home, 'red'),
+          away: extractStat(away, 'redCard') ?? extractStat(away, 'red'),
+        },
+        corners: {
+          home: extractStat(home, 'cornerKick') ?? extractStat(home, 'corner'),
+          away: extractStat(away, 'cornerKick') ?? extractStat(away, 'corner'),
+        },
+        saves: {
+          home: extractStat(home, 'saves') ?? extractStat(home, 'save'),
+          away: extractStat(away, 'saves') ?? extractStat(away, 'save'),
+        },
+        offsides: {
+          home: extractStat(home, 'offside'),
+          away: extractStat(away, 'offside'),
+        },
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Parse ESPN summary into event payloads */
+  private parseEspnSummaryEvents(summary: any): Array<{
+    type: string; minute: number; team: string; playerName: string | null;
+    playerInName: string | null; assistName: string | null; detail: string | null; period: number;
+  }> {
+    const events: Array<{
+      type: string; minute: number; team: string; playerName: string | null;
+      playerInName: string | null; assistName: string | null; detail: string | null; period: number;
+    }> = [];
+
+    // Goals from scoringPlays
+    for (const sp of (summary.scoringPlays ?? [])) {
+      const typeText: string = (sp.type?.text ?? '').toLowerCase();
+      let type = 'goal';
+      if (typeText.includes('own')) type = 'own-goal';
+      else if (typeText.includes('penalty')) type = 'penalty-goal';
+
+      const minuteStr = sp.clock?.displayValue ?? '0';
+      const minute = parseInt(minuteStr.replace("'", ''), 10) || 0;
+
+      events.push({
+        type, minute,
+        team: sp.team?.displayName ?? '',
+        playerName: sp.participants?.[0]?.athlete?.displayName ?? sp.text ?? null,
+        playerInName: null,
+        assistName: sp.participants?.[1]?.athlete?.displayName ?? null,
+        detail: null,
+        period: sp.period?.number ?? 1,
+      });
+    }
+
+    // Cards, substitutions, VAR from keyEvents
+    for (const ke of (summary.keyEvents ?? [])) {
+      const typeText: string = (ke.type?.text ?? ke.text ?? '').toLowerCase();
+      const clock = ke.clock?.displayValue ?? ke.time?.displayValue ?? '0';
+      const minute = parseInt(clock.replace("'", ''), 10) || 0;
+      const team = ke.team?.displayName ?? '';
+      const player = ke.participants?.[0]?.athlete?.displayName ?? null;
+      const period = ke.period?.number ?? 1;
+
+      if (typeText.includes('yellow card') || typeText.includes('tarjeta amarilla')) {
+        events.push({ type: 'yellow-card', minute, team, playerName: player, playerInName: null, assistName: null, detail: null, period });
+      } else if (typeText.includes('red card') || typeText.includes('tarjeta roja')) {
+        events.push({ type: 'red-card', minute, team, playerName: player, playerInName: null, assistName: null, detail: null, period });
+      } else if (typeText.includes('substitution') || typeText.includes('sustituci')) {
+        events.push({
+          type: 'substitution', minute, team, playerName: player,
+          playerInName: ke.participants?.[1]?.athlete?.displayName ?? null,
+          assistName: null, detail: null, period,
+        });
+      } else if (typeText.includes('var') || typeText.includes('video review')) {
+        events.push({
+          type: 'var', minute, team, playerName: player,
+          playerInName: null, assistName: null, detail: ke.text ?? null, period,
+        });
+      }
+    }
+
+    events.sort((a, b) => a.period - b.period || a.minute - b.minute);
+    return events;
   }
 
   // ── Motor de sincronización ──────────────────────────────────────────────────
@@ -865,9 +1163,21 @@ export class MatchesService implements OnModuleInit {
             this.logger.log(`⚽ Partido finalizado detectado: ${updatedMatch.homeTeam} vs ${updatedMatch.awayTeam}`);
             this.predictionsService.resolvePredictions(updatedMatch.id, updatedMatch.homeScore ?? 0, updatedMatch.awayScore ?? 0)
               .catch(e => this.logger.error('Error resolviendo predicciones:', e));
+
+            // Auto-sync events from ESPN for this finished match
+            this.autoSyncEventsForMatch(updatedMatch.id, updatedMatch.homeTeam, updatedMatch.awayTeam, updatedMatch.date)
+              .catch(e => this.logger.warn(`Auto-sync events falló: ${e?.message}`));
           }
         } else {
-          await this.prisma.match.create({ data: record });
+          const newMatch = await this.prisma.match.create({ data: record });
+          // For newly imported finished matches without events, sync them too
+          if (record.status === 'finished') {
+            const hasEvents = await this.prisma.matchEvent.count({ where: { matchId: newMatch.id } });
+            if (hasEvents === 0) {
+              this.autoSyncEventsForMatch(newMatch.id, newMatch.homeTeam, newMatch.awayTeam, newMatch.date)
+                .catch(e => this.logger.warn(`Auto-sync events (new) falló: ${e?.message}`));
+            }
+          }
         }
       }
       this.logger.log(`🎉 Sincronizados ${fixtures.length} partidos de forma segura.`);
