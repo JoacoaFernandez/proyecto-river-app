@@ -65,6 +65,15 @@ export class PlayersController {
     return this.playersService.syncInjuries();
   }
 
+  @Get('injuries-raw')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Debug: respuesta cruda del endpoint /injuries de API-Football' })
+  getInjuriesRaw() {
+    return this.playersService.getInjuriesRaw();
+  }
+
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')

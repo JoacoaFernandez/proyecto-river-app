@@ -105,55 +105,95 @@ export class PlayersService implements OnModuleInit {
     return data;
   }
 
-  // 7. Sincronizar estado de lesiones desde API-Football (diario + startup)
-  @Cron('0 8 * * *')
-  async syncInjuries(): Promise<{ synced: number; injured: number }> {
-    if (!process.env.API_FOOTBALL_KEY) return { synced: 0, injured: 0 };
-
-    const season = 2025;
-    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-
-    // Collect most-recent injury report per player API ID within last 30 days
-    const injuryMap = new Map<string, { type: string; zone: string; fixtureDate: Date }>();
-
-    for (const teamId of RIVER_TEAM_IDS) {
-      try {
-        const res = await axios.get('https://v3.football.api-sports.io/injuries', {
-          params: { team: teamId, season },
-          headers: API_HEADERS(),
-          timeout: 15000,
-        });
-
-        for (const entry of res.data?.response ?? []) {
-          const fixtureDate = entry.fixture?.date ? new Date(entry.fixture.date) : null;
-          if (!fixtureDate || fixtureDate < cutoff) continue;
-
-          const apiId = String(entry.player?.id ?? '');
-          if (!apiId) continue;
-
-          const existing = injuryMap.get(apiId);
-          if (!existing || fixtureDate > existing.fixtureDate) {
-            injuryMap.set(apiId, {
-              type: entry.type ?? 'Lesión',
-              zone: entry.reason ?? '',
-              fixtureDate,
-            });
-          }
+  // 7. Debug: devuelve la respuesta cruda de /injuries para inspección
+  async getInjuriesRaw(): Promise<any> {
+    const results: any = {};
+    for (const season of [2025, 2024]) {
+      for (const teamId of RIVER_TEAM_IDS) {
+        try {
+          const res = await axios.get('https://v3.football.api-sports.io/injuries', {
+            params: { team: teamId, season },
+            headers: API_HEADERS(),
+            timeout: 15000,
+          });
+          results[`team${teamId}_season${season}`] = {
+            total: res.data?.results,
+            sample: (res.data?.response ?? []).slice(0, 3),
+          };
+        } catch (e: any) {
+          results[`team${teamId}_season${season}`] = { error: e.message };
         }
-      } catch (e: any) {
-        this.logger.warn(`Injury fetch failed for team ${teamId}: ${e.message}`);
       }
     }
+    return results;
+  }
+
+  // 8. Sincronizar estado de lesiones desde API-Football (diario + startup)
+  @Cron('0 8 * * *')
+  async syncInjuries(): Promise<{ synced: number; injured: number; raw?: any }> {
+    if (!process.env.API_FOOTBALL_KEY) return { synced: 0, injured: 0 };
+
+    // Per player: keep track of most recent injury entry across all seasons/teams
+    const injuryMap = new Map<string, { type: string; zone: string; fixtureDate: Date }>();
+
+    for (const season of [2025, 2024]) {
+      for (const teamId of RIVER_TEAM_IDS) {
+        try {
+          const res = await axios.get('https://v3.football.api-sports.io/injuries', {
+            params: { team: teamId, season },
+            headers: API_HEADERS(),
+            timeout: 15000,
+          });
+
+          this.logger.log(
+            `Injuries API team=${teamId} season=${season}: ${res.data?.results ?? 0} entries`,
+          );
+
+          for (const entry of res.data?.response ?? []) {
+            const fixtureDate = entry.fixture?.date ? new Date(entry.fixture.date) : null;
+            if (!fixtureDate) continue;
+
+            // API-Football puts type/reason inside entry.player, not at root
+            const apiId = String(entry.player?.id ?? '');
+            if (!apiId) continue;
+
+            const existing = injuryMap.get(apiId);
+            if (!existing || fixtureDate > existing.fixtureDate) {
+              injuryMap.set(apiId, {
+                type: entry.player?.type ?? 'Lesión',
+                zone: entry.player?.reason ?? '',
+                fixtureDate,
+              });
+            }
+          }
+        } catch (e: any) {
+          this.logger.warn(`Injury fetch failed for team ${teamId} season ${season}: ${e.message}`);
+        }
+      }
+    }
+
+    // Only consider players whose most recent injury fixture is within 90 days
+    const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    const recentlyInjuredIds = new Set(
+      [...injuryMap.entries()]
+        .filter(([, v]) => v.fixtureDate >= cutoff)
+        .map(([id]) => id),
+    );
+
+    this.logger.log(
+      `Found ${injuryMap.size} total injury records, ${recentlyInjuredIds.size} within last 90 days`,
+    );
 
     const players = await this.prisma.player.findMany();
     let injured = 0;
 
     for (const player of players) {
-      // Extract API Football player ID from photo URL
+      // Extract API Football player ID from photo URL (e.g. .../players/12345.png → "12345")
       const apiId = player.photo?.split('/').pop()?.replace('.png', '') ?? '';
       const details = injuryMap.get(apiId);
+      const isRecentlyInjured = recentlyInjuredIds.has(apiId);
 
-      if (details) {
+      if (isRecentlyInjured && details) {
         await this.prisma.player.update({
           where: { id: player.id },
           data: {
@@ -162,9 +202,10 @@ export class PlayersService implements OnModuleInit {
             injuryZone: details.zone || null,
           },
         });
+        this.logger.log(`  → Lesionado: ${player.name} (${details.type})`);
         injured++;
       } else if (player.status === 'injured') {
-        // No recent injury → mark as available again
+        // Had old injury but no recent fixture confirms it → reset to available
         await this.prisma.player.update({
           where: { id: player.id },
           data: { status: 'available', injuryType: null, injuryZone: null, injuryReturnDate: null },
