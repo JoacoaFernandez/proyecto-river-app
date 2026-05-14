@@ -74,28 +74,28 @@ export class PlayersService implements OnModuleInit {
       return this.leaderboardCache.data;
     }
 
-    const players = await this.prisma.player.findMany({ orderBy: { number: 'asc' } });
-    const settled = await Promise.allSettled(
-      players.map(async (p) => {
-        const stats = await this.getPlayerStats(p.id);
-        if (!stats) return null;
+    // Use ESPN roster (one cached request) instead of N individual API-Football calls
+    const [players, espnRoster] = await Promise.all([
+      this.prisma.player.findMany({ orderBy: { number: 'asc' } }),
+      this.fetchEspnRoster(),
+    ]);
+
+    const data: LeaderboardEntry[] = players
+      .map((p) => {
+        const espn = p.number != null ? espnRoster.get(p.number) : null;
         return {
           id: p.id,
           name: p.name,
           position: p.position,
           number: p.number,
           photo: p.photo,
-          goals: stats.goals,
-          assists: stats.assists,
-          appearances: stats.appearances,
-          season: stats.season,
+          goals: espn?.goals ?? 0,
+          assists: espn?.assists ?? 0,
+          appearances: espn?.appearances ?? 0,
+          season: 2026,
         } as LeaderboardEntry;
-      }),
-    );
-
-    const data = (settled as PromiseFulfilledResult<LeaderboardEntry | null>[])
-      .filter((r) => r.status === 'fulfilled' && r.value !== null)
-      .map((r) => r.value as LeaderboardEntry)
+      })
+      .filter((e) => e.appearances > 0 || e.goals > 0)
       .sort((a, b) => b.goals - a.goals || b.assists - a.assists);
 
     this.leaderboardCache = { data, ts: Date.now() };
