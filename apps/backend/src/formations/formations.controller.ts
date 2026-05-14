@@ -26,8 +26,8 @@ export class FormationsController {
   @ApiOperation({
     summary: 'Obtener el XI titular probable de River sobre la cancha (auto-derivado del plantel)',
   })
-  lineup(@Query('scheme') scheme?: string) {
-    return this.formationsService.getLineup(scheme);
+  lineup(@Query('scheme') scheme?: string, @Query('refresh') refresh?: string) {
+    return this.formationsService.getLineup(scheme, refresh === 'true');
   }
 
   @Get()

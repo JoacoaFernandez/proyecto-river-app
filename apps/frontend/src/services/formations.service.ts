@@ -16,10 +16,18 @@ export interface LineupPlayer {
   photo: string | null;
   nationality: string | null;
   position: string;
+  virtual?: boolean;
 }
 
 export interface LineupEntry extends PitchSlot {
   player: LineupPlayer | null;
+}
+
+export interface PlayerAlert {
+  playerId: string;
+  type: 'injury' | 'suspension';
+  detail: string;
+  replacementId?: string;
 }
 
 export interface LineupResponse {
@@ -27,13 +35,17 @@ export interface LineupResponse {
   schemes: string[];
   lineup: LineupEntry[];
   bench: LineupPlayer[];
+  source: 'last-match' | 'algorithm';
+  lastMatchInfo?: { opponent: string; date: string; competition: string };
+  alerts: PlayerAlert[];
 }
 
-export const getLineup = async (scheme?: string): Promise<LineupResponse | null> => {
+export const getLineup = async (scheme?: string, refresh = false): Promise<LineupResponse | null> => {
   try {
-    const response = await api.get<LineupResponse>('/formations/lineup', {
-      params: scheme ? { scheme } : {},
-    });
+    const params: Record<string, string> = {};
+    if (scheme) params.scheme = scheme;
+    if (refresh) params.refresh = 'true';
+    const response = await api.get<LineupResponse>('/formations/lineup', { params });
     return response.data ?? null;
   } catch (error) {
     console.error('Error al obtener lineup:', error);
