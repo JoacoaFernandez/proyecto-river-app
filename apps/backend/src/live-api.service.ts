@@ -53,7 +53,7 @@ export class LiveApiService {
   ) {}
 
   async getDashboardData() {
-    if (this.cache && Date.now() - this.lastFetch < 900_000) {
+    if (this.cache && Date.now() - this.lastFetch < 300_000) {
       return this.cache;
     }
 
