@@ -92,6 +92,8 @@ export class LiveApiService {
         minute: m.minute,
         penaltyWinner: m.penaltyWinner ?? null,
         stadium: m.stadium ?? null,
+        referee: m.referee ?? null,
+        tvChannel: m.tvChannel ?? null,
         goalEvents: m.goalEvents ?? [],
       };
     };

@@ -28,4 +28,9 @@ export class PredictionsController {
   getRanking() {
     return this.predictionsService.getRanking();
   }
+
+  @Get('summary/:matchId')
+  getSummary(@Param('matchId') matchId: string) {
+    return this.predictionsService.getSummary(matchId);
+  }
 }
