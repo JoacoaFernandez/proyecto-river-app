@@ -25,6 +25,13 @@ export interface MatchEventPayload {
   period: number;
 }
 
+export interface MatchStatLine {
+  label: string;
+  home: string;
+  away: string;
+  homePct?: number; // 0-100 for progress bar
+}
+
 export interface LiveMatchPayload {
   id: string;
   status: 'pre' | 'in' | 'post';
@@ -38,6 +45,7 @@ export interface LiveMatchPayload {
   venue: string;
   scoringPlays: ScoringPlay[];
   events: MatchEventPayload[];
+  statistics: MatchStatLine[];
 }
 
 
@@ -345,6 +353,7 @@ export class LiveApiService {
     });
 
     const events = this.parseEspnKeyEvents(summary);
+    const statistics = this.parseEspnStatistics(summary);
 
     return {
       id: event.id,
@@ -359,7 +368,66 @@ export class LiveApiService {
       venue: comp.venue?.fullName ?? '',
       scoringPlays,
       events,
+      statistics,
     };
+  }
+
+  private parseEspnStatistics(summary: any): MatchStatLine[] {
+    const STAT_MAP: Record<string, string> = {
+      possessionPct: 'Posesión',
+      totalShots: 'Tiros',
+      shotsOnTarget: 'Al arco',
+      blockedShots: 'Bloqueados',
+      cornerKicks: 'Córners',
+      fouls: 'Faltas',
+      offsides: 'Offsides',
+      yellowCards: 'Tarjetas amarillas',
+      saves: 'Atajadas',
+      passAccuracy: 'Precisión de pases',
+    };
+
+    try {
+      // ESPN boxscore.teams has per-team stats
+      const teams: any[] = summary?.boxscore?.teams ?? [];
+      if (teams.length < 2) return [];
+
+      // teams[0] = home, teams[1] = away (standard ESPN layout)
+      const homeStats: any[] = teams[0]?.statistics ?? [];
+      const awayStats: any[] = teams[1]?.statistics ?? [];
+
+      const result: MatchStatLine[] = [];
+
+      for (const hs of homeStats) {
+        const name: string = hs.name ?? '';
+        const label = STAT_MAP[name];
+        if (!label) continue;
+
+        const as_ = awayStats.find((s: any) => s.name === name);
+        if (!as_) continue;
+
+        const homeVal = String(hs.displayValue ?? hs.value ?? '0');
+        const awayVal = String(as_.displayValue ?? as_.value ?? '0');
+
+        // Compute percentage bar (for possession-style stats)
+        let homePct: number | undefined;
+        const hNum = parseFloat(homeVal.replace('%', ''));
+        const aNum = parseFloat(awayVal.replace('%', ''));
+        if (!isNaN(hNum) && !isNaN(aNum)) {
+          if (homeVal.includes('%')) {
+            homePct = hNum; // already a percentage
+          } else {
+            const total = hNum + aNum;
+            homePct = total > 0 ? Math.round((hNum / total) * 100) : 50;
+          }
+        }
+
+        result.push({ label, home: homeVal, away: awayVal, homePct });
+      }
+
+      return result;
+    } catch {
+      return [];
+    }
   }
 
   private parseEspnKeyEvents(summary: any): MatchEventPayload[] {

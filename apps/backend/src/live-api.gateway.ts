@@ -15,6 +15,20 @@ import { LiveApiService } from './live-api.service';
 import { PrismaService } from './prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 
+const BANNED_WORDS = [
+  'puto', 'puta', 'concha', 'pelotudo', 'boludo', 'hdp', 'hijo de puta',
+  'mierda', 'culo', 'pija', 'choto', 'forro', 'idiota', 'estupido', 'imbecil',
+  'negro de mierda', 'la concha', 'la puta', 'carajo',
+];
+const BANNED_RX = new RegExp(BANNED_WORDS.join('|'), 'i');
+
+function moderateMessage(text: string): string | null {
+  if (!text || text.trim().length === 0) return null;
+  if (text.length > 300) return null;
+  if (BANNED_RX.test(text)) return null;
+  return text.trim();
+}
+
 @WebSocketGateway({ cors: { origin: '*' }, transports: ['websocket', 'polling'] })
 export class LiveApiGateway implements OnGatewayInit, OnGatewayConnection {
   @WebSocketServer() server: Server;
@@ -67,12 +81,18 @@ export class LiveApiGateway implements OnGatewayInit, OnGatewayConnection {
     try {
       const decoded = this.jwtService.verify(payload.token);
       const match = await this.liveApiService.getLiveMatch();
-      
+
       if (!match) return;
+
+      const safeBody = moderateMessage(payload.message);
+      if (!safeBody) {
+        client.emit('chat:error', { message: 'Mensaje no permitido.' });
+        return;
+      }
 
       const newMsg = await this.prisma.liveChatMessage.create({
         data: {
-          body: payload.message,
+          body: safeBody,
           matchId: match.id,
           userId: decoded.sub,
         },

@@ -1,13 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import { useLiveChat } from '../hooks/useLiveChat';
 
+const QUICK_REACTIONS = ['⚽', '🔥', '👏', '💪', '😱', '❤️'];
+
 export default function LiveChat() {
-  const { messages, sendMessage } = useLiveChat();
+  const { messages, sendMessage, chatError } = useLiveChat();
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isAuthenticated = !!localStorage.getItem('river_app_token');
 
-  // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -17,6 +18,10 @@ export default function LiveChat() {
     if (!input.trim()) return;
     sendMessage(input);
     setInput('');
+  };
+
+  const handleReaction = (emoji: string) => {
+    sendMessage(emoji);
   };
 
   return (
@@ -64,25 +69,49 @@ export default function LiveChat() {
       </div>
 
       {isAuthenticated ? (
-        <form onSubmit={handleSubmit} className="p-4 border-t border-neutral-800 bg-neutral-950/50 rounded-b-3xl">
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Escribe un mensaje..."
-              className="flex-1 bg-neutral-900 border border-neutral-700 text-white px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-riverRed transition-colors"
-              maxLength={200}
-            />
-            <button
-              type="submit"
-              disabled={!input.trim()}
-              className="bg-riverRed text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-red-700 disabled:opacity-50 transition-colors"
-            >
-              Enviar
-            </button>
+        <div className="border-t border-neutral-800 bg-neutral-950/50 rounded-b-3xl">
+          {/* Quick reactions */}
+          <div className="flex gap-2 px-4 pt-3 pb-1">
+            {QUICK_REACTIONS.map((emoji) => (
+              <button
+                key={emoji}
+                onClick={() => handleReaction(emoji)}
+                className="w-8 h-8 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 hover:border-riverRed text-base transition-all hover:scale-110 active:scale-95 flex items-center justify-center"
+                title={`Reaccionar con ${emoji}`}
+              >
+                {emoji}
+              </button>
+            ))}
           </div>
-        </form>
+
+          {/* Error message */}
+          {chatError && (
+            <div className="mx-4 mb-1 px-3 py-1.5 bg-red-950/50 border border-red-800/50 rounded-lg text-xs text-red-400">
+              {chatError}
+            </div>
+          )}
+
+          {/* Text input */}
+          <form onSubmit={handleSubmit} className="p-4 pt-2">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Escribe un mensaje..."
+                className="flex-1 bg-neutral-900 border border-neutral-700 text-white px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-riverRed transition-colors"
+                maxLength={200}
+              />
+              <button
+                type="submit"
+                disabled={!input.trim()}
+                className="bg-riverRed text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-red-700 disabled:opacity-50 transition-colors"
+              >
+                Enviar
+              </button>
+            </div>
+          </form>
+        </div>
       ) : (
         <div className="p-4 border-t border-neutral-800 bg-neutral-950/50 rounded-b-3xl text-center">
           <p className="text-sm text-neutral-400 mb-2">Inicia sesión para participar</p>
