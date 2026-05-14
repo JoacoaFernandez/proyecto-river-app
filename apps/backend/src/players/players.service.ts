@@ -214,7 +214,14 @@ export class PlayersService implements OnModuleInit {
     return { synced: players.length, injured };
   }
 
-  // ESPN roster cache: jersey → stats (current season, shared across all player lookups)
+  // Competiciones ESPN a agregar para stats de temporada completa
+  private static readonly ESPN_LEAGUES = [
+    'arg.1',                   // Liga Profesional
+    'conmebol.libertadores',   // Copa Libertadores
+    'conmebol.sudamericana',   // Copa Sudamericana (por si aplica)
+  ];
+
+  // ESPN roster cache: jersey → stats acumuladas de todas las competencias
   private espnRosterCache: { data: Map<number, EspnStats>; ts: number } | null = null;
 
   private async fetchEspnRoster(): Promise<Map<number, EspnStats>> {
@@ -222,34 +229,43 @@ export class PlayersService implements OnModuleInit {
       return this.espnRosterCache.data;
     }
     const map = new Map<number, EspnStats>();
-    try {
-      const res = await axios.get(
-        'https://site.api.espn.com/apis/site/v2/sports/soccer/arg.1/teams/16/roster',
-        { timeout: 15000 },
-      );
-      for (const athlete of res.data?.athletes ?? []) {
-        const jersey = parseInt(athlete.jersey ?? '');
-        if (isNaN(jersey)) continue;
-        const entry: EspnStats = { fullName: athlete.fullName ?? '', appearances: 0, goals: 0, assists: 0, yellowCards: 0, redCards: 0, saves: 0 };
-        for (const cat of athlete.statistics?.splits?.categories ?? []) {
-          for (const s of cat.stats ?? []) {
-            const v: number = s.value ?? 0;
-            switch (s.name) {
-              case 'appearances': entry.appearances = v; break;
-              case 'totalGoals':  entry.goals = v; break;
-              case 'goalAssists': entry.assists = v; break;
-              case 'yellowCards': entry.yellowCards = v; break;
-              case 'redCards':    entry.redCards = v; break;
-              case 'saves':       entry.saves = v; break;
+
+    for (const league of PlayersService.ESPN_LEAGUES) {
+      try {
+        const res = await axios.get(
+          `https://site.api.espn.com/apis/site/v2/sports/soccer/${league}/teams/16/roster`,
+          { timeout: 15000 },
+        );
+        for (const athlete of res.data?.athletes ?? []) {
+          const jersey = parseInt(athlete.jersey ?? '');
+          if (isNaN(jersey)) continue;
+
+          if (!map.has(jersey)) {
+            map.set(jersey, { fullName: athlete.fullName ?? '', appearances: 0, goals: 0, assists: 0, yellowCards: 0, redCards: 0, saves: 0 });
+          }
+          const entry = map.get(jersey)!;
+
+          for (const cat of athlete.statistics?.splits?.categories ?? []) {
+            for (const s of cat.stats ?? []) {
+              const v: number = s.value ?? 0;
+              switch (s.name) {
+                case 'appearances': entry.appearances += v; break;
+                case 'totalGoals':  entry.goals += v; break;
+                case 'goalAssists': entry.assists += v; break;
+                case 'yellowCards': entry.yellowCards += v; break;
+                case 'redCards':    entry.redCards += v; break;
+                case 'saves':       entry.saves += v; break;
+              }
             }
           }
         }
-        map.set(jersey, entry);
+        this.logger.log(`ESPN ${league}: ${res.data?.athletes?.length ?? 0} jugadores`);
+      } catch (e: any) {
+        this.logger.warn(`ESPN roster falló para ${league}: ${e.message}`);
       }
-      this.logger.log(`ESPN roster cargado: ${map.size} jugadores`);
-    } catch (e: any) {
-      this.logger.warn('ESPN roster fetch falló: ' + e.message);
     }
+
+    this.logger.log(`ESPN total acumulado: ${map.size} jugadores con stats`);
     this.espnRosterCache = { data: map, ts: Date.now() };
     return map;
   }
