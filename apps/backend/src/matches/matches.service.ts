@@ -960,6 +960,17 @@ export class MatchesService implements OnModuleInit {
 
           if (!isRiver(normalized.homeTeam) && !isRiver(normalized.awayTeam)) continue;
 
+          // Extraer estadio, árbitro y canal de TV
+          const stadium: string | null = comp.venue?.fullName ?? comp.venue?.name ?? null;
+          const officials: any[] = comp.officials ?? [];
+          const refEntry = officials.find((o: any) =>
+            /referee|ref|árbitro/i.test(o.position?.displayName ?? o.position?.abbreviation ?? ''),
+          );
+          const referee: string | null = refEntry?.displayName ?? refEntry?.official?.displayName ?? null;
+          const broadcasts: any[] = comp.broadcasts ?? comp.geoBroadcasts ?? [];
+          const tvNames = broadcasts.flatMap((b: any) => b.names ?? b.media?.shortName ? [b.media.shortName] : []);
+          const tvChannel: string | null = tvNames.length > 0 ? tvNames.join(' / ') : null;
+
           allMatches.push({
             ...normalized,
             status,
@@ -967,6 +978,9 @@ export class MatchesService implements OnModuleInit {
             competition: league.name,
             minute: comp.status?.displayClock ? parseInt(comp.status.displayClock, 10) || null : null,
             penaltyWinner,
+            stadium,
+            referee,
+            tvChannel,
           });
         }
       } catch (e: any) {
@@ -1182,6 +1196,9 @@ export class MatchesService implements OnModuleInit {
         date:          new Date(m.date),
         competition:   m.competition || 'Competición',
         penaltyWinner: m.penaltyWinner ?? null,
+        stadium:       m.stadium ?? null,
+        referee:       m.referee ?? null,
+        tvChannel:     m.tvChannel ?? null,
         updatedAt:     new Date(),
       };
     });

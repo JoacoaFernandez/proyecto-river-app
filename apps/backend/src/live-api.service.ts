@@ -53,7 +53,7 @@ export class LiveApiService {
   ) {}
 
   async getDashboardData() {
-    if (this.cache && Date.now() - this.lastFetch < 900_000) {
+    if (this.cache && Date.now() - this.lastFetch < 300_000) {
       return this.cache;
     }
 
@@ -92,6 +92,8 @@ export class LiveApiService {
         minute: m.minute,
         penaltyWinner: m.penaltyWinner ?? null,
         stadium: m.stadium ?? null,
+        referee: m.referee ?? null,
+        tvChannel: m.tvChannel ?? null,
         goalEvents: m.goalEvents ?? [],
       };
     };

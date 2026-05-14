@@ -6,6 +6,7 @@ import { getLiveDashboard } from '../services/live.service';
 import { getLineup, type LineupResponse } from '../services/formations.service';
 import { getH2H, type Match } from '../services/matches.service';
 import { getMatchPrediction } from '../services/ai.service';
+import { getPredictionSummary, type PredictionSummary } from '../services/predictions.service';
 import ReactMarkdown from 'react-markdown';
 import CanchaTactica from '../components/CanchaTactica';
 import { Bot, Sparkles, AlertCircle } from 'lucide-react';
@@ -367,6 +368,7 @@ export default function ProximoPartido() {
   const [prediction, setPrediction] = useState<Pred>(null);
   const [predStored, setPredStored] = useState<Pred>(null);
   const [predLoading, setPredLoading] = useState(false);
+  const [predSummary, setPredSummary] = useState<PredictionSummary | null>(null);
   const isAuthenticated = !!localStorage.getItem('river_app_token');
 
   useEffect(() => {
@@ -414,6 +416,11 @@ export default function ProximoPartido() {
       });
     });
   }, [match, isAuthenticated]);
+
+  useEffect(() => {
+    if (!match) return;
+    getPredictionSummary(match.id).then((s) => setPredSummary(s));
+  }, [match, predStored]);
 
   const handlePredict = async (p: Pred) => {
     if (!match || predStored) return;
@@ -535,9 +542,31 @@ export default function ProximoPartido() {
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
           <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-3">Datos del partido</h3>
           <ul className="space-y-2 text-sm">
+            {/* Estadio con capacidad */}
             <li className="flex justify-between border-b border-neutral-800/50 pb-2">
               <span className="text-neutral-400">Estadio</span>
-              <span className="font-semibold">{isHome ? 'Monumental' : 'Por confirmar'}</span>
+              <div className="text-right">
+                <div className="font-semibold">
+                  {match.stadium ?? (isHome ? 'Estadio Monumental' : 'Por confirmar')}
+                </div>
+                {(() => {
+                  const CAPACITIES: Record<string, string> = {
+                    'Estadio Monumental': '84.567',
+                    'Monumental': '84.567',
+                    'Estadio Monumental Antonio Vespucio Liberti': '84.567',
+                    'La Bombonera': '54.000',
+                    'Estadio Tomás Adolfo Ducó': '48.000',
+                    'Estadio Único Madre de Ciudades': '30.000',
+                    'Estadio Nuevo Gasómetro': '42.000',
+                    'Estadio Marcelo Bielsa': '42.000',
+                  };
+                  const stadiumKey = match.stadium ?? (isHome ? 'Estadio Monumental' : '');
+                  const cap = Object.entries(CAPACITIES).find(([k]) => stadiumKey.toLowerCase().includes(k.toLowerCase()));
+                  return cap ? (
+                    <div className="text-[10px] text-neutral-500">Cap. {cap[1]} espectadores</div>
+                  ) : null;
+                })()}
+              </div>
             </li>
             <li className="flex justify-between border-b border-neutral-800/50 pb-2">
               <span className="text-neutral-400">Competición</span>
@@ -547,35 +576,70 @@ export default function ProximoPartido() {
               <span className="text-neutral-400">Fecha</span>
               <span className="font-semibold capitalize">{dayName} {dayDate.split(',')[0]}</span>
             </li>
-            <li className="flex justify-between">
+            <li className={`flex justify-between ${match.referee || match.tvChannel ? 'border-b border-neutral-800/50 pb-2' : ''}`}>
               <span className="text-neutral-400">Hora</span>
               <span className="font-semibold">{time} hs</span>
             </li>
+            {match.referee && (
+              <li className={`flex justify-between ${match.tvChannel ? 'border-b border-neutral-800/50 pb-2' : ''}`}>
+                <span className="text-neutral-400">Árbitro</span>
+                <span className="font-semibold">{match.referee}</span>
+              </li>
+            )}
+            {match.tvChannel && (
+              <li className="flex justify-between">
+                <span className="text-neutral-400">TV</span>
+                <span className="font-semibold text-blue-400">{match.tvChannel}</span>
+              </li>
+            )}
           </ul>
         </div>
 
         {/* Predicción */}
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
-          <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-3">Tu predicción</h3>
-          {predStored ? (
-            <div className="text-center py-4">
-              <div className="text-3xl mb-2">✅</div>
+          <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-3">
+            Predicción de hinchas
+          </h3>
+
+          {/* Votar — cerrado si el partido ya empezó */}
+          {match.status !== 'scheduled' ? (
+            <div className="text-center py-3 mb-3">
+              <div className="text-2xl mb-1">🔒</div>
+              <p className="text-xs text-neutral-500">Las predicciones cerraron al inicio del partido.</p>
+              {predStored && (
+                <p className="text-sm text-neutral-300 mt-2">
+                  Vos apostaste:{' '}
+                  <span className="font-bold text-riverRed">
+                    {predStored === 'home' ? match.homeTeam : predStored === 'away' ? match.awayTeam : 'Empate'}
+                  </span>
+                  {match.status === 'finished' && (() => {
+                    const actual = (match.homeScore ?? 0) > (match.awayScore ?? 0) ? 'home'
+                      : (match.homeScore ?? 0) < (match.awayScore ?? 0) ? 'away' : 'draw';
+                    return actual === predStored
+                      ? <span className="ml-2 text-green-400 font-bold">✓ ¡Acertaste!</span>
+                      : <span className="ml-2 text-red-400 font-bold">✗ No acertaste</span>;
+                  })()}
+                </p>
+              )}
+            </div>
+          ) : predStored ? (
+            <div className="text-center py-2 mb-3">
+              <div className="text-2xl mb-1">✅</div>
               <p className="text-sm text-neutral-300">
                 Apostaste por:{' '}
                 <span className="font-bold text-riverRed">
                   {predStored === 'home' ? match.homeTeam : predStored === 'away' ? match.awayTeam : 'Empate'}
                 </span>
               </p>
-              <p className="text-xs text-neutral-500 mt-1">Tu voto se guarda hasta el partido.</p>
             </div>
           ) : (
             <>
               <p className="text-xs text-neutral-500 mb-3">¿Quién gana?</p>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-3 gap-2 mb-3">
                 {[
-                  { key: 'home' as const, label: match.homeTeam.substring(0, 8), sub: 'Gana local' },
+                  { key: 'home' as const, label: match.homeTeam.split(' ')[0], sub: 'Local' },
                   { key: 'draw' as const, label: 'Empate', sub: 'X' },
-                  { key: 'away' as const, label: match.awayTeam.substring(0, 8), sub: 'Gana visit.' },
+                  { key: 'away' as const, label: match.awayTeam.split(' ')[0], sub: 'Visitante' },
                 ].map((opt) => (
                   <button
                     key={opt.key}
@@ -593,6 +657,31 @@ export default function ProximoPartido() {
                 ))}
               </div>
             </>
+          )}
+
+          {/* Barra de % votos — siempre visible si hay al menos 1 voto */}
+          {predSummary && predSummary.total > 0 && (
+            <div className="mt-2 space-y-1.5">
+              <p className="text-[10px] text-neutral-500 uppercase tracking-widest font-bold mb-2">
+                {predSummary.total} {predSummary.total === 1 ? 'voto' : 'votos'}
+              </p>
+              {[
+                { key: 'home', label: match.homeTeam.split(' ')[0], pct: predSummary.homePct, color: 'bg-riverRed' },
+                { key: 'draw', label: 'Empate', pct: predSummary.drawPct, color: 'bg-yellow-500' },
+                { key: 'away', label: match.awayTeam.split(' ')[0], pct: predSummary.awayPct, color: 'bg-neutral-500' },
+              ].map((row) => (
+                <div key={row.key} className="flex items-center gap-2 text-xs">
+                  <span className="w-14 truncate text-neutral-400 text-[10px]">{row.label}</span>
+                  <div className="flex-1 bg-neutral-800 rounded-full h-2 overflow-hidden">
+                    <div
+                      className={`h-2 rounded-full transition-all duration-700 ${row.color}`}
+                      style={{ width: `${row.pct}%` }}
+                    />
+                  </div>
+                  <span className="w-8 text-right font-bold tabular-nums text-neutral-300">{row.pct}%</span>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </section>

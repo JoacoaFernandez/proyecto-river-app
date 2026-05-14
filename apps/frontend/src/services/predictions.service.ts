@@ -43,3 +43,17 @@ export async function getRanking(): Promise<RankingUser[]> {
   const { data } = await api.get('/predictions/ranking');
   return data;
 }
+
+export interface PredictionSummary {
+  home: number; draw: number; away: number; total: number;
+  homePct: number; drawPct: number; awayPct: number;
+}
+
+export async function getPredictionSummary(matchId: string): Promise<PredictionSummary | null> {
+  try {
+    const { data } = await api.get(`/predictions/summary/${matchId}`);
+    return data;
+  } catch {
+    return null;
+  }
+}

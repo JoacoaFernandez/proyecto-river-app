@@ -62,6 +62,27 @@ export class PredictionsService {
     });
   }
 
+  async getSummary(matchId: string) {
+    const rows = await this.prisma.prediction.groupBy({
+      by: ['choice'],
+      where: { matchId },
+      _count: { choice: true },
+    });
+    const counts: Record<string, number> = { home: 0, draw: 0, away: 0 };
+    for (const r of rows) counts[r.choice] = r._count.choice;
+    const total = counts.home + counts.draw + counts.away;
+    const pct = (n: number) => total > 0 ? Math.round((n / total) * 100) : 0;
+    return {
+      home: counts.home,
+      draw: counts.draw,
+      away: counts.away,
+      total,
+      homePct: pct(counts.home),
+      drawPct: pct(counts.draw),
+      awayPct: pct(counts.away),
+    };
+  }
+
   async resolvePredictions(matchId: string, homeScore: number, awayScore: number) {
     const actualResult = homeScore > awayScore ? 'home' : homeScore < awayScore ? 'away' : 'draw';
     const predictions = await this.prisma.prediction.findMany({

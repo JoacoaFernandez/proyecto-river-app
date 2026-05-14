@@ -102,6 +102,8 @@ model Match {
   predictions Prediction[]
   events      MatchEvent[]
   statistics  Json?             // ESPN match stats snapshot
+  referee     String?           // Árbitro designado
+  tvChannel   String?           // Canal de TV que transmite
 }
 
 model LiveChatMessage {
