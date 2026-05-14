@@ -65,7 +65,18 @@ export class LiveApiService {
 
     const nextMatch = upcomingList.find((m) => m.status !== 'finished') ?? null;
     const lastFinished = pastList.find((m) => m.status === 'finished') ?? null;
-    const lastMatch = lastFinished;
+
+    // Fetch goal events for the last match
+    let lastMatchGoalEvents: any[] = [];
+    if (lastFinished) {
+      const evts = await this.prisma.matchEvent.findMany({
+        where: { matchId: lastFinished.id, type: { in: ['goal', 'own-goal', 'penalty-goal'] } },
+        orderBy: { minute: 'asc' },
+        select: { playerName: true, minute: true, team: true, type: true },
+      });
+      lastMatchGoalEvents = evts;
+    }
+    const lastMatch = lastFinished ? { ...lastFinished, goalEvents: lastMatchGoalEvents } : null;
 
     const formatMatch = (m: any) => {
       if (!m) return null;
@@ -80,6 +91,8 @@ export class LiveApiService {
         competition: m.competition,
         minute: m.minute,
         penaltyWinner: m.penaltyWinner ?? null,
+        stadium: m.stadium ?? null,
+        goalEvents: m.goalEvents ?? [],
       };
     };
 
@@ -100,6 +113,21 @@ export class LiveApiService {
   private async fetchStandingsAndStats(pastMatches: any[]) {
     let table: any[] = [];
     let stats = this.computeStatsFromMatches(pastMatches);
+
+    // Calcular goleador de temporada desde la DB
+    try {
+      const goalEvents = await this.prisma.matchEvent.findMany({
+        where: { type: { in: ['goal', 'penalty-goal'] }, playerName: { not: null } },
+        select: { playerName: true },
+        take: 300,
+      });
+      const scorerMap = new Map<string, number>();
+      for (const e of goalEvents) {
+        if (e.playerName) scorerMap.set(e.playerName, (scorerMap.get(e.playerName) ?? 0) + 1);
+      }
+      const top = [...scorerMap.entries()].sort((a, b) => b[1] - a[1])[0];
+      if (top) stats.topScorer = `${top[0]} (${top[1]})`;
+    } catch { /* mantener N/A */ }
 
     try {
       const url = 'https://site.api.espn.com/apis/v2/sports/soccer/arg.1/standings';

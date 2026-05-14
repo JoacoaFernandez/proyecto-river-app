@@ -73,7 +73,14 @@ INSTRUCCIONES:
 `;
 
     // Intentar con modelos en orden de preferencia
-    const modelNames = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest'];
+    const modelNames = [
+      'gemini-2.5-flash',
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
+      'gemini-1.5-flash-8b',
+      'gemini-1.5-pro',
+      'gemini-flash-latest',
+    ];
 
     for (const modelName of modelNames) {
       try {

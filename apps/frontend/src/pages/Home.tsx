@@ -157,7 +157,7 @@ export default function Home() {
 
             {nextMatch ? (
               <div className="p-5">
-                <div className="flex items-center gap-1.5 mb-5 justify-center">
+                <div className="flex items-center gap-1.5 mb-2 justify-center flex-wrap">
                   <span className="text-[10px] font-bold text-riverRed uppercase tracking-widest bg-red-950/30 border border-red-900/40 px-2.5 py-1 rounded-full">
                     {nextMatch.competition}
                   </span>
@@ -167,6 +167,11 @@ export default function Home() {
                     {new Date(nextMatch.date).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs
                   </span>
                 </div>
+                {nextMatch.stadium && (
+                  <div className="text-[10px] text-neutral-500 text-center mb-4">
+                    📍 {nextMatch.stadium}
+                  </div>
+                )}
 
                 <div className="flex items-center justify-between gap-3 mb-5">
                   <div className="flex-1 flex flex-col items-center gap-2.5">
@@ -186,12 +191,20 @@ export default function Home() {
                   </div>
                 </div>
 
-                <Link
-                  to="/partidos/proximo"
-                  className="block w-full bg-riverRed hover:bg-red-700 text-white font-bold text-sm py-2.5 rounded-xl transition-all shadow-md shadow-red-900/30 text-center"
-                >
-                  Ver detalles →
-                </Link>
+                <div className="flex gap-2 mt-4">
+                  <Link
+                    to="/partidos/proximo"
+                    className="flex-1 bg-riverRed hover:bg-red-700 text-white font-bold text-xs py-2.5 rounded-xl transition-all shadow-md shadow-red-900/30 text-center"
+                  >
+                    Ver detalles
+                  </Link>
+                  <Link
+                    to="/partidos/proximo#formacion"
+                    className="flex-1 bg-neutral-800 hover:bg-neutral-700 text-white font-bold text-xs py-2.5 rounded-xl transition-all text-center border border-neutral-700"
+                  >
+                    Formación probable
+                  </Link>
+                </div>
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-10 px-5 gap-3">
@@ -244,6 +257,42 @@ export default function Home() {
                       <span className="text-xs font-semibold text-center leading-tight truncate w-full text-center">{lastMatch.awayTeam}</span>
                     </div>
                   </div>
+
+                  {/* Goleadores */}
+                  {lastMatch.goalEvents && lastMatch.goalEvents.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-neutral-800">
+                      <div className="grid grid-cols-[1fr_2px_1fr] gap-x-3 text-[11px]">
+                        <div className="space-y-1 text-right">
+                          {lastMatch.goalEvents
+                            .filter((e: any) => RIVER_RX.test(lastMatch.homeTeam) ? RIVER_RX.test(e.team) : !RIVER_RX.test(e.team))
+                            .map((e: any, i: number) => (
+                              <div key={i} className="flex items-center justify-end gap-1 text-neutral-300">
+                                <span>{e.playerName ?? '?'} {e.minute}'</span>
+                                <span>⚽</span>
+                              </div>
+                            ))}
+                        </div>
+                        <div className="bg-neutral-800 self-stretch" />
+                        <div className="space-y-1 text-left">
+                          {lastMatch.goalEvents
+                            .filter((e: any) => RIVER_RX.test(lastMatch.homeTeam) ? !RIVER_RX.test(e.team) : RIVER_RX.test(e.team))
+                            .map((e: any, i: number) => (
+                              <div key={i} className="flex items-center gap-1 text-neutral-300">
+                                <span>⚽</span>
+                                <span>{e.playerName ?? '?'} {e.minute}'</span>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <Link
+                    to={`/partidos/${lastMatch.id}`}
+                    className="block w-full mt-3 text-center text-xs font-semibold text-neutral-400 hover:text-white border border-neutral-800 hover:border-neutral-600 py-2 rounded-xl transition-all"
+                  >
+                    Ver estadísticas del partido →
+                  </Link>
                 </div>
               );
             })() : (
@@ -391,6 +440,12 @@ export default function Home() {
                     <span className="text-neutral-400">Racha actual</span>
                     <span className="font-bold text-green-400 text-xs uppercase tracking-wider">{stats.streak}</span>
                   </div>
+                  {stats.topScorer && stats.topScorer !== 'N/A' && (
+                    <div className="flex justify-between items-center text-sm border-b border-neutral-800/50 pb-2">
+                      <span className="text-neutral-400">Goleador</span>
+                      <span className="font-bold text-yellow-400 text-xs">{stats.topScorer}</span>
+                    </div>
+                  )}
                 </div>
 
                 <Link
