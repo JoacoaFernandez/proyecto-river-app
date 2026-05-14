@@ -56,6 +56,15 @@ export class PlayersController {
     return this.playersService.update(id, updatePlayerDto);
   }
 
+  @Post('sync-injuries')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Sincronizar estado de lesiones desde API-Football (admin)' })
+  syncInjuries() {
+    return this.playersService.syncInjuries();
+  }
+
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
