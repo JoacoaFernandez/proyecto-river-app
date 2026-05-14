@@ -268,9 +268,8 @@ export class PlayersService implements OnModuleInit {
       espn = roster.get(player.number) ?? null;
     }
 
-    // ── API-Football: datos físicos + minutos/titularidades/rating (plan free → hasta 2024) ──
+    // ── API-Football: solo datos físicos (plan free → hasta 2024, solo se usa altura/peso/nacimiento) ──
     let physical: PhysicalDto | null = null;
-    let apiMinutes = 0, apiLineups = 0, apiRating: string | null = null, apiPenaltyGoals = 0;
 
     const apiId = player.photo?.split('/').pop()?.replace('.png', '') ?? null;
     if (apiId && process.env.API_FOOTBALL_KEY) {
@@ -284,7 +283,6 @@ export class PlayersService implements OnModuleInit {
           const entry = res.data?.response?.[0];
           if (!entry) continue;
           const p = entry.player ?? {};
-          const st = entry.statistics?.[0] ?? {};
           physical = {
             height: p.height ?? null,
             weight: p.weight ?? null,
@@ -292,10 +290,6 @@ export class PlayersService implements OnModuleInit {
             birthPlace: p.birth?.place ?? null,
             birthCountry: p.birth?.country ?? null,
           };
-          apiLineups = st.games?.lineups ?? 0;
-          apiMinutes = st.games?.minutes ?? 0;
-          apiRating = st.games?.rating ? parseFloat(st.games.rating).toFixed(1) : null;
-          apiPenaltyGoals = st.penalty?.scored ?? 0;
           break;
         } catch (e: any) {
           this.logger.warn(`API-Football físico falló (${apiId}, ${season}): ${e?.message}`);
@@ -315,17 +309,17 @@ export class PlayersService implements OnModuleInit {
       birthDate: physical?.birthDate ?? null,
       birthPlace: physical?.birthPlace ?? null,
       birthCountry: physical?.birthCountry ?? null,
-      // Stats de la temporada actual (ESPN 2026)
+      // Stats de la temporada actual 2026 (ESPN)
       appearances: espn?.appearances ?? 0,
       goals: espn?.goals ?? 0,
       assists: espn?.assists ?? 0,
       yellowCards: espn?.yellowCards ?? 0,
       redCards: espn?.redCards ?? 0,
-      // Stats extras de API-Football (no disponibles en ESPN)
-      lineups: apiLineups,
-      minutes: apiMinutes,
-      rating: apiRating,
-      penaltyGoals: apiPenaltyGoals,
+      // No mezclamos minutos/titular/rating de 2024 con stats de 2026
+      lineups: 0,
+      minutes: 0,
+      rating: null,
+      penaltyGoals: 0,
       season: 2026,
     };
 

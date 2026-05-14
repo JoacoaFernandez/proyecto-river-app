@@ -261,18 +261,15 @@ export default function JugadorDetalle() {
               <StatBox value={stats.appearances} label="PJ" sub="Partidos" />
               <StatBox value={stats.goals} label="Goles" sub="En la temporada" highlight={stats.goals > 0} />
               <StatBox value={stats.assists} label="Asist." sub="Asistencias" highlight={stats.assists > 0} />
-              <StatBox value={stats.minutes > 0 ? `${stats.minutes}'` : '–'} label="Min" sub="Minutos jugados" />
+              <StatBox value={stats.yellowCards} label="Amarillas" sub="Tarjetas" />
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <StatBox value={stats.lineups} label="Titular" sub="Veces de inicio" />
-              <StatBox
-                value={stats.penaltyGoals > 0 ? stats.penaltyGoals : '–'}
-                label="Penales"
-                sub="Goles de penal"
-                highlight={stats.penaltyGoals > 0}
-              />
-              <StatBox value={stats.yellowCards} label="Amarillas" sub="Tarjetas" />
               <StatBox value={stats.redCards} label="Rojas" sub="Tarjetas" />
+              {stats.lineups > 0 && <StatBox value={stats.lineups} label="Titular" sub="Veces de inicio" />}
+              {stats.minutes > 0 && <StatBox value={`${stats.minutes}'`} label="Min" sub="Minutos jugados" />}
+              {stats.penaltyGoals > 0 && (
+                <StatBox value={stats.penaltyGoals} label="Penales" sub="Goles de penal" highlight />
+              )}
             </div>
           </>
         ) : (
