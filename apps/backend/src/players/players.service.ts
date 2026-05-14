@@ -214,72 +214,142 @@ export class PlayersService implements OnModuleInit {
     return { synced: players.length, injured };
   }
 
-  // 8. Estadísticas desde API-Football (caché 10 min por jugador)
+  // ESPN roster cache: jersey → stats (current season, shared across all player lookups)
+  private espnRosterCache: { data: Map<number, EspnStats>; ts: number } | null = null;
+
+  private async fetchEspnRoster(): Promise<Map<number, EspnStats>> {
+    if (this.espnRosterCache && Date.now() - this.espnRosterCache.ts < 6 * 3_600_000) {
+      return this.espnRosterCache.data;
+    }
+    const map = new Map<number, EspnStats>();
+    try {
+      const res = await axios.get(
+        'https://site.api.espn.com/apis/site/v2/sports/soccer/arg.1/teams/16/roster',
+        { timeout: 15000 },
+      );
+      for (const athlete of res.data?.athletes ?? []) {
+        const jersey = parseInt(athlete.jersey ?? '');
+        if (isNaN(jersey)) continue;
+        const entry: EspnStats = { fullName: athlete.fullName ?? '', appearances: 0, goals: 0, assists: 0, yellowCards: 0, redCards: 0, saves: 0 };
+        for (const cat of athlete.statistics?.splits?.categories ?? []) {
+          for (const s of cat.stats ?? []) {
+            const v: number = s.value ?? 0;
+            switch (s.name) {
+              case 'appearances': entry.appearances = v; break;
+              case 'totalGoals':  entry.goals = v; break;
+              case 'goalAssists': entry.assists = v; break;
+              case 'yellowCards': entry.yellowCards = v; break;
+              case 'redCards':    entry.redCards = v; break;
+              case 'saves':       entry.saves = v; break;
+            }
+          }
+        }
+        map.set(jersey, entry);
+      }
+      this.logger.log(`ESPN roster cargado: ${map.size} jugadores`);
+    } catch (e: any) {
+      this.logger.warn('ESPN roster fetch falló: ' + e.message);
+    }
+    this.espnRosterCache = { data: map, ts: Date.now() };
+    return map;
+  }
+
+  // 8. Estadísticas — ESPN para temporada actual + API-Football para datos físicos
   async getPlayerStats(id: string): Promise<PlayerStatsDto | null> {
     const cached = this.statsCache.get(id);
     if (cached && Date.now() - cached.ts < 600_000) return cached.data;
 
     const player = await this.findOne(id);
 
-    // La URL de la foto tiene el ID del jugador en API-Football:
-    // https://media.api-sports.io/football/players/12345.png
-    const apiId = player.photo
-      ? player.photo.split('/').pop()?.replace('.png', '')
-      : null;
+    // ── ESPN: stats de la temporada actual (match por número de camiseta) ──
+    let espn: EspnStats | null = null;
+    if (player.number != null) {
+      const roster = await this.fetchEspnRoster();
+      espn = roster.get(player.number) ?? null;
+    }
 
-    if (!apiId || !process.env.API_FOOTBALL_KEY) {
+    // ── API-Football: datos físicos + minutos/titularidades/rating (plan free → hasta 2024) ──
+    let physical: PhysicalDto | null = null;
+    let apiMinutes = 0, apiLineups = 0, apiRating: string | null = null, apiPenaltyGoals = 0;
+
+    const apiId = player.photo?.split('/').pop()?.replace('.png', '') ?? null;
+    if (apiId && process.env.API_FOOTBALL_KEY) {
+      for (const season of [2024, 2023]) {
+        try {
+          const res = await axios.get('https://v3.football.api-sports.io/players', {
+            params: { id: apiId, season },
+            headers: API_HEADERS(),
+            timeout: 10000,
+          });
+          const entry = res.data?.response?.[0];
+          if (!entry) continue;
+          const p = entry.player ?? {};
+          const st = entry.statistics?.[0] ?? {};
+          physical = {
+            height: p.height ?? null,
+            weight: p.weight ?? null,
+            birthDate: p.birth?.date ?? null,
+            birthPlace: p.birth?.place ?? null,
+            birthCountry: p.birth?.country ?? null,
+          };
+          apiLineups = st.games?.lineups ?? 0;
+          apiMinutes = st.games?.minutes ?? 0;
+          apiRating = st.games?.rating ? parseFloat(st.games.rating).toFixed(1) : null;
+          apiPenaltyGoals = st.penalty?.scored ?? 0;
+          break;
+        } catch (e: any) {
+          this.logger.warn(`API-Football físico falló (${apiId}, ${season}): ${e?.message}`);
+        }
+      }
+    }
+
+    if (!espn && !physical) {
       this.statsCache.set(id, { data: null, ts: Date.now() });
       return null;
     }
 
-    const headers = {
-      'x-rapidapi-key': process.env.API_FOOTBALL_KEY,
-      'x-rapidapi-host': 'v3.football.api-sports.io',
+    const result: PlayerStatsDto = {
+      // Datos físicos (API-Football 2024)
+      height: physical?.height ?? null,
+      weight: physical?.weight ?? null,
+      birthDate: physical?.birthDate ?? null,
+      birthPlace: physical?.birthPlace ?? null,
+      birthCountry: physical?.birthCountry ?? null,
+      // Stats de la temporada actual (ESPN 2026)
+      appearances: espn?.appearances ?? 0,
+      goals: espn?.goals ?? 0,
+      assists: espn?.assists ?? 0,
+      yellowCards: espn?.yellowCards ?? 0,
+      redCards: espn?.redCards ?? 0,
+      // Stats extras de API-Football (no disponibles en ESPN)
+      lineups: apiLineups,
+      minutes: apiMinutes,
+      rating: apiRating,
+      penaltyGoals: apiPenaltyGoals,
+      season: 2026,
     };
 
-    // Intenta la temporada actual primero, luego la anterior
-    for (const season of [2025, 2024]) {
-      try {
-        const res = await axios.get('https://v3.football.api-sports.io/players', {
-          params: { id: apiId, season },
-          headers,
-          timeout: 10000,
-        });
-
-        const entry = res.data?.response?.[0];
-        if (!entry) continue;
-
-        const p = entry.player ?? {};
-        const st = entry.statistics?.[0] ?? {};
-
-        const result: PlayerStatsDto = {
-          height: p.height ?? null,
-          weight: p.weight ?? null,
-          birthDate: p.birth?.date ?? null,
-          birthPlace: p.birth?.place ?? null,
-          birthCountry: p.birth?.country ?? null,
-          appearances: st.games?.appearences ?? 0,
-          lineups: st.games?.lineups ?? 0,
-          minutes: st.games?.minutes ?? 0,
-          rating: st.games?.rating ? parseFloat(st.games.rating).toFixed(1) : null,
-          goals: st.goals?.total ?? 0,
-          penaltyGoals: st.penalty?.scored ?? 0,
-          assists: st.goals?.assists ?? 0,
-          yellowCards: st.cards?.yellow ?? 0,
-          redCards: st.cards?.red ?? 0,
-          season,
-        };
-
-        this.statsCache.set(id, { data: result, ts: Date.now() });
-        return result;
-      } catch (e: any) {
-        this.logger.warn(`API-Football stats falló (jugador ${apiId}, temporada ${season}): ${e?.message}`);
-      }
-    }
-
-    this.statsCache.set(id, { data: null, ts: Date.now() });
-    return null;
+    this.statsCache.set(id, { data: result, ts: Date.now() });
+    return result;
   }
+}
+
+interface EspnStats {
+  fullName: string;
+  appearances: number;
+  goals: number;
+  assists: number;
+  yellowCards: number;
+  redCards: number;
+  saves: number;
+}
+
+interface PhysicalDto {
+  height: string | null;
+  weight: string | null;
+  birthDate: string | null;
+  birthPlace: string | null;
+  birthCountry: string | null;
 }
 
 export interface LeaderboardEntry {
