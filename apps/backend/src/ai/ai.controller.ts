@@ -13,15 +13,29 @@ export class AiController {
   async getPrediction(@Param('matchId') matchId: string) {
     const match = await this.prisma.match.findUnique({
       where: { id: matchId },
-      select: { aiPrediction: true },
+      select: { aiPrediction: true, homeTeam: true, awayTeam: true },
     });
 
     if (!match) {
       throw new NotFoundException('Partido no encontrado');
     }
 
-    if (match.aiPrediction) {
+    // Invalidar predicción si no menciona a AMBOS equipos actuales
+    const predictionStale =
+      match.aiPrediction &&
+      (!match.aiPrediction.toLowerCase().includes(match.homeTeam.toLowerCase()) ||
+       !match.aiPrediction.toLowerCase().includes(match.awayTeam.toLowerCase()));
+
+    if (match.aiPrediction && !predictionStale) {
       return { prediction: match.aiPrediction };
+    }
+
+    // Limpiar predicción obsoleta antes de regenerar
+    if (predictionStale) {
+      await this.prisma.match.update({
+        where: { id: matchId },
+        data: { aiPrediction: null },
+      });
     }
 
     const prediction = await this.aiService.predictMatch(matchId);

@@ -340,6 +340,16 @@ export default function ProximoPartido() {
 
   useEffect(() => {
     if (!match) return;
+    const hash = window.location.hash;
+    if (!hash) return;
+    const el = document.querySelector(hash);
+    if (el) {
+      setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+    }
+  }, [match]);
+
+  useEffect(() => {
+    if (!match) return;
 
     const tick = () => {
       const distance = new Date(match.date).getTime() - Date.now();
@@ -554,7 +564,9 @@ export default function ProximoPartido() {
       <AiPredictionSection matchId={match.id} />
 
       {/* Formación probable: cancha SVG con XI titular */}
-      <FormacionSection />
+      <div id="formacion">
+        <FormacionSection />
+      </div>
 
       <H2HSection rival={rival} />
     </div>
