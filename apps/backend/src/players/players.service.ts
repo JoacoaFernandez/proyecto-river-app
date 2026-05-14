@@ -74,15 +74,15 @@ export class PlayersService implements OnModuleInit {
       return this.leaderboardCache.data;
     }
 
-    // Use ESPN roster (one cached request) instead of N individual API-Football calls
-    const [players, espnRoster] = await Promise.all([
+    // Use ESPN season stats (match summaries) instead of N individual API-Football calls
+    const [players, espnMap] = await Promise.all([
       this.prisma.player.findMany({ orderBy: { number: 'asc' } }),
       this.fetchEspnRoster(),
     ]);
 
     const data: LeaderboardEntry[] = players
       .map((p) => {
-        const espn = p.number != null ? espnRoster.get(p.number) : null;
+        const espn = this.matchEspnPlayer(espnMap, p.name);
         return {
           id: p.id,
           name: p.name,
@@ -214,60 +214,109 @@ export class PlayersService implements OnModuleInit {
     return { synced: players.length, injured };
   }
 
-  // Competiciones ESPN a agregar para stats de temporada completa
-  private static readonly ESPN_LEAGUES = [
-    'arg.1',                   // Liga Profesional
-    'conmebol.libertadores',   // Copa Libertadores
-    'conmebol.sudamericana',   // Copa Sudamericana (por si aplica)
-  ];
+  // ESPN season stats cache: ESPN displayName → stats acumuladas de todos los partidos
+  private espnRosterCache: { data: Map<string, EspnStats>; ts: number } | null = null;
 
-  // ESPN roster cache: jersey → stats acumuladas de todas las competencias
-  private espnRosterCache: { data: Map<number, EspnStats>; ts: number } | null = null;
-
-  private async fetchEspnRoster(): Promise<Map<number, EspnStats>> {
+  private async fetchEspnRoster(): Promise<Map<string, EspnStats>> {
     if (this.espnRosterCache && Date.now() - this.espnRosterCache.ts < 6 * 3_600_000) {
       return this.espnRosterCache.data;
     }
-    const map = new Map<number, EspnStats>();
 
-    for (const league of PlayersService.ESPN_LEAGUES) {
-      try {
-        const res = await axios.get(
-          `https://site.api.espn.com/apis/site/v2/sports/soccer/${league}/teams/16/roster`,
-          { timeout: 15000 },
-        );
-        for (const athlete of res.data?.athletes ?? []) {
-          const jersey = parseInt(athlete.jersey ?? '');
-          if (isNaN(jersey)) continue;
+    // nameStats keyed by ESPN displayName (lowercase) → accumulated stats
+    const nameStats = new Map<string, EspnStats>();
 
-          if (!map.has(jersey)) {
-            map.set(jersey, { fullName: athlete.fullName ?? '', appearances: 0, goals: 0, assists: 0, yellowCards: 0, redCards: 0, saves: 0 });
-          }
-          const entry = map.get(jersey)!;
+    const ensure = (name: string) => {
+      const key = name.toLowerCase();
+      if (!nameStats.has(key)) nameStats.set(key, { fullName: name, appearances: 0, goals: 0, assists: 0, yellowCards: 0, redCards: 0, saves: 0 });
+      return nameStats.get(key)!;
+    };
 
-          for (const cat of athlete.statistics?.splits?.categories ?? []) {
-            for (const s of cat.stats ?? []) {
-              const v: number = s.value ?? 0;
-              switch (s.name) {
-                case 'appearances': entry.appearances += v; break;
-                case 'totalGoals':  entry.goals += v; break;
-                case 'goalAssists': entry.assists += v; break;
-                case 'yellowCards': entry.yellowCards += v; break;
-                case 'redCards':    entry.redCards += v; break;
-                case 'saves':       entry.saves += v; break;
+    try {
+      // 1. Get all River matches in arg.1 this season
+      const scheduleRes = await axios.get(
+        'https://site.api.espn.com/apis/site/v2/sports/soccer/arg.1/teams/16/schedule?season=2026',
+        { timeout: 15000 },
+      );
+      const now = Date.now();
+      const eventIds: string[] = (scheduleRes.data?.events ?? [])
+        .filter((e: any) => new Date(e.date).getTime() < now)
+        .map((e: any) => e.id)
+        .filter(Boolean);
+
+      this.logger.log(`ESPN: ${eventIds.length} partidos completados en arg.1 2026`);
+
+      // 2. Fetch all match summaries in parallel and parse keyEvents + rosters
+      await Promise.all(
+        eventIds.map(async (eid: string) => {
+          try {
+            const res = await axios.get(
+              `https://site.api.espn.com/apis/site/v2/sports/soccer/arg.1/summary?event=${eid}`,
+              { timeout: 10000 },
+            );
+            const data = res.data ?? {};
+
+            // Parse appearances from rosters
+            for (const teamRoster of data.rosters ?? []) {
+              if (teamRoster.team?.id !== '16') continue;
+              for (const entry of teamRoster.roster ?? []) {
+                const name = entry.athlete?.displayName;
+                if (name) ensure(name).appearances++;
               }
             }
+
+            // Parse goals, assists, cards from keyEvents
+            for (const ke of data.keyEvents ?? []) {
+              if (ke.team?.id !== '16') continue;
+              const type: string = ke.type?.type ?? '';
+              const parts: any[] = ke.participants ?? [];
+
+              if (type === 'goal' && parts[0]?.athlete?.displayName) {
+                ensure(parts[0].athlete.displayName).goals++;
+                if (parts[1]?.athlete?.displayName) {
+                  ensure(parts[1].athlete.displayName).assists++;
+                }
+              } else if (type === 'yellow-card' && parts[0]?.athlete?.displayName) {
+                ensure(parts[0].athlete.displayName).yellowCards++;
+              } else if ((type === 'red-card' || type === 'red-yellow-card') && parts[0]?.athlete?.displayName) {
+                ensure(parts[0].athlete.displayName).redCards++;
+              }
+            }
+          } catch (e: any) {
+            this.logger.warn(`ESPN summary ${eid} falló: ${e.message}`);
           }
-        }
-        this.logger.log(`ESPN ${league}: ${res.data?.athletes?.length ?? 0} jugadores`);
-      } catch (e: any) {
-        this.logger.warn(`ESPN roster falló para ${league}: ${e.message}`);
-      }
+        }),
+      );
+    } catch (e: any) {
+      this.logger.warn(`ESPN schedule fetch falló: ${e.message}`);
     }
 
-    this.logger.log(`ESPN total acumulado: ${map.size} jugadores con stats`);
-    this.espnRosterCache = { data: map, ts: Date.now() };
-    return map;
+    this.logger.log(`ESPN stats acumuladas: ${nameStats.size} jugadores`);
+    if (nameStats.size > 0) {
+      const top = [...nameStats.values()].sort((a, b) => b.goals - a.goals).slice(0, 5);
+      this.logger.log('Top goleadores: ' + top.map(p => `${p.fullName}(${p.goals})`).join(', '));
+    }
+
+    this.espnRosterCache = { data: nameStats, ts: Date.now() };
+    return nameStats;
+  }
+
+  // Match ESPN displayName → DB player name (API-Football abbreviated: "S. Driussi" → "driussi")
+  private matchEspnPlayer(espnMap: Map<string, EspnStats>, dbName: string): EspnStats | null {
+    // Extract last name(s) from DB name: "S. Driussi" → "driussi", "L. Martínez Quarta" → "martínez quarta"
+    const dbLastName = dbName.replace(/^[A-ZÁÉÍÓÚ]\.\s+/, '').toLowerCase().trim();
+
+    // Try exact lowercase match first
+    for (const [key, stats] of espnMap) {
+      const espnLastName = stats.fullName.split(' ').slice(1).join(' ').toLowerCase().trim();
+      if (espnLastName === dbLastName || key === dbLastName) return stats;
+    }
+    // Fallback: last word match
+    const dbLastWord = dbLastName.split(' ').pop() ?? '';
+    for (const stats of espnMap.values()) {
+      const espnLastWord = stats.fullName.split(' ').pop()?.toLowerCase() ?? '';
+      if (espnLastWord === dbLastWord && dbLastWord.length > 3) return stats;
+    }
+    return null;
   }
 
   // 8. Estadísticas — ESPN para temporada actual + API-Football para datos físicos
@@ -277,12 +326,9 @@ export class PlayersService implements OnModuleInit {
 
     const player = await this.findOne(id);
 
-    // ── ESPN: stats de la temporada actual (match por número de camiseta) ──
-    let espn: EspnStats | null = null;
-    if (player.number != null) {
-      const roster = await this.fetchEspnRoster();
-      espn = roster.get(player.number) ?? null;
-    }
+    // ── ESPN: stats de la temporada actual (todos los partidos, match por apellido) ──
+    const espnMap = await this.fetchEspnRoster();
+    const espn = this.matchEspnPlayer(espnMap, player.name);
 
     // ── API-Football: solo datos físicos (plan free → hasta 2024, solo se usa altura/peso/nacimiento) ──
     let physical: PhysicalDto | null = null;
