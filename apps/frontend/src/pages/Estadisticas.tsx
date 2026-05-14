@@ -1,7 +1,7 @@
 // apps/frontend/src/pages/Estadisticas.tsx
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { User } from 'lucide-react';
+import { User, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import { getLiveDashboard } from '../services/live.service';
 import { getPastMatches } from '../services/matches.service';
 import { getLeaderboard, type LeaderboardEntry } from '../services/players.service';
@@ -14,8 +14,12 @@ interface TeamStats {
   gf: number;
   gc: number;
   streak: string;
+  bestStreak?: string;
+  penaltyGoals?: number;
   topScorer: string;
 }
+
+type SortCol = 'date' | 'goals' | 'possession' | 'shotsOnTarget' | 'totalShots' | 'corners' | 'fouls' | 'yellowCards';
 
 const RIVER_RX = /river\s*plate|^river$/i;
 
@@ -33,6 +37,13 @@ function formatRecent(match: any): { result: 'W' | 'D' | 'L'; rivalName: string;
   return { result, rivalName, score: `${our}-${them}` };
 }
 
+function getRiverStat(match: any, key: string): number | null {
+  if (!match.statistics) return null;
+  const side = RIVER_RX.test(match.homeTeam) ? 'home' : 'away';
+  const val = match.statistics[key]?.[side];
+  return val != null ? Number(val) : null;
+}
+
 const positionLabel: Record<string, string> = {
   Goalkeeper: 'ARQ',
   Defender: 'DEF',
@@ -46,6 +57,8 @@ export default function Estadisticas() {
   const [loading, setLoading] = useState(true);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(true);
+  const [sortCol, setSortCol] = useState<SortCol>('date');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   useEffect(() => {
     Promise.all([getLiveDashboard(), getPastMatches(20)])
@@ -62,7 +75,6 @@ export default function Estadisticas() {
 
   const recent5 = useMemo(() => pastMatches.slice(0, 5).map(formatRecent), [pastMatches]);
 
-  // Distribución por competición
   const byCompetition = useMemo(() => {
     const map: Record<string, number> = {};
     for (const m of pastMatches) {
@@ -71,6 +83,74 @@ export default function Estadisticas() {
     }
     return Object.entries(map).sort((a, b) => b[1] - a[1]);
   }, [pastMatches]);
+
+  // Matches with statistics for the table
+  const matchesWithStats = useMemo(() => {
+    return pastMatches
+      .filter((m) => m.statistics != null)
+      .map((m) => {
+        const isHome = RIVER_RX.test(m.homeTeam);
+        const our = isHome ? m.homeScore ?? 0 : m.awayScore ?? 0;
+        const them = isHome ? m.awayScore ?? 0 : m.homeScore ?? 0;
+        return {
+          ...m,
+          rival: isHome ? m.awayTeam : m.homeTeam,
+          result: (our > them ? 'W' : our === them ? 'D' : 'L') as 'W' | 'D' | 'L',
+          score: `${our}-${them}`,
+          riverGoals: our,
+          riverPoss: getRiverStat(m, 'possession'),
+          riverShotsOnTarget: getRiverStat(m, 'shotsOnTarget'),
+          riverTotalShots: getRiverStat(m, 'totalShots'),
+          riverCorners: getRiverStat(m, 'corners'),
+          riverFouls: getRiverStat(m, 'fouls'),
+          riverYellowCards: getRiverStat(m, 'yellowCards'),
+        };
+      });
+  }, [pastMatches]);
+
+  const sortedMatchStats = useMemo(() => {
+    const arr = [...matchesWithStats];
+    arr.sort((a, b) => {
+      let va: number, vb: number;
+      switch (sortCol) {
+        case 'date':          va = new Date(a.date).getTime(); vb = new Date(b.date).getTime(); break;
+        case 'goals':         va = a.riverGoals ?? 0;          vb = b.riverGoals ?? 0;          break;
+        case 'possession':    va = a.riverPoss ?? -1;          vb = b.riverPoss ?? -1;          break;
+        case 'shotsOnTarget': va = a.riverShotsOnTarget ?? -1; vb = b.riverShotsOnTarget ?? -1; break;
+        case 'totalShots':    va = a.riverTotalShots ?? -1;    vb = b.riverTotalShots ?? -1;    break;
+        case 'corners':       va = a.riverCorners ?? -1;       vb = b.riverCorners ?? -1;       break;
+        case 'fouls':         va = a.riverFouls ?? -1;         vb = b.riverFouls ?? -1;         break;
+        case 'yellowCards':   va = a.riverYellowCards ?? -1;   vb = b.riverYellowCards ?? -1;   break;
+        default:              va = 0; vb = 0;
+      }
+      return sortDir === 'asc' ? va - vb : vb - va;
+    });
+    return arr;
+  }, [matchesWithStats, sortCol, sortDir]);
+
+  // Indices of best and worst matches (by possession, fallback to goals)
+  const { bestMatchId, worstMatchId } = useMemo(() => {
+    if (matchesWithStats.length === 0) return { bestMatchId: null, worstMatchId: null };
+    const withPoss = matchesWithStats.filter((m) => m.riverPoss != null);
+    if (withPoss.length === 0) return { bestMatchId: null, worstMatchId: null };
+    const best = [...withPoss].sort((a, b) => (b.riverPoss ?? 0) - (a.riverPoss ?? 0))[0];
+    const losses = withPoss.filter((m) => m.result === 'L');
+    const worstPool = losses.length > 0 ? losses : withPoss;
+    const worst = [...worstPool].sort((a, b) => (a.riverPoss ?? 100) - (b.riverPoss ?? 100))[0];
+    return { bestMatchId: best.id, worstMatchId: worst?.id ?? null };
+  }, [matchesWithStats]);
+
+  const toggleSort = (col: SortCol) => {
+    if (sortCol === col) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortCol(col); setSortDir('desc'); }
+  };
+
+  const SortIcon = ({ col }: { col: SortCol }) => {
+    if (sortCol !== col) return <ChevronsUpDown className="inline w-3 h-3 ml-0.5 text-neutral-600" />;
+    return sortDir === 'asc'
+      ? <ChevronUp className="inline w-3 h-3 ml-0.5 text-riverRed" />
+      : <ChevronDown className="inline w-3 h-3 ml-0.5 text-riverRed" />;
+  };
 
   if (loading) {
     return (
@@ -92,7 +172,6 @@ export default function Estadisticas() {
     );
   }
 
-  // KPIs derivados
   const winPct = pct(stats.pg, stats.pj);
   const drawPct = pct(stats.pe, stats.pj);
   const lossPct = 100 - winPct - drawPct;
@@ -100,13 +179,15 @@ export default function Estadisticas() {
   const avgGoalsFor = (stats.gf / stats.pj).toFixed(2);
   const avgGoalsAgainst = (stats.gc / stats.pj).toFixed(2);
   const ptsEstimados = stats.pg * 3 + stats.pe;
+  const penaltyGoals = stats.penaltyGoals ?? 0;
 
-  // Gradiente cónico para pizza: green → yellow → red
   const conicGradient = `conic-gradient(
     rgb(34 197 94) 0deg ${winPct * 3.6}deg,
     rgb(234 179 8) ${winPct * 3.6}deg ${(winPct + drawPct) * 3.6}deg,
     rgb(239 68 68) ${(winPct + drawPct) * 3.6}deg 360deg
   )`;
+
+  const thClass = 'px-3 py-2 text-left text-[10px] uppercase tracking-wider text-neutral-500 font-bold cursor-pointer hover:text-neutral-300 select-none whitespace-nowrap';
 
   return (
     <div className="max-w-6xl mx-auto px-4 mt-6 pb-12 space-y-6">
@@ -181,7 +262,12 @@ export default function Estadisticas() {
             Goles a favor
           </h3>
           <div className="text-5xl font-black text-green-400 tabular-nums">{stats.gf}</div>
-          <div className="text-xs text-neutral-500 mt-2">Promedio: {avgGoalsFor} por partido</div>
+          {penaltyGoals > 0 && (
+            <div className="flex gap-4 mt-3 text-xs">
+              <span className="text-neutral-400">Juego: <b className="text-white">{stats.gf - penaltyGoals}</b></span>
+              <span className="text-neutral-400">Penal: <b className="text-yellow-400">{penaltyGoals}</b></span>
+            </div>
+          )}
         </div>
 
         {/* Goles en contra */}
@@ -194,8 +280,8 @@ export default function Estadisticas() {
         </div>
       </section>
 
-      {/* Diferencia, racha, puntos estimados */}
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Diferencia, racha, puntos, promedio goles */}
+      <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
           <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-3">
             Diferencia de gol
@@ -229,6 +315,11 @@ export default function Estadisticas() {
               ))}
             </div>
           )}
+          {stats.bestStreak && stats.bestStreak !== '-' && (
+            <div className="text-xs text-neutral-500 mt-2">
+              Mejor: <span className="text-neutral-300 font-semibold">{stats.bestStreak}</span>
+            </div>
+          )}
         </div>
 
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
@@ -238,9 +329,17 @@ export default function Estadisticas() {
           <div className="text-4xl font-black tabular-nums text-riverRed">{ptsEstimados}</div>
           <div className="text-xs text-neutral-500 mt-2">3 por victoria + 1 por empate</div>
         </div>
+
+        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
+          <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-3">
+            Goles/PJ
+          </h3>
+          <div className="text-4xl font-black tabular-nums text-green-400">{avgGoalsFor}</div>
+          <div className="text-xs text-neutral-500 mt-2">{avgGoalsAgainst} en contra por PJ</div>
+        </div>
       </section>
 
-      {/* Últimos 5 partidos */}
+      {/* Últimos partidos */}
       {pastMatches.length > 0 && (
         <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
           <div className="flex items-center justify-between mb-4">
@@ -280,6 +379,109 @@ export default function Estadisticas() {
                 </div>
               );
             })}
+          </div>
+        </section>
+      )}
+
+      {/* Estadísticas por partido — tabla ordenable */}
+      {sortedMatchStats.length > 0 && (
+        <section className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden">
+          <div className="flex items-center justify-between px-5 pt-5 pb-3">
+            <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest">
+              Estadísticas por partido
+            </h3>
+            <div className="flex items-center gap-2 text-[10px] text-neutral-600">
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-green-950 border border-green-700/40 inline-block" /> Mejor</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-950 border border-red-700/40 inline-block" /> Peor</span>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-y border-neutral-800 bg-neutral-950/50">
+                <tr>
+                  <th className={thClass} onClick={() => toggleSort('date')}>
+                    Fecha <SortIcon col="date" />
+                  </th>
+                  <th className="px-3 py-2 text-left text-[10px] uppercase tracking-wider text-neutral-500 font-bold whitespace-nowrap">Rival</th>
+                  <th className="px-3 py-2 text-left text-[10px] uppercase tracking-wider text-neutral-500 font-bold">Res</th>
+                  <th className={thClass} onClick={() => toggleSort('goals')}>
+                    Goles <SortIcon col="goals" />
+                  </th>
+                  <th className={thClass} onClick={() => toggleSort('possession')}>
+                    Pos% <SortIcon col="possession" />
+                  </th>
+                  <th className={thClass} onClick={() => toggleSort('totalShots')}>
+                    Tiros <SortIcon col="totalShots" />
+                  </th>
+                  <th className={thClass} onClick={() => toggleSort('shotsOnTarget')}>
+                    Al arco <SortIcon col="shotsOnTarget" />
+                  </th>
+                  <th className={thClass} onClick={() => toggleSort('corners')}>
+                    Córners <SortIcon col="corners" />
+                  </th>
+                  <th className={`${thClass} hidden sm:table-cell`} onClick={() => toggleSort('fouls')}>
+                    Faltas <SortIcon col="fouls" />
+                  </th>
+                  <th className={`${thClass} hidden sm:table-cell`} onClick={() => toggleSort('yellowCards')}>
+                    <span title="Tarjetas amarillas">TA</span> <SortIcon col="yellowCards" />
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-800/50">
+                {sortedMatchStats.map((m) => {
+                  const isBest = m.id === bestMatchId;
+                  const isWorst = m.id === worstMatchId;
+                  const resultColor =
+                    m.result === 'W' ? 'text-green-400' : m.result === 'D' ? 'text-yellow-400' : 'text-red-400';
+                  return (
+                    <tr
+                      key={m.id}
+                      className={`hover:bg-neutral-800/40 transition-colors ${
+                        isBest ? 'bg-green-950/30 ring-1 ring-inset ring-green-700/20' :
+                        isWorst ? 'bg-red-950/30 ring-1 ring-inset ring-red-700/20' : ''
+                      }`}
+                    >
+                      <td className="px-3 py-2.5 text-neutral-400 text-xs whitespace-nowrap">
+                        {new Date(m.date).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })}
+                      </td>
+                      <td className="px-3 py-2.5 max-w-[120px]">
+                        <Link to={`/partidos/${m.id}`} className="hover:text-riverRed transition-colors">
+                          <span className="truncate block text-xs font-medium">{m.rival}</span>
+                        </Link>
+                      </td>
+                      <td className={`px-3 py-2.5 font-black text-xs ${resultColor}`}>
+                        {m.score}
+                      </td>
+                      <td className="px-3 py-2.5 font-bold text-center tabular-nums">
+                        {m.riverGoals}
+                      </td>
+                      <td className="px-3 py-2.5 text-center tabular-nums text-xs">
+                        {m.riverPoss != null ? `${m.riverPoss}%` : '–'}
+                      </td>
+                      <td className="px-3 py-2.5 text-center tabular-nums text-xs">
+                        {m.riverTotalShots ?? '–'}
+                      </td>
+                      <td className="px-3 py-2.5 text-center tabular-nums text-xs">
+                        {m.riverShotsOnTarget ?? '–'}
+                      </td>
+                      <td className="px-3 py-2.5 text-center tabular-nums text-xs">
+                        {m.riverCorners ?? '–'}
+                      </td>
+                      <td className="px-3 py-2.5 text-center tabular-nums text-xs hidden sm:table-cell">
+                        {m.riverFouls ?? '–'}
+                      </td>
+                      <td className="px-3 py-2.5 text-center tabular-nums text-xs hidden sm:table-cell">
+                        {m.riverYellowCards != null ? (
+                          <span className={m.riverYellowCards > 2 ? 'text-yellow-400 font-bold' : ''}>
+                            {m.riverYellowCards}
+                          </span>
+                        ) : '–'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </section>
       )}

@@ -222,8 +222,10 @@ export class PlayersService implements OnModuleInit {
       return this.espnRosterCache.data;
     }
 
-    // nameStats keyed by ESPN displayName (lowercase) → accumulated stats
+    // nameStats keyed by ESPN displayName (lowercase) → stats
     const nameStats = new Map<string, EspnStats>();
+    // athleteIds: espn athlete id → displayName (collected from match rosters)
+    const athleteIds = new Map<string, string>();
 
     const ensure = (name: string) => {
       const key = name.toLowerCase();
@@ -232,53 +234,53 @@ export class PlayersService implements OnModuleInit {
     };
 
     try {
-      // 1. Get all River matches in arg.1 this season
-      const scheduleRes = await axios.get(
-        'https://site.api.espn.com/apis/site/v2/sports/soccer/arg.1/teams/16/schedule?season=2026',
-        { timeout: 15000 },
-      );
+      // 1. Get all River matches in arg.1 AND conmebol.sudamericana this season
+      const LEAGUES = ['arg.1', 'conmebol.sudamericana'];
       const now = Date.now();
-      const eventIds: string[] = (scheduleRes.data?.events ?? [])
-        .filter((e: any) => new Date(e.date).getTime() < now)
-        .map((e: any) => e.id)
-        .filter(Boolean);
 
-      this.logger.log(`ESPN: ${eventIds.length} partidos completados en arg.1 2026`);
+      const allSchedules = await Promise.all(
+        LEAGUES.map((league) =>
+          axios
+            .get(
+              `https://site.api.espn.com/apis/site/v2/sports/soccer/${league}/teams/16/schedule?season=2026`,
+              { timeout: 15000 },
+            )
+            .then((r) => ({ league, events: r.data?.events ?? [] }))
+            .catch(() => ({ league, events: [] })),
+        ),
+      );
 
-      // 2. Fetch all match summaries in parallel and parse keyEvents + rosters
+      const seenIds = new Set<string>();
+      const leagueEventIds: Array<{ league: string; eid: string }> = [];
+      for (const { league, events } of allSchedules) {
+        for (const e of events) {
+          if (e.id && new Date(e.date).getTime() < now && !seenIds.has(e.id)) {
+            seenIds.add(e.id);
+            leagueEventIds.push({ league, eid: e.id });
+          }
+        }
+      }
+
+      this.logger.log(`ESPN: ${leagueEventIds.length} partidos completados (arg.1 + sudamericana 2026)`);
+
+      // 2. Fetch match summaries to collect appearances + ESPN athlete IDs from rosters
       await Promise.all(
-        eventIds.map(async (eid: string) => {
+        leagueEventIds.map(async ({ league, eid }) => {
           try {
             const res = await axios.get(
-              `https://site.api.espn.com/apis/site/v2/sports/soccer/arg.1/summary?event=${eid}`,
+              `https://site.api.espn.com/apis/site/v2/sports/soccer/${league}/summary?event=${eid}`,
               { timeout: 10000 },
             );
             const data = res.data ?? {};
 
-            // Parse appearances from rosters
             for (const teamRoster of data.rosters ?? []) {
               if (teamRoster.team?.id !== '16') continue;
               for (const entry of teamRoster.roster ?? []) {
-                const name = entry.athlete?.displayName;
-                if (name) ensure(name).appearances++;
-              }
-            }
-
-            // Parse goals, assists, cards from keyEvents
-            for (const ke of data.keyEvents ?? []) {
-              if (ke.team?.id !== '16') continue;
-              const type: string = ke.type?.type ?? '';
-              const parts: any[] = ke.participants ?? [];
-
-              if (type === 'goal' && parts[0]?.athlete?.displayName) {
-                ensure(parts[0].athlete.displayName).goals++;
-                if (parts[1]?.athlete?.displayName) {
-                  ensure(parts[1].athlete.displayName).assists++;
-                }
-              } else if (type === 'yellow-card' && parts[0]?.athlete?.displayName) {
-                ensure(parts[0].athlete.displayName).yellowCards++;
-              } else if ((type === 'red-card' || type === 'red-yellow-card') && parts[0]?.athlete?.displayName) {
-                ensure(parts[0].athlete.displayName).redCards++;
+                const name: string = entry.athlete?.displayName ?? '';
+                const aid: string = String(entry.athlete?.id ?? '');
+                if (!name) continue;
+                ensure(name).appearances++;
+                if (aid && !athleteIds.has(aid)) athleteIds.set(aid, name);
               }
             }
           } catch (e: any) {
@@ -289,6 +291,40 @@ export class PlayersService implements OnModuleInit {
     } catch (e: any) {
       this.logger.warn(`ESPN schedule fetch falló: ${e.message}`);
     }
+
+    this.logger.log(`ESPN: ${athleteIds.size} atletas únicos encontrados, obteniendo stats individuales...`);
+
+    // 3. Fetch exact season stats per athlete from ESPN athlete overview
+    //    Labels order: ["STRT","FC","FA","YC","RC","G","A","SH","ST","OF"]
+    const G_IDX = 5, A_IDX = 6, YC_IDX = 3, RC_IDX = 4;
+
+    await Promise.all(
+      [...athleteIds.entries()].map(async ([aid, displayName]) => {
+        try {
+          const res = await axios.get(
+            `https://site.web.api.espn.com/apis/common/v3/sports/soccer/athletes/${aid}/overview`,
+            { timeout: 10000 },
+          );
+          const splits: any[] = res.data?.statistics?.splits ?? [];
+          let goals = 0, assists = 0, yellowCards = 0, redCards = 0;
+          for (const split of splits) {
+            if (!String(split.displayName ?? '').includes('2026')) continue;
+            const s: any[] = split.stats ?? [];
+            goals += Number(s[G_IDX]) || 0;
+            assists += Number(s[A_IDX]) || 0;
+            yellowCards += Number(s[YC_IDX]) || 0;
+            redCards += Number(s[RC_IDX]) || 0;
+          }
+          const entry = ensure(displayName);
+          entry.goals = goals;
+          entry.assists = assists;
+          entry.yellowCards = yellowCards;
+          entry.redCards = redCards;
+        } catch {
+          // keep appearance count, skip stats
+        }
+      }),
+    );
 
     this.logger.log(`ESPN stats acumuladas: ${nameStats.size} jugadores`);
     if (nameStats.size > 0) {

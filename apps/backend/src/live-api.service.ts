@@ -122,7 +122,8 @@ export class LiveApiService {
 
   private async fetchStandingsAndStats(pastMatches: any[]) {
     let table: any[] = [];
-    let stats = this.computeStatsFromMatches(pastMatches);
+    let stats: any = this.computeStatsFromMatches(pastMatches);
+    const localStats = stats; // preserve bestStreak computed from DB
 
     // Calcular goleador de temporada desde la DB
     try {
@@ -138,6 +139,11 @@ export class LiveApiService {
       const top = [...scorerMap.entries()].sort((a, b) => b[1] - a[1])[0];
       if (top) stats.topScorer = `${top[0]} (${top[1]})`;
     } catch { /* mantener N/A */ }
+
+    // Contar goles de penal en la DB
+    try {
+      stats = { ...stats, penaltyGoals: await this.prisma.matchEvent.count({ where: { type: 'penalty-goal' } }) };
+    } catch { /* ignore */ }
 
     try {
       const url = 'https://site.api.espn.com/apis/v2/sports/soccer/arg.1/standings';
@@ -178,7 +184,9 @@ export class LiveApiService {
           pp: get('losses'),
           gf: get('pointsFor'),
           gc: get('pointsAgainst'),
-          streak: stats.streak,
+          streak: localStats.streak,
+          bestStreak: localStats.bestStreak,
+          penaltyGoals: stats.penaltyGoals ?? 0,
           topScorer: stats.topScorer,
         };
       }
@@ -193,6 +201,7 @@ export class LiveApiService {
     const finished = past.filter((m) => m.status === 'finished').slice(0, 38);
     let pg = 0, pe = 0, pp = 0, gf = 0, gc = 0;
     const streakBuf: ('W' | 'D' | 'L')[] = [];
+    let maxWinStreak = 0, curWinStreak = 0;
 
     for (const m of finished) {
       const isHome = /river/i.test(m.homeTeam);
@@ -200,15 +209,22 @@ export class LiveApiService {
       const them = isHome ? (m.awayScore ?? 0) : (m.homeScore ?? 0);
       gf += our;
       gc += them;
-      if (our > them) { pg++; streakBuf.push('W'); }
-      else if (our === them) { pe++; streakBuf.push('D'); }
-      else { pp++; streakBuf.push('L'); }
+      if (our > them) {
+        pg++; streakBuf.push('W');
+        curWinStreak++;
+        maxWinStreak = Math.max(maxWinStreak, curWinStreak);
+      } else {
+        if (our === them) { pe++; streakBuf.push('D'); }
+        else { pp++; streakBuf.push('L'); }
+        curWinStreak = 0;
+      }
     }
 
     return {
       pj: finished.length,
       pg, pe, pp, gf, gc,
       streak: this.parseForm(streakBuf.slice(0, 5).join('')),
+      bestStreak: maxWinStreak > 0 ? `${maxWinStreak} victorias seguidas` : '-',
       topScorer: 'N/A',
     };
   }
