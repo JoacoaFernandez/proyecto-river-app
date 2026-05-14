@@ -19,10 +19,7 @@ export class PlayersService implements OnModuleInit {
   constructor(private readonly prisma: PrismaService) {}
 
   async onModuleInit() {
-    // Sync injuries on startup without blocking boot
-    this.syncInjuries().catch((e) =>
-      this.logger.warn('Injury sync on startup failed: ' + e.message),
-    );
+    // No auto-sync: injuries endpoint requires premium API-Football plan
   }
 
   // 1. Guardar un jugador de forma segura en Render
