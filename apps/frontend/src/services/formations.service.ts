@@ -40,6 +40,17 @@ export interface LineupResponse {
   alerts: PlayerAlert[];
 }
 
+export interface FormHistoryEntry {
+  matchId: string;
+  date: string;
+  homeTeam: string;
+  awayTeam: string;
+  homeScore: number | null;
+  awayScore: number | null;
+  competition: string | null;
+  scheme: string | null;
+}
+
 export const getLineup = async (scheme?: string, refresh = false): Promise<LineupResponse | null> => {
   try {
     const params: Record<string, string> = {};
@@ -50,5 +61,14 @@ export const getLineup = async (scheme?: string, refresh = false): Promise<Lineu
   } catch (error) {
     console.error('Error al obtener lineup:', error);
     return null;
+  }
+};
+
+export const getFormationHistory = async (limit = 12): Promise<FormHistoryEntry[]> => {
+  try {
+    const { data } = await api.get<FormHistoryEntry[]>(`/formations/history?limit=${limit}`);
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
   }
 };

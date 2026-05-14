@@ -469,6 +469,40 @@ export class FormationsService {
     };
   }
 
+  async getHistory(limit = 12) {
+    const matches = await this.prisma.match.findMany({
+      where: {
+        status: 'finished',
+        OR: [
+          { homeTeam: { contains: 'River', mode: 'insensitive' } },
+          { awayTeam: { contains: 'River', mode: 'insensitive' } },
+        ],
+      },
+      orderBy: { date: 'desc' },
+      take: limit,
+      select: {
+        id: true,
+        date: true,
+        homeTeam: true,
+        awayTeam: true,
+        homeScore: true,
+        awayScore: true,
+        competition: true,
+        Formation: { select: { scheme: true }, take: 1 },
+      },
+    });
+    return matches.map((m) => ({
+      matchId: m.id,
+      date: m.date,
+      homeTeam: m.homeTeam,
+      awayTeam: m.awayTeam,
+      homeScore: m.homeScore,
+      awayScore: m.awayScore,
+      competition: m.competition,
+      scheme: m.Formation[0]?.scheme ?? null,
+    }));
+  }
+
   private fmtDate(d: Date): string {
     return d.toISOString().slice(0, 10).replace(/-/g, '');
   }

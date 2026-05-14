@@ -30,6 +30,12 @@ export class FormationsController {
     return this.formationsService.getLineup(scheme, refresh === 'true');
   }
 
+  @Get('history')
+  @ApiOperation({ summary: 'Últimos partidos finalizados de River con esquema táctico registrado' })
+  getHistory(@Query('limit') limit?: string) {
+    return this.formationsService.getHistory(limit ? parseInt(limit, 10) : 12);
+  }
+
   @Get()
   @ApiOperation({ summary: 'Obtener todas las formaciones tácticas registradas' })
   findAll() {
