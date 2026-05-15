@@ -8,6 +8,7 @@ import {
 import { clearCurrentUser, getCurrentUser } from '../services/me.service';
 import type { CurrentUser } from '../services/me.service';
 import { useMatchNotifications } from '../hooks/useMatchNotifications';
+import { usePushSubscription } from '../hooks/usePushSubscription';
 import NotificationBell from './NotificationBell';
 import { useInstallPrompt } from '../hooks/useInstallPrompt';
 
@@ -28,6 +29,7 @@ export default function Layout() {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const { supported: notifSupported, permission, requestPermission } = useMatchNotifications();
+  const { supported: pushSupported, subscribed: pushSubscribed, loading: pushLoading, subscribe: subscribePush, unsubscribe: unsubscribePush } = usePushSubscription();
   const { canInstall, install } = useInstallPrompt();
 
   useEffect(() => {
@@ -105,17 +107,28 @@ export default function Layout() {
             {notifSupported && permission !== 'denied' && (
               <button
                 onClick={permission === 'granted' ? undefined : requestPermission}
-                title={permission === 'granted' ? 'Notificaciones activas' : 'Activar notificaciones'}
+                title={permission === 'granted' ? 'Notificaciones de partido activas' : 'Activar notificaciones de partido'}
                 className={`p-2 rounded-xl border transition-all ${
                   permission === 'granted'
                     ? 'border-green-800/50 text-green-500 bg-green-950/20 cursor-default'
                     : 'border-neutral-800 text-neutral-400 hover:text-white hover:border-neutral-600'
                 }`}
               >
-                {permission === 'granted'
-                  ? <Bell className="w-4 h-4" />
-                  : <BellOff className="w-4 h-4" />
-                }
+                {permission === 'granted' ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
+              </button>
+            )}
+
+            {pushSupported && !pushLoading && (
+              <button
+                onClick={pushSubscribed ? unsubscribePush : subscribePush}
+                title={pushSubscribed ? 'Desactivar notificaciones urgentes' : 'Activar notificaciones urgentes (noticias)'}
+                className={`p-2 rounded-xl border transition-all text-[10px] font-bold ${
+                  pushSubscribed
+                    ? 'border-riverRed/50 text-riverRed bg-red-950/20'
+                    : 'border-neutral-800 text-neutral-400 hover:text-riverRed hover:border-riverRed/50'
+                }`}
+              >
+                🚨
               </button>
             )}
 

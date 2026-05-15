@@ -1,12 +1,17 @@
 // apps/backend/src/news/news.service.ts
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
+import { PushService } from '../push/push.service';
 import { CreateNewsDto } from './dto/create-news.dto';
 import { UpdateNewsDto } from './dto/update-news.dto';
 
 @Injectable()
 export class NewsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private push: PushService,
+  ) {}
 
   // Generador automático de slugs limpios para los portales de origen
   private generateSlug(title: string): string {
@@ -101,18 +106,31 @@ export class NewsService {
 
   // EDITAR NOTICIA
   async update(id: string, updateNewsDto: UpdateNewsDto) {
-    await this.findOne(id);
+    const existing = await this.findOne(id);
 
     const dataToUpdate: any = { ...updateNewsDto };
-    
-    if (updateNewsDto.status === 'published') {
+
+    if (updateNewsDto.status === 'published' && !updateNewsDto.publishedAt) {
       dataToUpdate.publishedAt = new Date();
+    } else if (updateNewsDto.status === 'scheduled' && updateNewsDto.publishedAt) {
+      dataToUpdate.publishedAt = new Date(updateNewsDto.publishedAt);
     }
 
-    return this.prisma.news.update({
+    const updated = await this.prisma.news.update({
       where: { id },
       data: dataToUpdate,
     });
+
+    if (updateNewsDto.urgent === true && !existing.urgent) {
+      this.push.sendToAll({
+        title: `🚨 URGENTE: ${updated.title}`,
+        body: updated.category,
+        link: `/noticias/${updated.id}`,
+        icon: updated.imageUrl,
+      }).catch(() => {/* fire and forget */});
+    }
+
+    return updated;
   }
 
   // ELIMINAR NOTICIA
@@ -128,20 +146,30 @@ export class NewsService {
   async getComments(newsId: string) {
     await this.findOne(newsId);
     return this.prisma.comment.findMany({
-      where: { newsId },
+      where: { newsId, parentId: null },
       orderBy: { createdAt: 'asc' },
       include: {
         user: { select: { id: true, display_name: true, avatar_url: true } },
+        _count: { select: { likes: true } },
+        replies: {
+          orderBy: { createdAt: 'asc' },
+          include: {
+            user: { select: { id: true, display_name: true, avatar_url: true } },
+            _count: { select: { likes: true } },
+          },
+        },
       },
     });
   }
 
-  async addComment(newsId: string, userId: string, body: string) {
+  async addComment(newsId: string, userId: string, body: string, parentId?: string | null) {
     await this.findOne(newsId);
     return this.prisma.comment.create({
-      data: { newsId, userId, body },
+      data: { newsId, userId, body, parentId: parentId ?? null },
       include: {
         user: { select: { id: true, display_name: true, avatar_url: true } },
+        _count: { select: { likes: true } },
+        replies: true,
       },
     });
   }
@@ -177,5 +205,70 @@ export class NewsService {
       ? !!(await this.prisma.newsLike.findUnique({ where: { newsId_userId: { newsId, userId } } }))
       : false;
     return { liked, count };
+  }
+
+  // ── ARTÍCULOS RELACIONADOS ────────────────────────────────────────────────────
+
+  async getRelated(newsId: string, category: string) {
+    return this.prisma.news.findMany({
+      where: {
+        category,
+        id: { not: newsId },
+        status: 'published',
+      },
+      orderBy: { publishedAt: 'desc' },
+      take: 4,
+      include: {
+        author: { select: { id: true, display_name: true, avatar_url: true } },
+      },
+    });
+  }
+
+  // ── PUBLICACIÓN PROGRAMADA ────────────────────────────────────────────────────
+
+  @Cron('* * * * *')
+  async publishScheduled() {
+    await this.prisma.news.updateMany({
+      where: { status: 'scheduled', publishedAt: { lte: new Date() } },
+      data: { status: 'published' },
+    });
+  }
+
+  // ── COMENTARIOS — THREADS ─────────────────────────────────────────────────────
+
+  async getReportedComments() {
+    return this.prisma.comment.findMany({
+      where: { reportedAt: { not: null } },
+      orderBy: { reportedAt: 'desc' },
+      include: {
+        user: { select: { id: true, display_name: true, avatar_url: true } },
+        news: { select: { id: true, title: true } },
+      },
+    });
+  }
+
+  async reportComment(commentId: string) {
+    const comment = await this.prisma.comment.findUnique({ where: { id: commentId } });
+    if (!comment) throw new NotFoundException('Comentario no encontrado.');
+    if (comment.reportedAt) return comment;
+    return this.prisma.comment.update({
+      where: { id: commentId },
+      data: { reportedAt: new Date() },
+    });
+  }
+
+  async toggleCommentLike(commentId: string, userId: string) {
+    const comment = await this.prisma.comment.findUnique({ where: { id: commentId } });
+    if (!comment) throw new NotFoundException('Comentario no encontrado.');
+    const existing = await this.prisma.commentLike.findUnique({
+      where: { commentId_userId: { commentId, userId } },
+    });
+    if (existing) {
+      await this.prisma.commentLike.delete({ where: { commentId_userId: { commentId, userId } } });
+    } else {
+      await this.prisma.commentLike.create({ data: { commentId, userId } });
+    }
+    const count = await this.prisma.commentLike.count({ where: { commentId } });
+    return { liked: !existing, count };
   }
 }

@@ -8,6 +8,9 @@ import {
   getComments,
   getLikes,
   getNewsById,
+  getRelatedNews,
+  reportComment,
+  toggleCommentLike,
   toggleLike,
 } from '../services/news.service';
 import type { NewsComment, NewsItem } from '../services/news.service';
@@ -29,6 +32,12 @@ export default function NoticiaDetalle() {
   const [comments, setComments] = useState<NewsComment[]>([]);
   const [commentBody, setCommentBody] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [replyBody, setReplyBody] = useState('');
+  const [submittingReply, setSubmittingReply] = useState(false);
+  const [commentLikes, setCommentLikes] = useState<Record<string, { liked: boolean; count: number }>>({});
+
+  const [related, setRelated] = useState<NewsItem[]>([]);
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -38,12 +47,22 @@ export default function NoticiaDetalle() {
   useEffect(() => {
     if (!id) return;
     setLoading(true);
-    Promise.all([getNewsById(id), getLikes(id), getComments(id)]).then(
-      ([newsData, likesData, commentsData]) => {
+    Promise.all([getNewsById(id), getLikes(id), getComments(id), getRelatedNews(id)]).then(
+      ([newsData, likesData, commentsData, relatedData]) => {
         setNews(newsData);
         setLikeCount(likesData.count);
         setLiked(likesData.liked);
         setComments(commentsData);
+        setRelated(relatedData);
+
+        const initialLikes: Record<string, { liked: boolean; count: number }> = {};
+        commentsData.forEach((c) => {
+          initialLikes[c.id] = { liked: false, count: c._count?.likes ?? 0 };
+          c.replies?.forEach((r) => {
+            initialLikes[r.id] = { liked: false, count: r._count?.likes ?? 0 };
+          });
+        });
+        setCommentLikes(initialLikes);
         setLoading(false);
       },
     );
@@ -56,17 +75,13 @@ export default function NoticiaDetalle() {
       try {
         await navigator.share({ title: news.title, text: news.title, url: shareUrl });
         return;
-      } catch {
-        /* cancelled */
-      }
+      } catch { /* cancelled */ }
     }
     try {
       await navigator.clipboard.writeText(shareUrl);
       setShared(true);
       setTimeout(() => setShared(false), 2000);
-    } catch {
-      /* no clipboard */
-    }
+    } catch { /* no clipboard */ }
   };
 
   const handleLike = async () => {
@@ -88,16 +103,56 @@ export default function NoticiaDetalle() {
     try {
       const newComment = await addComment(id, commentBody.trim());
       setComments((prev) => [...prev, newComment]);
+      setCommentLikes((prev) => ({ ...prev, [newComment.id]: { liked: false, count: 0 } }));
       setCommentBody('');
     } finally {
       setSubmittingComment(false);
     }
   };
 
-  const handleDeleteComment = async (commentId: string) => {
+  const handleAddReply = async (e: React.FormEvent, parentId: string) => {
+    e.preventDefault();
+    if (!id || !replyBody.trim()) return;
+    setSubmittingReply(true);
+    try {
+      const reply = await addComment(id, replyBody.trim(), parentId);
+      setComments((prev) =>
+        prev.map((c) =>
+          c.id === parentId ? { ...c, replies: [...(c.replies ?? []), reply] } : c,
+        ),
+      );
+      setCommentLikes((prev) => ({ ...prev, [reply.id]: { liked: false, count: 0 } }));
+      setReplyBody('');
+      setReplyingTo(null);
+    } finally {
+      setSubmittingReply(false);
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string, parentId?: string) => {
     if (!id || !confirm('¿Eliminar este comentario?')) return;
     await deleteComment(id, commentId);
-    setComments((prev) => prev.filter((c) => c.id !== commentId));
+    if (parentId) {
+      setComments((prev) =>
+        prev.map((c) =>
+          c.id === parentId ? { ...c, replies: c.replies?.filter((r) => r.id !== commentId) } : c,
+        ),
+      );
+    } else {
+      setComments((prev) => prev.filter((c) => c.id !== commentId));
+    }
+  };
+
+  const handleReportComment = async (commentId: string) => {
+    if (!id || !confirm('¿Reportar este comentario como inapropiado?')) return;
+    await reportComment(id, commentId);
+    alert('Comentario reportado. El equipo de moderación lo revisará.');
+  };
+
+  const handleToggleCommentLike = async (commentId: string) => {
+    if (!me || !id) return;
+    const res = await toggleCommentLike(id, commentId);
+    setCommentLikes((prev) => ({ ...prev, [commentId]: res }));
   };
 
   if (loading) {
@@ -164,6 +219,76 @@ export default function NoticiaDetalle() {
     return <p key={idx}>{p}</p>;
   }
 
+  function CommentCard({
+    c,
+    parentId,
+  }: {
+    c: NewsComment;
+    parentId?: string;
+  }) {
+    const cl = commentLikes[c.id] ?? { liked: false, count: c._count?.likes ?? 0 };
+    const canDelete = me && (me.id === c.userId || me.role === 'admin');
+    const canReport = me && me.id !== c.userId;
+
+    return (
+      <div className={`bg-neutral-900 border border-neutral-800 rounded-2xl p-4 ${parentId ? '' : ''}`}>
+        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center text-xs font-bold text-neutral-400 flex-shrink-0">
+              {c.user.display_name.charAt(0).toUpperCase()}
+            </div>
+            <span className="text-sm font-semibold">{c.user.display_name}</span>
+            <span className="text-[11px] text-neutral-500">{timeAgo(c.createdAt)}</span>
+            {c.reportedAt && me?.role === 'admin' && (
+              <span className="text-[10px] bg-red-950/40 text-red-400 border border-red-900/40 px-2 py-0.5 rounded-full">
+                Reportado
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleToggleCommentLike(c.id)}
+              disabled={!me}
+              className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border transition-all ${
+                cl.liked
+                  ? 'bg-red-950/30 border-riverRed text-riverRed'
+                  : 'border-neutral-800 text-neutral-500 hover:text-white hover:border-neutral-600 disabled:opacity-40'
+              }`}
+            >
+              <Heart className={`w-3 h-3 ${cl.liked ? 'fill-current' : ''}`} />
+              {cl.count > 0 && <span>{cl.count}</span>}
+            </button>
+            {!parentId && me && (
+              <button
+                onClick={() => setReplyingTo(replyingTo === c.id ? null : c.id)}
+                className="text-[11px] text-neutral-500 hover:text-white transition-colors"
+              >
+                Responder
+              </button>
+            )}
+            {canReport && (
+              <button
+                onClick={() => handleReportComment(c.id)}
+                className="text-[11px] text-neutral-600 hover:text-yellow-500 transition-colors"
+              >
+                Reportar
+              </button>
+            )}
+            {canDelete && (
+              <button
+                onClick={() => handleDeleteComment(c.id, parentId)}
+                className="text-[11px] text-neutral-600 hover:text-riverRed transition-colors"
+              >
+                Eliminar
+              </button>
+            )}
+          </div>
+        </div>
+        <p className="text-sm text-neutral-300 leading-relaxed">{c.body}</p>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-3xl mx-auto px-4 mt-6 pb-12">
       {/* Breadcrumb */}
@@ -190,6 +315,11 @@ export default function NoticiaDetalle() {
         <div className="p-6 md:p-10">
           {/* Meta */}
           <div className="flex items-center gap-2 mb-4 flex-wrap">
+            {news.urgent && (
+              <span className="text-[10px] font-black text-white uppercase tracking-widest bg-riverRed px-3 py-1 rounded-full animate-pulse">
+                🚨 URGENTE
+              </span>
+            )}
             <span className="text-[10px] font-bold text-riverRed uppercase tracking-widest bg-red-950/30 border border-red-900/40 px-3 py-1 rounded-full">
               {news.category}
             </span>
@@ -212,7 +342,6 @@ export default function NoticiaDetalle() {
               <div className="text-[11px] text-neutral-500">{fullDate}</div>
             </div>
             <div className="flex items-center gap-2">
-              {/* Like */}
               <button
                 onClick={handleLike}
                 disabled={!me || likeLoading}
@@ -226,7 +355,6 @@ export default function NoticiaDetalle() {
                 <Heart className={`w-3.5 h-3.5 ${liked ? 'fill-current' : ''}`} />
                 {likeCount > 0 && <span>{likeCount}</span>}
               </button>
-              {/* Compartir */}
               <button
                 onClick={handleShare}
                 className="bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 hover:border-riverRed text-xs px-4 py-2 rounded-xl transition-all flex items-center gap-2"
@@ -260,15 +388,59 @@ export default function NoticiaDetalle() {
         </div>
       </article>
 
+      {/* Artículos relacionados */}
+      {related.length > 0 && (
+        <section className="mt-8">
+          <h2 className="text-base font-bold mb-4 text-neutral-300 uppercase tracking-widest text-[11px]">
+            Notas relacionadas
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {related.map((r) => (
+              <Link
+                key={r.id}
+                to={`/noticias/${r.id}`}
+                className="bg-neutral-900 border border-neutral-800 hover:border-riverRed rounded-2xl overflow-hidden group transition-all flex gap-3 p-3"
+              >
+                {r.imageUrl ? (
+                  <img
+                    src={r.imageUrl}
+                    alt={r.title}
+                    className="w-20 h-20 object-cover rounded-xl flex-shrink-0 border border-neutral-700"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
+                ) : (
+                  <div className="w-20 h-20 flex-shrink-0 bg-neutral-800 rounded-xl flex items-center justify-center border border-neutral-700">
+                    <FileText className="w-6 h-6 text-neutral-600" />
+                  </div>
+                )}
+                <div className="flex flex-col justify-center min-w-0">
+                  <span className="text-[9px] font-bold text-riverRed uppercase tracking-widest mb-1">{r.category}</span>
+                  <p className="text-xs font-semibold text-white line-clamp-3 group-hover:text-riverRed transition-colors">
+                    {r.title}
+                  </p>
+                  <span className="text-[10px] text-neutral-500 mt-1">{timeAgo(r.publishedAt ?? r.createdAt)}</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Sección comentarios */}
       <section className="mt-6">
         <h2 className="text-lg font-bold mb-4">
-          Comentarios {comments.length > 0 && <span className="text-neutral-500 font-normal text-sm">({comments.length})</span>}
+          Comentarios{' '}
+          {comments.length > 0 && (
+            <span className="text-neutral-500 font-normal text-sm">({comments.length})</span>
+          )}
         </h2>
 
         {/* Form nuevo comentario */}
         {me ? (
-          <form onSubmit={handleAddComment} className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 mb-4 space-y-3">
+          <form
+            onSubmit={handleAddComment}
+            className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 mb-4 space-y-3"
+          >
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center text-xs font-bold text-neutral-400 flex-shrink-0">
                 {me.display_name.charAt(0).toUpperCase()}
@@ -296,7 +468,10 @@ export default function NoticiaDetalle() {
           </form>
         ) : (
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 mb-4 text-sm text-neutral-400 text-center">
-            <Link to="/login" className="text-riverRed font-semibold hover:underline">Iniciá sesión</Link> para dejar un comentario.
+            <Link to="/login" className="text-riverRed font-semibold hover:underline">
+              Iniciá sesión
+            </Link>{' '}
+            para dejar un comentario.
           </div>
         )}
 
@@ -308,25 +483,50 @@ export default function NoticiaDetalle() {
         ) : (
           <div className="space-y-3">
             {comments.map((c) => (
-              <div key={c.id} className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center text-xs font-bold text-neutral-400 flex-shrink-0">
-                      {c.user.display_name.charAt(0).toUpperCase()}
-                    </div>
-                    <span className="text-sm font-semibold">{c.user.display_name}</span>
-                    <span className="text-[11px] text-neutral-500">{timeAgo(c.createdAt)}</span>
+              <div key={c.id}>
+                <CommentCard c={c} />
+
+                {/* Replies */}
+                {(c.replies ?? []).length > 0 && (
+                  <div className="ml-6 mt-2 space-y-2 border-l-2 border-neutral-800 pl-4">
+                    {(c.replies ?? []).map((r) => (
+                      <CommentCard key={r.id} c={r} parentId={c.id} />
+                    ))}
                   </div>
-                  {me && (me.id === c.userId || me.role === 'admin') && (
-                    <button
-                      onClick={() => handleDeleteComment(c.id)}
-                      className="text-[11px] text-neutral-600 hover:text-riverRed transition-colors"
-                    >
-                      Eliminar
-                    </button>
-                  )}
-                </div>
-                <p className="text-sm text-neutral-300 leading-relaxed">{c.body}</p>
+                )}
+
+                {/* Reply form */}
+                {replyingTo === c.id && me && (
+                  <form
+                    onSubmit={(e) => handleAddReply(e, c.id)}
+                    className="ml-6 mt-2 border-l-2 border-riverRed pl-4 space-y-2"
+                  >
+                    <textarea
+                      value={replyBody}
+                      onChange={(e) => setReplyBody(e.target.value)}
+                      placeholder={`Responder a ${c.user.display_name}…`}
+                      rows={2}
+                      autoFocus
+                      className="w-full bg-neutral-950 border border-neutral-800 focus:border-riverRed text-white rounded-xl px-3 py-2 text-sm outline-none transition-all resize-none"
+                    />
+                    <div className="flex gap-2 justify-end">
+                      <button
+                        type="button"
+                        onClick={() => { setReplyingTo(null); setReplyBody(''); }}
+                        className="text-[11px] text-neutral-500 hover:text-white transition-colors px-3 py-1.5"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={submittingReply || !replyBody.trim()}
+                        className="bg-riverRed hover:bg-red-700 disabled:bg-neutral-800 disabled:text-neutral-500 px-4 py-1.5 rounded-xl text-xs font-semibold transition-all"
+                      >
+                        {submittingReply ? 'Enviando…' : 'Responder'}
+                      </button>
+                    </div>
+                  </form>
+                )}
               </div>
             ))}
           </div>

@@ -21,6 +21,7 @@ export interface NewsItem {
   author: NewsAuthor;
   createdAt: string;
   updatedAt: string;
+  urgent: boolean;
 }
 
 export interface NewsComment {
@@ -29,7 +30,11 @@ export interface NewsComment {
   userId: string;
   body: string;
   createdAt: string;
+  parentId: string | null;
+  reportedAt: string | null;
   user: { id: string; display_name: string; avatar_url: string | null };
+  replies?: NewsComment[];
+  _count?: { likes: number };
 }
 
 export const getNews = async (): Promise<NewsItem[]> => {
@@ -52,12 +57,23 @@ export const getNewsById = async (id: string): Promise<NewsItem | null> => {
   }
 };
 
+export const getRelatedNews = async (newsId: string): Promise<NewsItem[]> => {
+  try {
+    const res = await api.get<NewsItem[]>(`/news/${newsId}/related`);
+    return res.data ?? [];
+  } catch {
+    return [];
+  }
+};
+
 export interface CreateNewsInput {
   title: string;
   body: string;
   category?: string;
-  status?: 'draft' | 'published';
+  status?: 'draft' | 'published' | 'scheduled';
   imageUrl?: string;
+  urgent?: boolean;
+  publishedAt?: string;
 }
 
 export const createNews = async (input: CreateNewsInput): Promise<NewsItem> => {
@@ -67,7 +83,7 @@ export const createNews = async (input: CreateNewsInput): Promise<NewsItem> => {
 
 export const updateNews = async (
   id: string,
-  data: Partial<Pick<NewsItem, 'title' | 'body' | 'category' | 'status' | 'imageUrl'>>,
+  data: Partial<Pick<NewsItem, 'title' | 'body' | 'category' | 'status' | 'imageUrl' | 'urgent'> & { publishedAt?: string }>,
 ): Promise<NewsItem> => {
   const res = await api.patch<NewsItem>(`/news/${id}`, data);
   return res.data;
@@ -93,13 +109,50 @@ export const getComments = async (newsId: string): Promise<NewsComment[]> => {
   }
 };
 
-export const addComment = async (newsId: string, body: string): Promise<NewsComment> => {
-  const res = await api.post<NewsComment>(`/news/${newsId}/comments`, { body });
+export const addComment = async (
+  newsId: string,
+  body: string,
+  parentId?: string,
+): Promise<NewsComment> => {
+  const res = await api.post<NewsComment>(`/news/${newsId}/comments`, { body, parentId });
   return res.data;
 };
 
 export const deleteComment = async (newsId: string, commentId: string): Promise<void> => {
   await api.delete(`/news/${newsId}/comments/${commentId}`);
+};
+
+export const reportComment = async (newsId: string, commentId: string): Promise<void> => {
+  await api.post(`/news/${newsId}/comments/${commentId}/report`);
+};
+
+export const toggleCommentLike = async (
+  newsId: string,
+  commentId: string,
+): Promise<{ liked: boolean; count: number }> => {
+  const res = await api.post<{ liked: boolean; count: number }>(
+    `/news/${newsId}/comments/${commentId}/like`,
+  );
+  return res.data;
+};
+
+export interface ReportedComment {
+  id: string;
+  body: string;
+  reportedAt: string;
+  newsId: string;
+  userId: string;
+  user: { id: string; display_name: string; avatar_url: string | null };
+  news: { id: string; title: string };
+}
+
+export const getReportedComments = async (): Promise<ReportedComment[]> => {
+  try {
+    const res = await api.get<ReportedComment[]>('/news/reported-comments');
+    return res.data ?? [];
+  } catch {
+    return [];
+  }
 };
 
 // ── Likes ─────────────────────────────────────────────────────────────────────

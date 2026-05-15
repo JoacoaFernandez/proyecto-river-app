@@ -34,6 +34,15 @@ export class NewsController {
     return this.newsAiService.generateAndSaveNews();
   }
 
+  @Get('reported-comments')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Obtener comentarios reportados (admin)' })
+  getReportedComments() {
+    return this.newsService.getReportedComments();
+  }
+
   @Get()
   @ApiOperation({ summary: 'Obtener todas las noticias' })
   findAll() {
@@ -44,6 +53,13 @@ export class NewsController {
   @ApiOperation({ summary: 'Obtener una noticia por ID' })
   findOne(@Param('id') id: string) {
     return this.newsService.findOne(id);
+  }
+
+  @Get(':id/related')
+  @ApiOperation({ summary: 'Obtener artículos relacionados por categoría' })
+  async getRelated(@Param('id') id: string) {
+    const news = await this.newsService.findOne(id);
+    return this.newsService.getRelated(id, news.category);
   }
 
   @Patch(':id')
@@ -67,7 +83,7 @@ export class NewsController {
   // ── COMENTARIOS ────────────────────────────────────────────────────────────
 
   @Get(':id/comments')
-  @ApiOperation({ summary: 'Obtener comentarios de una noticia' })
+  @ApiOperation({ summary: 'Obtener comentarios de una noticia (con replies y like count)' })
   getComments(@Param('id') id: string) {
     return this.newsService.getComments(id);
   }
@@ -75,9 +91,13 @@ export class NewsController {
   @Post(':id/comments')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Agregar un comentario a una noticia' })
-  addComment(@Param('id') id: string, @Body() body: { body: string }, @Request() req: any) {
-    return this.newsService.addComment(id, req.user.userId, body.body);
+  @ApiOperation({ summary: 'Agregar un comentario a una noticia (soporta parentId para replies)' })
+  addComment(
+    @Param('id') id: string,
+    @Body() body: { body: string; parentId?: string },
+    @Request() req: any,
+  ) {
+    return this.newsService.addComment(id, req.user.userId, body.body, body.parentId);
   }
 
   @Delete(':id/comments/:commentId')
@@ -86,6 +106,22 @@ export class NewsController {
   @ApiOperation({ summary: 'Eliminar un comentario' })
   removeComment(@Param('commentId') commentId: string, @Request() req: any) {
     return this.newsService.removeComment(commentId, req.user.userId, req.user.role);
+  }
+
+  @Post(':id/comments/:commentId/report')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Reportar un comentario como inapropiado' })
+  reportComment(@Param('commentId') commentId: string) {
+    return this.newsService.reportComment(commentId);
+  }
+
+  @Post(':id/comments/:commentId/like')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Toggle like en un comentario' })
+  toggleCommentLike(@Param('commentId') commentId: string, @Request() req: any) {
+    return this.newsService.toggleCommentLike(commentId, req.user.userId);
   }
 
   // ── LIKES ──────────────────────────────────────────────────────────────────

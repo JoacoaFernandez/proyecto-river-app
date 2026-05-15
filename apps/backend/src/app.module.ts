@@ -11,6 +11,7 @@ import { CompetitionsModule } from './competitions/competitions.module';
 import { LiveApiModule } from './live-api.module';
 import { PredictionsModule } from './predictions/predictions.module';
 import { AiModule } from './ai/ai.module';
+import { PushModule } from './push/push.module';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -29,6 +30,7 @@ import { AppService } from './app.service';
     LiveApiModule,
     PredictionsModule,
     AiModule,
+    PushModule,
   ],
   controllers: [AppController],
   providers: [AppService],

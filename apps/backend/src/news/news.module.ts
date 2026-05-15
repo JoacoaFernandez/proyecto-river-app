@@ -2,13 +2,14 @@
 import { Module } from '@nestjs/common';
 import { NewsService } from './news.service';
 import { NewsController } from './news.controller';
-import { NewsAiService } from './news-ai.service'; // Importamos el nuevo servicio de IA
+import { NewsAiService } from './news-ai.service';
 import { PrismaModule } from '../prisma/prisma.module';
+import { PushModule } from '../push/push.module';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, PushModule],
   controllers: [NewsController],
-  providers: [NewsService, NewsAiService], // Registramos ambos servicios en el backend
+  providers: [NewsService, NewsAiService],
   exports: [NewsService, NewsAiService],
 })
 export class NewsModule {}
