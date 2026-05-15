@@ -5,6 +5,7 @@ import { NewsAiService } from './news-ai.service';
 import { CreateNewsDto } from './dto/create-news.dto';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { OptionalJwtGuard } from '../auth/guards/optional-jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 
@@ -97,7 +98,7 @@ export class NewsController {
     @Body() body: { body: string; parentId?: string },
     @Request() req: any,
   ) {
-    return this.newsService.addComment(id, req.user.userId, body.body, body.parentId);
+    return this.newsService.addComment(id, req.user.id, body.body, body.parentId);
   }
 
   @Delete(':id/comments/:commentId')
@@ -105,7 +106,7 @@ export class NewsController {
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: 'Eliminar un comentario' })
   removeComment(@Param('commentId') commentId: string, @Request() req: any) {
-    return this.newsService.removeComment(commentId, req.user.userId, req.user.role);
+    return this.newsService.removeComment(commentId, req.user.id, req.user.role);
   }
 
   @Post(':id/comments/:commentId/report')
@@ -121,7 +122,7 @@ export class NewsController {
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: 'Toggle like en un comentario' })
   toggleCommentLike(@Param('commentId') commentId: string, @Request() req: any) {
-    return this.newsService.toggleCommentLike(commentId, req.user.userId);
+    return this.newsService.toggleCommentLike(commentId, req.user.id);
   }
 
   // ── LIKES ──────────────────────────────────────────────────────────────────
@@ -131,12 +132,13 @@ export class NewsController {
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: 'Toggle like en una noticia' })
   toggleLike(@Param('id') id: string, @Request() req: any) {
-    return this.newsService.toggleLike(id, req.user.userId);
+    return this.newsService.toggleLike(id, req.user.id);
   }
 
   @Get(':id/likes')
+  @UseGuards(OptionalJwtGuard)
   @ApiOperation({ summary: 'Obtener conteo de likes de una noticia' })
-  getLikes(@Param('id') id: string) {
-    return this.newsService.getLikeStatus(id, null);
+  getLikes(@Param('id') id: string, @Request() req: any) {
+    return this.newsService.getLikeStatus(id, req.user?.id ?? null);
   }
 }
