@@ -36,6 +36,8 @@ export default function NoticiaDetalle() {
   const [replyBody, setReplyBody] = useState('');
   const [submittingReply, setSubmittingReply] = useState(false);
   const [commentLikes, setCommentLikes] = useState<Record<string, { liked: boolean; count: number }>>({});
+  const [commentError, setCommentError] = useState<string | null>(null);
+  const [likeError, setLikeError] = useState(false);
 
   const [related, setRelated] = useState<NewsItem[]>([]);
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
@@ -71,26 +73,34 @@ export default function NoticiaDetalle() {
   const handleShare = async () => {
     if (!news) return;
     const shareUrl = window.location.href;
-    if (navigator.share) {
+    // navigator.share is unreliable on desktop — go straight to clipboard
+    if (navigator.clipboard?.writeText) {
       try {
-        await navigator.share({ title: news.title, text: news.title, url: shareUrl });
+        await navigator.clipboard.writeText(shareUrl);
+        setShared(true);
+        setTimeout(() => setShared(false), 2000);
         return;
-      } catch { /* cancelled */ }
+      } catch { /* fall through */ }
     }
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setShared(true);
-      setTimeout(() => setShared(false), 2000);
-    } catch { /* no clipboard */ }
+    // Mobile native share
+    if (navigator.share) {
+      try { await navigator.share({ title: news.title, url: shareUrl }); return; } catch { /* cancelled */ }
+    }
+    // Universal fallback
+    prompt('Copiá el link de la nota:', shareUrl);
   };
 
   const handleLike = async () => {
     if (!me || !id) return;
     setLikeLoading(true);
+    setLikeError(false);
     try {
       const res = await toggleLike(id);
       setLiked(res.liked);
       setLikeCount(res.count);
+    } catch {
+      setLikeError(true);
+      setTimeout(() => setLikeError(false), 3000);
     } finally {
       setLikeLoading(false);
     }
@@ -100,11 +110,14 @@ export default function NoticiaDetalle() {
     e.preventDefault();
     if (!id || !commentBody.trim()) return;
     setSubmittingComment(true);
+    setCommentError(null);
     try {
       const newComment = await addComment(id, commentBody.trim());
       setComments((prev) => [...prev, newComment]);
       setCommentLikes((prev) => ({ ...prev, [newComment.id]: { liked: false, count: 0 } }));
       setCommentBody('');
+    } catch {
+      setCommentError('No se pudo enviar el comentario. Verificá tu sesión e intentá de nuevo.');
     } finally {
       setSubmittingComment(false);
     }
@@ -346,14 +359,16 @@ export default function NoticiaDetalle() {
                 onClick={handleLike}
                 disabled={!me || likeLoading}
                 className={`flex items-center gap-1.5 text-xs border px-3 py-2 rounded-xl transition-all ${
-                  liked
+                  likeError
+                    ? 'bg-red-950/40 border-red-700 text-red-400'
+                    : liked
                     ? 'bg-red-950/40 border-riverRed text-riverRed'
                     : 'bg-neutral-950 hover:bg-neutral-800 border-neutral-800 text-neutral-300 disabled:opacity-40'
                 }`}
-                title={me ? undefined : 'Iniciá sesión para dar like'}
+                title={me ? (likeError ? 'Error al dar like, intentá de nuevo' : undefined) : 'Iniciá sesión para dar like'}
               >
                 <Heart className={`w-3.5 h-3.5 ${liked ? 'fill-current' : ''}`} />
-                {likeCount > 0 && <span>{likeCount}</span>}
+                {likeError ? <span>!</span> : likeCount > 0 && <span>{likeCount}</span>}
               </button>
               <button
                 onClick={handleShare}
@@ -456,6 +471,11 @@ export default function NoticiaDetalle() {
               className="w-full bg-neutral-950 border border-neutral-800 focus:border-riverRed text-white rounded-xl px-4 py-3 text-sm outline-none transition-all resize-none"
               required
             />
+            {commentError && (
+              <p className="text-xs text-red-400 bg-red-950/30 border border-red-900/40 rounded-xl px-3 py-2">
+                {commentError}
+              </p>
+            )}
             <div className="flex justify-end">
               <button
                 type="submit"
