@@ -17,10 +17,11 @@ model User {
   created_at      DateTime          @default(now())
   points          Int               @default(0)
   comments        Comment[]
-  liveChatMsgs LiveChatMessage[]
+  liveChatMsgs    LiveChatMessage[]
   news            News[]
   likes           NewsLike[]
-  predictions Prediction[]
+  predictions     Prediction[]
+  commentLikes    CommentLike[]
 }
 
 model Player {
@@ -63,19 +64,43 @@ model News {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
   imageUrl    String?
+  urgent      Boolean    @default(false)
   comments    Comment[]
   author      User       @relation(fields: [authorId], references: [id])
   likes       NewsLike[]
 }
 
 model Comment {
-  id        String   @id @default(uuid())
-  newsId    String
+  id         String        @id @default(uuid())
+  newsId     String
+  userId     String
+  body       String
+  createdAt  DateTime      @default(now())
+  parentId   String?
+  reportedAt DateTime?
+  news       News          @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent     Comment?      @relation("CommentReplies", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  replies    Comment[]     @relation("CommentReplies")
+  likes      CommentLike[]
+}
+
+model CommentLike {
+  id        String  @id @default(uuid())
+  commentId String
   userId    String
-  body      String
+  comment   Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, userId])
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid())
+  endpoint  String   @unique
+  keys      Json
+  userId    String?
   createdAt DateTime @default(now())
-  news      News     @relation(fields: [newsId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model NewsLike {

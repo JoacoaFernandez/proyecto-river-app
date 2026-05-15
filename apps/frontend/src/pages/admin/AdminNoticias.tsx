@@ -1,15 +1,17 @@
 // apps/frontend/src/pages/admin/AdminNoticias.tsx
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { X, Plus } from 'lucide-react';
+import { X, Plus, Flag } from 'lucide-react';
 import {
   createNews,
+  deleteComment,
   deleteNews,
   getNews,
+  getReportedComments,
   triggerAiNews,
   updateNews,
 } from '../../services/news.service';
-import type { NewsItem } from '../../services/news.service';
+import type { NewsItem, ReportedComment } from '../../services/news.service';
 import { timeAgo } from '../../utils/time';
 
 const inputClass =
@@ -17,8 +19,12 @@ const inputClass =
 const labelClass =
   'block text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-1.5';
 
+type Tab = 'noticias' | 'reportados';
+
 export default function AdminNoticias() {
+  const [tab, setTab] = useState<Tab>('noticias');
   const [news, setNews] = useState<NewsItem[]>([]);
+  const [reported, setReported] = useState<ReportedComment[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -30,8 +36,10 @@ export default function AdminNoticias() {
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('Actualidad');
   const [body, setBody] = useState('');
-  const [status, setStatus] = useState<'draft' | 'published'>('published');
+  const [status, setStatus] = useState<'draft' | 'published' | 'scheduled'>('published');
   const [imageUrl, setImageUrl] = useState('');
+  const [urgent, setUrgent] = useState(false);
+  const [publishedAt, setPublishedAt] = useState('');
 
   // Modal editar
   const [editing, setEditing] = useState<NewsItem | null>(null);
@@ -40,14 +48,17 @@ export default function AdminNoticias() {
     title: '',
     category: '',
     body: '',
-    status: 'published' as 'draft' | 'published',
+    status: 'published' as 'draft' | 'published' | 'scheduled',
     imageUrl: '',
+    urgent: false,
+    publishedAt: '',
   });
 
   const loadNews = async () => {
     setLoading(true);
-    const list = await getNews();
+    const [list, rep] = await Promise.all([getNews(), getReportedComments()]);
     setNews(list);
+    setReported(rep);
     setLoading(false);
   };
 
@@ -62,26 +73,22 @@ export default function AdminNoticias() {
   };
 
   const resetForm = () => {
-    setTitle('');
-    setBody('');
-    setCategory('Actualidad');
-    setStatus('published');
-    setImageUrl('');
+    setTitle(''); setBody(''); setCategory('Actualidad');
+    setStatus('published'); setImageUrl(''); setUrgent(false); setPublishedAt('');
   };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !body.trim()) {
-      flash('El título y el cuerpo son obligatorios.', true);
-      return;
-    }
+    if (!title.trim() || !body.trim()) { flash('El título y el cuerpo son obligatorios.', true); return; }
     setSubmitting(true);
     try {
-      await createNews({ title: title.trim(), body: body.trim(), category, status, imageUrl: imageUrl.trim() || undefined });
+      await createNews({
+        title: title.trim(), body: body.trim(), category, status,
+        imageUrl: imageUrl.trim() || undefined, urgent,
+        publishedAt: status === 'scheduled' && publishedAt ? publishedAt : undefined,
+      });
       flash('✅ Noticia creada correctamente.');
-      resetForm();
-      setShowForm(false);
-      await loadNews();
+      resetForm(); setShowForm(false); await loadNews();
     } catch (err: any) {
       flash(err?.response?.data?.message || 'Error al crear la noticia.', true);
     } finally {
@@ -92,33 +99,27 @@ export default function AdminNoticias() {
   const openEdit = (n: NewsItem) => {
     setEditing(n);
     setEditForm({
-      title: n.title,
-      category: n.category,
-      body: n.body,
-      status: n.status as 'draft' | 'published',
-      imageUrl: n.imageUrl ?? '',
+      title: n.title, category: n.category, body: n.body,
+      status: n.status as 'draft' | 'published' | 'scheduled',
+      imageUrl: n.imageUrl ?? '', urgent: n.urgent,
+      publishedAt: n.publishedAt ? new Date(n.publishedAt).toISOString().slice(0, 16) : '',
     });
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editing) return;
-    if (!editForm.title.trim() || !editForm.body.trim()) {
-      flash('El título y el cuerpo son obligatorios.', true);
-      return;
-    }
+    if (!editForm.title.trim() || !editForm.body.trim()) { flash('El título y el cuerpo son obligatorios.', true); return; }
     setSaving(true);
     try {
       await updateNews(editing.id, {
-        title: editForm.title.trim(),
-        category: editForm.category.trim(),
-        body: editForm.body.trim(),
-        status: editForm.status,
-        imageUrl: editForm.imageUrl.trim() || undefined,
+        title: editForm.title.trim(), category: editForm.category.trim(),
+        body: editForm.body.trim(), status: editForm.status,
+        imageUrl: editForm.imageUrl.trim() || undefined, urgent: editForm.urgent,
+        publishedAt: editForm.status === 'scheduled' && editForm.publishedAt ? editForm.publishedAt : undefined,
       });
       flash('✅ Noticia actualizada.');
-      setEditing(null);
-      await loadNews();
+      setEditing(null); await loadNews();
     } catch (err: any) {
       flash(err?.response?.data?.message || 'Error al guardar.', true);
     } finally {
@@ -137,6 +138,17 @@ export default function AdminNoticias() {
     }
   };
 
+  const handleDeleteReported = async (newsId: string, commentId: string) => {
+    if (!confirm('¿Eliminar este comentario reportado?')) return;
+    try {
+      await deleteComment(newsId, commentId);
+      setReported((prev) => prev.filter((r) => r.id !== commentId));
+      flash('Comentario eliminado.');
+    } catch (err: any) {
+      flash(err?.response?.data?.message || 'Error al eliminar el comentario.', true);
+    }
+  };
+
   const handleTriggerAi = async () => {
     if (!confirm('¿Generar una noticia nueva con IA? Esto consume tu cuota de Gemini.')) return;
     setAiBusy(true);
@@ -151,6 +163,20 @@ export default function AdminNoticias() {
     }
   };
 
+  function statusBadge(s: string) {
+    const map: Record<string, string> = {
+      published: 'bg-green-950/40 text-green-400 border-green-900/40',
+      draft: 'bg-yellow-950/40 text-yellow-400 border-yellow-900/40',
+      scheduled: 'bg-blue-950/40 text-blue-400 border-blue-900/40',
+    };
+    const label: Record<string, string> = { published: 'Publicada', draft: 'Borrador', scheduled: 'Programada' };
+    return (
+      <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full border ${map[s] ?? map.draft}`}>
+        {label[s] ?? s}
+      </span>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -162,23 +188,34 @@ export default function AdminNoticias() {
           </p>
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={handleTriggerAi}
-            disabled={aiBusy}
-            className="bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 hover:border-riverRed disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
-          >
+          <button onClick={handleTriggerAi} disabled={aiBusy}
+            className="bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 hover:border-riverRed disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2.5 rounded-xl text-sm font-semibold transition-all">
             {aiBusy ? '⏳ Generando…' : '🤖 Generar con IA'}
           </button>
-          <button
-            onClick={() => setShowForm((s) => !s)}
-            className="bg-riverRed hover:bg-red-700 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-red-900/30"
-          >
-            {showForm
-              ? <><X className="w-4 h-4" /> Cancelar</>
-              : <><Plus className="w-4 h-4" /> Nueva noticia</>
-            }
+          <button onClick={() => setShowForm((s) => !s)}
+            className="bg-riverRed hover:bg-red-700 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-red-900/30 flex items-center gap-1.5">
+            {showForm ? <><X className="w-4 h-4" /> Cancelar</> : <><Plus className="w-4 h-4" /> Nueva noticia</>}
           </button>
         </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-2 border-b border-neutral-800 pb-0">
+        {(['noticias', 'reportados'] as Tab[]).map((t) => (
+          <button key={t} onClick={() => setTab(t)}
+            className={`px-4 py-2.5 text-sm font-semibold rounded-t-xl transition-all border-b-2 -mb-px ${
+              tab === t ? 'border-riverRed text-white' : 'border-transparent text-neutral-500 hover:text-white'
+            }`}>
+            {t === 'noticias' ? 'Noticias' : (
+              <span className="flex items-center gap-1.5">
+                <Flag className="w-3.5 h-3.5" /> Reportados
+                {reported.length > 0 && (
+                  <span className="bg-riverRed text-white text-[9px] font-black px-1.5 py-0.5 rounded-full">{reported.length}</span>
+                )}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
       {/* Flash */}
@@ -188,104 +225,140 @@ export default function AdminNoticias() {
         </div>
       )}
 
-      {/* Form crear */}
-      {showForm && (
-        <form onSubmit={handleCreate} className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 space-y-4">
-          <h2 className="font-bold text-sm uppercase tracking-wider text-riverRed">Nueva noticia manual</h2>
-          <div>
-            <label className={labelClass}>Título</label>
-            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ej: River goleó a San Lorenzo…" className={inputClass} required />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className={labelClass}>Categoría</label>
-              <input type="text" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Actualidad" className={inputClass} />
-            </div>
-            <div>
-              <label className={labelClass}>Estado</label>
-              <select value={status} onChange={(e) => setStatus(e.target.value as 'draft' | 'published')} className={inputClass}>
-                <option value="published">Publicada</option>
-                <option value="draft">Borrador</option>
-              </select>
-            </div>
-          </div>
-          <div>
-            <label className={labelClass}>Cuerpo</label>
-            <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Escribí el contenido de la nota…" rows={8} className={`${inputClass} resize-y`} required />
-          </div>
-          <div>
-            <label className={labelClass}>Imagen de portada (URL)</label>
-            <input type="url" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://ejemplo.com/imagen.jpg" className={inputClass} />
-            {imageUrl && (
-              <img src={imageUrl} alt="preview" className="mt-2 rounded-xl h-32 object-cover w-full" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-            )}
-          </div>
-          <div className="flex gap-2 justify-end">
-            <button type="button" onClick={() => { resetForm(); setShowForm(false); }} className="bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all">
-              Cancelar
-            </button>
-            <button type="submit" disabled={submitting} className="bg-riverRed hover:bg-red-700 disabled:bg-neutral-800 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-red-900/30">
-              {submitting ? 'Guardando…' : 'Crear noticia'}
-            </button>
-          </div>
-        </form>
-      )}
-
-      {/* Lista */}
-      {loading ? (
-        <div className="text-center py-12">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-riverRed mx-auto"></div>
-        </div>
-      ) : news.length === 0 ? (
-        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-12 text-center text-sm text-neutral-500">
-          Todavía no hay noticias. Creá la primera con el botón de arriba.
-        </div>
-      ) : (
-        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden">
-          <div className="hidden md:flex items-center gap-4 p-4 border-b border-neutral-800 text-[11px] font-bold uppercase tracking-widest text-neutral-500">
-            <div className="flex-1">Título</div>
-            <div className="w-28">Categoría</div>
-            <div className="w-24">Estado</div>
-            <div className="w-32">Fecha</div>
-            <div className="w-40 text-right">Acciones</div>
-          </div>
-
-          {news.map((n) => (
-            <div key={n.id} className="flex flex-col md:flex-row md:items-center gap-3 md:gap-4 p-4 border-b border-neutral-800 last:border-0 hover:bg-neutral-800/30 transition-colors">
-              <div className="flex-1 min-w-0 flex items-center gap-3">
-                {n.imageUrl && (
-                  <img src={n.imageUrl} alt="" className="w-10 h-10 rounded-lg object-cover border border-neutral-700 flex-shrink-0" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                )}
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold truncate">{n.title}</div>
-                  <div className="text-[11px] text-neutral-500 mt-0.5">{n.author?.display_name ?? 'Anónimo'}</div>
+      {tab === 'noticias' && (
+        <>
+          {/* Form crear */}
+          {showForm && (
+            <form onSubmit={handleCreate} className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 space-y-4">
+              <h2 className="font-bold text-sm uppercase tracking-wider text-riverRed">Nueva noticia manual</h2>
+              <div>
+                <label className={labelClass}>Título</label>
+                <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ej: River goleó a San Lorenzo…" className={inputClass} required />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Categoría</label>
+                  <input type="text" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Actualidad" className={inputClass} />
+                </div>
+                <div>
+                  <label className={labelClass}>Estado</label>
+                  <select value={status} onChange={(e) => setStatus(e.target.value as typeof status)} className={inputClass}>
+                    <option value="published">Publicada</option>
+                    <option value="draft">Borrador</option>
+                    <option value="scheduled">Programada</option>
+                  </select>
                 </div>
               </div>
-
-              <div className="md:w-28 flex-shrink-0">
-                <span className="text-[10px] font-bold text-riverRed uppercase tracking-widest bg-red-950/30 border border-red-900/40 px-2 py-1 rounded-full">
-                  {n.category}
-                </span>
+              {status === 'scheduled' && (
+                <div>
+                  <label className={labelClass}>Fecha y hora de publicación</label>
+                  <input type="datetime-local" value={publishedAt} onChange={(e) => setPublishedAt(e.target.value)} className={inputClass} required />
+                </div>
+              )}
+              <div>
+                <label className={labelClass}>Cuerpo</label>
+                <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Escribí el contenido de la nota…" rows={8} className={`${inputClass} resize-y`} required />
               </div>
-
-              <div className="md:w-24 flex-shrink-0">
-                <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full border ${n.status === 'published' ? 'bg-green-950/40 text-green-400 border-green-900/40' : 'bg-yellow-950/40 text-yellow-400 border-yellow-900/40'}`}>
-                  {n.status === 'published' ? 'Publicada' : 'Borrador'}
-                </span>
+              <div>
+                <label className={labelClass}>Imagen de portada (URL)</label>
+                <input type="url" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://ejemplo.com/imagen.jpg" className={inputClass} />
+                {imageUrl && <img src={imageUrl} alt="preview" className="mt-2 rounded-xl h-32 object-cover w-full" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
               </div>
-
-              <div className="md:w-32 text-[11px] text-neutral-500 flex-shrink-0">
-                {timeAgo(n.publishedAt ?? n.createdAt)}
-              </div>
-
-              <div className="md:w-40 flex md:justify-end gap-2 flex-shrink-0">
-                <Link to={`/noticias/${n.id}`} className="text-xs bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 px-3 py-1.5 rounded-lg transition-all">
-                  Ver
-                </Link>
-                <button onClick={() => openEdit(n)} className="text-xs bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 px-3 py-1.5 rounded-lg transition-all">
-                  Editar
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" checked={urgent} onChange={(e) => setUrgent(e.target.checked)}
+                  className="w-4 h-4 accent-riverRed rounded" />
+                <span className="text-sm font-semibold">🚨 Marcar como urgente (muestra banner rojo)</span>
+              </label>
+              <div className="flex gap-2 justify-end">
+                <button type="button" onClick={() => { resetForm(); setShowForm(false); }}
+                  className="bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all">
+                  Cancelar
                 </button>
-                <button onClick={() => handleDelete(n.id, n.title)} className="text-xs bg-neutral-950 hover:bg-red-950/40 border border-neutral-800 hover:border-riverRed text-neutral-300 hover:text-riverRed px-3 py-1.5 rounded-lg transition-all">
+                <button type="submit" disabled={submitting}
+                  className="bg-riverRed hover:bg-red-700 disabled:bg-neutral-800 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-red-900/30">
+                  {submitting ? 'Guardando…' : 'Crear noticia'}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Lista */}
+          {loading ? (
+            <div className="text-center py-12"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-riverRed mx-auto"></div></div>
+          ) : news.length === 0 ? (
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-12 text-center text-sm text-neutral-500">
+              Todavía no hay noticias. Creá la primera con el botón de arriba.
+            </div>
+          ) : (
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden">
+              <div className="hidden md:flex items-center gap-4 p-4 border-b border-neutral-800 text-[11px] font-bold uppercase tracking-widest text-neutral-500">
+                <div className="flex-1">Título</div>
+                <div className="w-28">Categoría</div>
+                <div className="w-28">Estado</div>
+                <div className="w-32">Fecha</div>
+                <div className="w-40 text-right">Acciones</div>
+              </div>
+
+              {news.map((n) => (
+                <div key={n.id} className="flex flex-col md:flex-row md:items-center gap-3 md:gap-4 p-4 border-b border-neutral-800 last:border-0 hover:bg-neutral-800/30 transition-colors">
+                  <div className="flex-1 min-w-0 flex items-center gap-3">
+                    {n.imageUrl && (
+                      <img src={n.imageUrl} alt="" className="w-10 h-10 rounded-lg object-cover border border-neutral-700 flex-shrink-0" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    )}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        {n.urgent && <span className="text-[9px] font-black text-white bg-riverRed px-1.5 py-0.5 rounded-full flex-shrink-0">🚨</span>}
+                        <div className="text-sm font-semibold truncate">{n.title}</div>
+                      </div>
+                      <div className="text-[11px] text-neutral-500 mt-0.5">{n.author?.display_name ?? 'Anónimo'}</div>
+                    </div>
+                  </div>
+
+                  <div className="md:w-28 flex-shrink-0">
+                    <span className="text-[10px] font-bold text-riverRed uppercase tracking-widest bg-red-950/30 border border-red-900/40 px-2 py-1 rounded-full">{n.category}</span>
+                  </div>
+
+                  <div className="md:w-28 flex-shrink-0">{statusBadge(n.status)}</div>
+
+                  <div className="md:w-32 text-[11px] text-neutral-500 flex-shrink-0">
+                    {n.status === 'scheduled' && n.publishedAt
+                      ? `📅 ${new Date(n.publishedAt).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`
+                      : timeAgo(n.publishedAt ?? n.createdAt)
+                    }
+                  </div>
+
+                  <div className="md:w-40 flex md:justify-end gap-2 flex-shrink-0">
+                    <Link to={`/noticias/${n.id}`} className="text-xs bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 px-3 py-1.5 rounded-lg transition-all">Ver</Link>
+                    <button onClick={() => openEdit(n)} className="text-xs bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 px-3 py-1.5 rounded-lg transition-all">Editar</button>
+                    <button onClick={() => handleDelete(n.id, n.title)} className="text-xs bg-neutral-950 hover:bg-red-950/40 border border-neutral-800 hover:border-riverRed text-neutral-300 hover:text-riverRed px-3 py-1.5 rounded-lg transition-all">Eliminar</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === 'reportados' && (
+        <div className="space-y-3">
+          {reported.length === 0 ? (
+            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-12 text-center text-sm text-neutral-500">
+              No hay comentarios reportados. ✅
+            </div>
+          ) : reported.map((r) => (
+            <div key={r.id} className="bg-neutral-900 border border-red-900/40 rounded-2xl p-4 flex flex-col gap-2">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs font-semibold">{r.user.display_name}</span>
+                    <span className="text-[11px] text-neutral-500">en</span>
+                    <Link to={`/noticias/${r.news.id}`} className="text-[11px] text-riverRed hover:underline truncate max-w-[200px]">{r.news.title}</Link>
+                    <span className="text-[10px] text-neutral-600">· {timeAgo(r.reportedAt)}</span>
+                  </div>
+                  <p className="text-sm text-neutral-300">{r.body}</p>
+                </div>
+                <button onClick={() => handleDeleteReported(r.newsId, r.id)}
+                  className="flex-shrink-0 text-xs bg-red-950/40 hover:bg-red-950/70 border border-red-900/40 text-red-300 px-3 py-1.5 rounded-lg transition-all">
                   Eliminar
                 </button>
               </div>
@@ -297,10 +370,7 @@ export default function AdminNoticias() {
       {/* Modal editar */}
       {editing && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-y-auto">
-          <form
-            onSubmit={handleSave}
-            className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 w-full max-w-2xl space-y-4 shadow-2xl my-8"
-          >
+          <form onSubmit={handleSave} className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 w-full max-w-2xl space-y-4 shadow-2xl my-8">
             <div className="flex items-center justify-between">
               <h2 className="font-black text-lg">Editar noticia</h2>
               <button type="button" onClick={() => setEditing(null)} className="text-neutral-500 hover:text-white p-1 rounded-lg hover:bg-neutral-800 transition-colors"><X className="w-5 h-5" /></button>
@@ -318,36 +388,40 @@ export default function AdminNoticias() {
               </div>
               <div>
                 <label className={labelClass}>Estado</label>
-                <select className={inputClass} value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value as 'draft' | 'published' })}>
+                <select className={inputClass} value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value as typeof editForm.status })}>
                   <option value="published">Publicada</option>
                   <option value="draft">Borrador</option>
+                  <option value="scheduled">Programada</option>
                 </select>
               </div>
             </div>
 
+            {editForm.status === 'scheduled' && (
+              <div>
+                <label className={labelClass}>Fecha y hora de publicación</label>
+                <input type="datetime-local" className={inputClass} value={editForm.publishedAt} onChange={(e) => setEditForm({ ...editForm, publishedAt: e.target.value })} />
+              </div>
+            )}
+
             <div>
               <label className={labelClass}>Imagen de portada (URL)</label>
               <input type="url" className={inputClass} value={editForm.imageUrl} onChange={(e) => setEditForm({ ...editForm, imageUrl: e.target.value })} placeholder="https://ejemplo.com/imagen.jpg" />
-              {editForm.imageUrl && (
-                <img src={editForm.imageUrl} alt="preview" className="mt-2 rounded-xl h-32 object-cover w-full" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-              )}
+              {editForm.imageUrl && <img src={editForm.imageUrl} alt="preview" className="mt-2 rounded-xl h-32 object-cover w-full" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
             </div>
 
             <div>
               <label className={labelClass}>Cuerpo</label>
-              <textarea
-                className={`${inputClass} resize-y`}
-                value={editForm.body}
-                onChange={(e) => setEditForm({ ...editForm, body: e.target.value })}
-                rows={12}
-                required
-              />
+              <textarea className={`${inputClass} resize-y`} value={editForm.body} onChange={(e) => setEditForm({ ...editForm, body: e.target.value })} rows={12} required />
             </div>
 
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input type="checkbox" checked={editForm.urgent} onChange={(e) => setEditForm({ ...editForm, urgent: e.target.checked })}
+                className="w-4 h-4 accent-riverRed rounded" />
+              <span className="text-sm font-semibold">🚨 Marcar como urgente (envía push notifications)</span>
+            </label>
+
             <div className="flex gap-2 justify-end pt-2">
-              <button type="button" onClick={() => setEditing(null)} className="bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all">
-                Cancelar
-              </button>
+              <button type="button" onClick={() => setEditing(null)} className="bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all">Cancelar</button>
               <button type="submit" disabled={saving} className="bg-riverRed hover:bg-red-700 disabled:bg-neutral-800 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-red-900/30">
                 {saving ? 'Guardando…' : 'Guardar cambios'}
               </button>

@@ -1,5 +1,5 @@
 // apps/backend/src/news/dto/create-news.dto.ts
-import { IsString, IsNotEmpty, IsOptional, IsIn } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsIn, IsBoolean, IsDateString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateNewsDto {
@@ -23,11 +23,16 @@ export class CreateNewsDto {
   @IsOptional()
   slug?: string;
 
-  @ApiProperty({ description: 'Estado de la noticia', required: false, enum: ['draft', 'published'], default: 'draft' })
+  @ApiProperty({ description: 'Estado de la noticia', required: false, enum: ['draft', 'published', 'scheduled'], default: 'draft' })
   @IsString()
   @IsOptional()
-  @IsIn(['draft', 'published'])
+  @IsIn(['draft', 'published', 'scheduled'])
   status?: string;
+
+  @ApiProperty({ description: 'Fecha y hora de publicación programada (ISO 8601)', required: false })
+  @IsDateString()
+  @IsOptional()
+  publishedAt?: string;
 
   @ApiProperty({ description: 'ID del usuario autor de la noticia', required: false })
   @IsString()
@@ -38,4 +43,9 @@ export class CreateNewsDto {
   @IsString()
   @IsOptional()
   imageUrl?: string;
+
+  @ApiProperty({ description: 'Marcar la noticia como urgente (muestra banner rojo)', required: false, default: false })
+  @IsBoolean()
+  @IsOptional()
+  urgent?: boolean;
 }

@@ -55,8 +55,26 @@ export default function Noticias() {
   const featured = filtered[0] ?? null;
   const rest = featured ? visible.slice(1) : visible;
 
+  const urgentNews = news.filter((n) => n.urgent && n.status === 'published');
+  const latestUrgent = urgentNews[0] ?? null;
+
   return (
     <div className="max-w-6xl mx-auto px-4 mt-6 pb-12">
+      {/* Banner urgente */}
+      {latestUrgent && (
+        <Link
+          to={`/noticias/${latestUrgent.id}`}
+          className="flex items-center gap-3 bg-riverRed text-white px-4 py-3 rounded-2xl mb-5 hover:bg-red-700 transition-all group"
+        >
+          <span className="text-lg flex-shrink-0 animate-pulse">🚨</span>
+          <div className="min-w-0">
+            <span className="text-[10px] font-black uppercase tracking-widest opacity-80">Urgente</span>
+            <p className="text-sm font-bold truncate group-hover:underline">{latestUrgent.title}</p>
+          </div>
+          <span className="ml-auto text-[11px] opacity-70 flex-shrink-0">{timeAgo(latestUrgent.publishedAt ?? latestUrgent.createdAt)}</span>
+        </Link>
+      )}
+
       {/* Header */}
       <div className="border-b border-neutral-800 pb-4 mb-6">
         <h2 className="text-2xl font-black tracking-wide uppercase">Noticias del Millonario</h2>
