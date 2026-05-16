@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { Link2, Check, ChevronLeft, ChevronRight } from 'lucide-react';
 import { getPastMatches, getUpcomingMatches } from '../services/matches.service';
 import type { Match } from '../services/matches.service';
+import { useTeamLogo } from '../hooks/useTeamLogo';
 
 type Tab = 'proximos' | 'resultados' | 'calendario';
 type VenueFilter = 'all' | 'home' | 'away';
@@ -44,6 +45,32 @@ function statusBadge(status: string): { label: string; cls: string } | null {
   if (status === 'suspended' || status === 'SUSP') return { label: 'Suspendido', cls: 'bg-orange-950/40 text-orange-400 border-orange-800/50' };
   if (status === 'TBD') return { label: 'A confirmar', cls: 'bg-neutral-800 text-neutral-400 border-neutral-700' };
   return null;
+}
+
+function TeamCrest({ name, size = 28 }: { name: string; size?: number }) {
+  const logo = useTeamLogo(name);
+  const [failed, setFailed] = useState(false);
+  if (logo && !failed) {
+    return (
+      <img
+        src={logo}
+        alt={name}
+        width={size}
+        height={size}
+        className="object-contain flex-shrink-0"
+        style={{ width: size, height: size }}
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  return (
+    <div
+      className="rounded-md bg-neutral-800 flex items-center justify-center flex-shrink-0 text-[9px] font-black text-neutral-400"
+      style={{ width: size, height: size }}
+    >
+      {name.slice(0, 3).toUpperCase()}
+    </div>
+  );
 }
 
 function MatchCard({ m }: { m: Match }) {
@@ -115,13 +142,16 @@ function MatchCard({ m }: { m: Match }) {
 
       {/* Equipos + marcador */}
       <div className="flex items-center gap-3">
-        <div className="flex-1 min-w-0">
-          <span className={`text-sm font-bold truncate block ${isRiver(m.homeTeam) ? 'text-white' : 'text-neutral-300'}`}>
-            {m.homeTeam}
-          </span>
-          {m.stadium && !isFinished && !isLive && (
-            <span className="text-[11px] text-neutral-600 truncate block mt-0.5">{m.stadium}</span>
-          )}
+        <div className="flex-1 min-w-0 flex items-center gap-2">
+          <TeamCrest name={m.homeTeam} size={28} />
+          <div className="min-w-0">
+            <span className={`text-sm font-bold truncate block ${isRiver(m.homeTeam) ? 'text-white' : 'text-neutral-300'}`}>
+              {m.homeTeam}
+            </span>
+            {m.stadium && !isFinished && !isLive && (
+              <span className="text-[11px] text-neutral-600 truncate block mt-0.5">{m.stadium}</span>
+            )}
+          </div>
         </div>
 
         <div className="flex-shrink-0 text-center">
@@ -142,10 +172,13 @@ function MatchCard({ m }: { m: Match }) {
           )}
         </div>
 
-        <div className="flex-1 min-w-0 text-right">
-          <span className={`text-sm font-bold truncate block ${isRiver(m.awayTeam) ? 'text-white' : 'text-neutral-300'}`}>
-            {m.awayTeam}
-          </span>
+        <div className="flex-1 min-w-0 flex items-center justify-end gap-2">
+          <div className="min-w-0 text-right">
+            <span className={`text-sm font-bold truncate block ${isRiver(m.awayTeam) ? 'text-white' : 'text-neutral-300'}`}>
+              {m.awayTeam}
+            </span>
+          </div>
+          <TeamCrest name={m.awayTeam} size={28} />
         </div>
       </div>
 

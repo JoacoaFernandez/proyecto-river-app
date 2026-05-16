@@ -1,6 +1,8 @@
 // apps/frontend/src/pages/ProximoPartido.tsx
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { useLiveMatch } from '../hooks/useLiveMatch';
+import { useTeamLogo } from '../hooks/useTeamLogo';
 import { Calendar } from 'lucide-react';
 import { getLiveDashboard } from '../services/live.service';
 import { getLineup, type LineupResponse } from '../services/formations.service';
@@ -51,16 +53,30 @@ function abbrev(name: string) {
 function TeamBadge({ name }: { name: string }) {
   const { bg, text } = teamStyle(name);
   const isRiver = /river\s*plate|^river$/i.test(name);
+  const logo = useTeamLogo(name);
+  const [imgFailed, setImgFailed] = useState(false);
+  const showLogo = logo && !imgFailed;
+
   return (
     <div
-      className="w-24 h-24 md:w-28 md:h-28 rounded-3xl flex items-center justify-center font-black text-2xl md:text-3xl mx-auto flex-shrink-0 shadow-xl"
+      className="w-24 h-24 md:w-28 md:h-28 rounded-3xl flex items-center justify-center mx-auto flex-shrink-0 shadow-xl overflow-hidden"
       style={{
-        background: isRiver ? 'linear-gradient(135deg, #E30613 0%, #a00000 100%)' : bg,
-        color: text,
+        background: showLogo ? '#1a1a1a' : isRiver ? 'linear-gradient(135deg, #E30613 0%, #a00000 100%)' : bg,
         boxShadow: isRiver ? '0 8px 32px rgba(227,6,19,0.45)' : `0 4px 16px rgba(0,0,0,0.4)`,
       }}
     >
-      {abbrev(name)}
+      {showLogo ? (
+        <img
+          src={logo}
+          alt={name}
+          className="w-16 h-16 md:w-20 md:h-20 object-contain drop-shadow"
+          onError={() => setImgFailed(true)}
+        />
+      ) : (
+        <span className="font-black text-2xl md:text-3xl" style={{ color: text }}>
+          {abbrev(name)}
+        </span>
+      )}
     </div>
   );
 }
@@ -376,6 +392,8 @@ function AiPredictionSection({ matchId }: { matchId: string }) {
 }
 
 export default function ProximoPartido() {
+  const navigate = useNavigate();
+  const { match: liveMatch } = useLiveMatch();
   const [match, setMatch] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [countdown, setCountdown] = useState<{ d: number; h: number; m: number; s: number } | null>(null);
@@ -385,11 +403,25 @@ export default function ProximoPartido() {
   const [predSummary, setPredSummary] = useState<PredictionSummary | null>(null);
   const isAuthenticated = !!localStorage.getItem('river_app_token');
 
+  // Redirigir automáticamente cuando ESPN detecta el partido en vivo
+  useEffect(() => {
+    if (liveMatch !== null && liveMatch !== undefined) {
+      navigate('/partidos/en-vivo', { replace: true });
+    }
+  }, [liveMatch, navigate]);
+
   useEffect(() => {
     getLiveDashboard()
-      .then((d) => setMatch(d?.nextMatch ?? null))
+      .then((d) => {
+        // Si la DB ya marca el partido como live, redirigir sin esperar al WebSocket
+        if (d?.nextMatch?.status === 'live') {
+          navigate('/partidos/en-vivo', { replace: true });
+          return;
+        }
+        setMatch(d?.nextMatch ?? null);
+      })
       .finally(() => setLoading(false));
-  }, []);
+  }, [navigate]);
 
   useEffect(() => {
     if (!match) return;

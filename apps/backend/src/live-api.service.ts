@@ -61,7 +61,7 @@ export class LiveApiService {
   ) {}
 
   async getDashboardData() {
-    if (this.cache && Date.now() - this.lastFetch < 300_000) {
+    if (this.cache && Date.now() - this.lastFetch < 60_000) {
       return this.cache;
     }
 
@@ -235,6 +235,61 @@ export class LiveApiService {
     if (w >= 3) return `${w} victorias en ${form.length} PJ`;
     if (form.includes('L')) return 'Irregular';
     return 'Estable';
+  }
+
+  /** Invalida el caché del dashboard (llamado desde SyncService cuando el partido pasa a live) */
+  invalidateCache() {
+    this.cache = null;
+    this.lastFetch = 0;
+  }
+
+  // ── Team logos — fetched from ESPN public teams API ────────────────────
+
+  private logoCache: Record<string, string> = {};
+  private logoLastFetch = 0;
+  private readonly LOGO_LEAGUES = [
+    'arg.1', 'arg.2',
+    'conmebol.libertadores', 'conmebol.sudamericana', 'conmebol.recopa',
+    'arg.copa', 'arg.supercopa',
+    'bra.1', 'uru.1', 'par.1', 'chi.1', 'col.1', 'ecu.1', 'per.1', 'bol.1', 'ven.1',
+  ];
+
+  async getTeamLogos(): Promise<Record<string, string>> {
+    const TTL = 24 * 60 * 60 * 1000; // 24h cache
+    if (Object.keys(this.logoCache).length > 0 && Date.now() - this.logoLastFetch < TTL) {
+      return this.logoCache;
+    }
+
+    const map: Record<string, string> = {};
+
+    await Promise.allSettled(
+      this.LOGO_LEAGUES.map(async (league) => {
+        try {
+          const res = await axios.get(
+            `https://site.api.espn.com/apis/site/v2/sports/soccer/${league}/teams?limit=100`,
+            { headers: ESPN_HEADERS, timeout: 8000 },
+          );
+          const teams: any[] = res.data?.sports?.[0]?.leagues?.[0]?.teams ?? [];
+          for (const entry of teams) {
+            const t = entry.team;
+            if (t?.displayName && t?.logos?.[0]?.href) {
+              map[t.displayName.toLowerCase()] = t.logos[0].href;
+            } else if (t?.displayName && t?.logo) {
+              map[t.displayName.toLowerCase()] = t.logo;
+            }
+          }
+        } catch {
+          // league not found — silently skip
+        }
+      }),
+    );
+
+    if (Object.keys(map).length > 0) {
+      this.logoCache = map;
+      this.logoLastFetch = Date.now();
+    }
+
+    return this.logoCache;
   }
 
   // ── Live match (sin caché — se llama cada 30s desde el Gateway) ───────────

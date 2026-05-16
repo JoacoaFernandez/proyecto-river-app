@@ -55,21 +55,33 @@ export class LiveApiGateway implements OnGatewayInit, OnGatewayConnection {
     client.emit('live:update', data);
   }
 
+  /** Obtiene el partido live de la DB (status='live') para usar su ID como FK real */
+  private async getLiveDbMatchId(): Promise<string | null> {
+    const m = await this.prisma.match.findFirst({
+      where: { status: 'live' },
+      orderBy: { date: 'desc' },
+      select: { id: true },
+    });
+    return m?.id ?? null;
+  }
+
   @SubscribeMessage('chat:join')
   async handleJoinChat(@ConnectedSocket() client: Socket) {
-    const match = await this.liveApiService.getLiveMatch();
-    if (!match) return;
+    const espnMatch = await this.liveApiService.getLiveMatch();
+    if (!espnMatch) return;
 
-    client.join(`match_${match.id}`);
-    
-    // Enviar historial de los últimos 50 mensajes
+    const dbMatchId = await this.getLiveDbMatchId();
+    if (!dbMatchId) return;
+
+    client.join(`match_${dbMatchId}`);
+
     const history = await this.prisma.liveChatMessage.findMany({
-      where: { matchId: match.id },
+      where: { matchId: dbMatchId },
       include: { user: { select: { id: true, display_name: true, avatar_url: true } } },
       orderBy: { createdAt: 'asc' },
       take: 50,
     });
-    
+
     client.emit('chat:history', history);
   }
 
@@ -80,9 +92,11 @@ export class LiveApiGateway implements OnGatewayInit, OnGatewayConnection {
   ) {
     try {
       const decoded = this.jwtService.verify(payload.token);
-      const match = await this.liveApiService.getLiveMatch();
+      const espnMatch = await this.liveApiService.getLiveMatch();
+      if (!espnMatch) return;
 
-      if (!match) return;
+      const dbMatchId = await this.getLiveDbMatchId();
+      if (!dbMatchId) return;
 
       const safeBody = moderateMessage(payload.message);
       if (!safeBody) {
@@ -93,7 +107,7 @@ export class LiveApiGateway implements OnGatewayInit, OnGatewayConnection {
       const newMsg = await this.prisma.liveChatMessage.create({
         data: {
           body: safeBody,
-          matchId: match.id,
+          matchId: dbMatchId,
           userId: decoded.sub,
         },
         include: {
@@ -101,7 +115,7 @@ export class LiveApiGateway implements OnGatewayInit, OnGatewayConnection {
         },
       });
 
-      this.server.to(`match_${match.id}`).emit('chat:new_message', newMsg);
+      this.server.to(`match_${dbMatchId}`).emit('chat:new_message', newMsg);
     } catch (err) {
       this.logger.error('Error enviando mensaje al chat en vivo: ' + err.message);
     }

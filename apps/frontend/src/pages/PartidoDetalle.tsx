@@ -6,6 +6,7 @@ import { getMatchById, getH2H } from '../services/matches.service';
 import type { Match } from '../services/matches.service';
 import EventTimeline from '../components/EventTimeline';
 import MatchStatsPanel from '../components/MatchStatsPanel';
+import { useTeamLogo } from '../hooks/useTeamLogo';
 
 type DetailTab = 'resumen' | 'estadisticas' | 'h2h';
 
@@ -50,20 +51,36 @@ function abbrev(name: string) {
 function TeamBadge({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' | 'lg' }) {
   const { bg, text } = teamStyle(name);
   const isRiver = RIVER_RX.test(name);
+  const logo = useTeamLogo(name);
+  const [imgFailed, setImgFailed] = useState(false);
+  const showLogo = logo && !imgFailed;
   const sizeClass =
-    size === 'lg' ? 'w-24 h-24 md:w-28 md:h-28 text-2xl md:text-3xl rounded-3xl' :
-    size === 'sm' ? 'w-10 h-10 text-xs rounded-xl' :
-    'w-16 h-16 text-lg rounded-2xl';
+    size === 'lg' ? 'w-24 h-24 md:w-28 md:h-28 rounded-3xl' :
+    size === 'sm' ? 'w-10 h-10 rounded-xl' :
+    'w-16 h-16 rounded-2xl';
+  const imgSizeClass =
+    size === 'lg' ? 'w-16 h-16 md:w-20 md:h-20' :
+    size === 'sm' ? 'w-7 h-7' :
+    'w-11 h-11';
   return (
     <div
-      className={`${sizeClass} flex items-center justify-center font-black mx-auto flex-shrink-0 shadow-xl`}
+      className={`${sizeClass} flex items-center justify-center font-black mx-auto flex-shrink-0 shadow-xl overflow-hidden`}
       style={{
-        background: isRiver ? 'linear-gradient(135deg, #E30613 0%, #a00000 100%)' : bg,
-        color: text,
+        background: showLogo ? '#1a1a1a' : isRiver ? 'linear-gradient(135deg, #E30613 0%, #a00000 100%)' : bg,
         boxShadow: isRiver ? '0 8px 32px rgba(227,6,19,0.45)' : '0 4px 16px rgba(0,0,0,0.4)',
       }}
     >
-      {abbrev(name)}
+      {showLogo ? (
+        <img
+          src={logo}
+          alt={name}
+          className={`${imgSizeClass} object-contain drop-shadow`}
+          loading="lazy"
+          onError={() => setImgFailed(true)}
+        />
+      ) : (
+        <span style={{ color: text }}>{abbrev(name)}</span>
+      )}
     </div>
   );
 }
