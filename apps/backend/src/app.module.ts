@@ -12,6 +12,7 @@ import { LiveApiModule } from './live-api.module';
 import { PredictionsModule } from './predictions/predictions.module';
 import { AiModule } from './ai/ai.module';
 import { PushModule } from './push/push.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -31,6 +32,7 @@ import { AppService } from './app.service';
     PredictionsModule,
     AiModule,
     PushModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

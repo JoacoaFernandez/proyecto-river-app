@@ -20,7 +20,7 @@ export class PushController {
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: 'Registrar suscripción push del navegador' })
   subscribe(@Body() body: { endpoint: string; keys: object }, @Request() req: any) {
-    return this.pushService.saveSubscription(body.endpoint, body.keys, req.user?.userId);
+    return this.pushService.saveSubscription(body.endpoint, body.keys, req.user?.id);
   }
 
   @Delete('unsubscribe')
