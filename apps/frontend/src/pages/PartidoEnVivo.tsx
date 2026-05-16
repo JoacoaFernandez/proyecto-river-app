@@ -1,5 +1,6 @@
 // apps/frontend/src/pages/PartidoEnVivo.tsx
 import { useState, useEffect } from 'react';
+import { useTeamLogo } from '../hooks/useTeamLogo';
 import { Link } from 'react-router-dom';
 import { useLiveMatch, type LiveMatchData, type MatchStatLine } from '../hooks/useLiveMatch';
 import LiveChat from '../components/LiveChat';
@@ -79,16 +80,30 @@ function NoLiveMatch({ connected }: { connected: boolean }) {
 
 function TeamBlock({ name, side, isRiver }: { name: string; side: 'home' | 'away'; isRiver: boolean }) {
   const initials = name.substring(0, 3).toUpperCase();
+  const logo = useTeamLogo(name);
+  const [imgFailed, setImgFailed] = useState(false);
+  const showLogo = logo && !imgFailed;
+
   return (
     <div className={`flex flex-col items-center gap-3 flex-1 ${side === 'away' ? 'items-end' : 'items-start'} sm:items-center`}>
       <div
-        className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center font-black text-base border-2 shadow-lg ${
-          isRiver
-            ? 'bg-white text-riverRed border-riverRed'
-            : 'bg-neutral-800 text-neutral-300 border-neutral-700'
+        className={`w-16 h-16 sm:w-20 sm:h-20 rounded-2xl flex items-center justify-center overflow-hidden shadow-lg border-2 ${
+          isRiver ? 'border-riverRed bg-neutral-900' : 'border-neutral-700 bg-neutral-800'
         }`}
       >
-        {initials}
+        {showLogo ? (
+          <img
+            src={logo}
+            alt={name}
+            className="w-12 h-12 sm:w-16 sm:h-16 object-contain drop-shadow"
+            loading="lazy"
+            onError={() => setImgFailed(true)}
+          />
+        ) : (
+          <span className={`font-black text-base ${isRiver ? 'text-riverRed' : 'text-neutral-300'}`}>
+            {initials}
+          </span>
+        )}
       </div>
       <span className="font-bold text-sm text-center leading-tight">{name}</span>
     </div>

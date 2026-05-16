@@ -5,6 +5,7 @@ import { Clock, CalendarDays, Trophy, BarChart2, FileText } from 'lucide-react';
 import { getNews } from '../services/news.service';
 import { getLiveDashboard } from '../services/live.service';
 import { timeAgo } from '../utils/time';
+import { useTeamLogo } from '../hooks/useTeamLogo';
 
 const RIVER_RX = /river\s*plate|^river$/i;
 
@@ -49,17 +50,33 @@ function abbrev(name: string) {
 function TeamBadge({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' | 'lg' }) {
   const { bg, text } = teamStyle(name);
   const isRiver = RIVER_RX.test(name);
-  const sizeClass = size === 'lg' ? 'w-20 h-20 text-xl' : size === 'sm' ? 'w-10 h-10 text-xs' : 'w-14 h-14 text-sm';
+  const logo = useTeamLogo(name);
+  const [imgFailed, setImgFailed] = useState(false);
+  const showLogo = logo && !imgFailed;
+
+  const sizeClass = size === 'lg' ? 'w-20 h-20' : size === 'sm' ? 'w-10 h-10' : 'w-14 h-14';
+  const imgClass = size === 'lg' ? 'w-14 h-14' : size === 'sm' ? 'w-7 h-7' : 'w-10 h-10';
+
   return (
     <div
-      className={`${sizeClass} rounded-2xl flex items-center justify-center font-black mx-auto flex-shrink-0 shadow-lg`}
+      className={`${sizeClass} rounded-2xl flex items-center justify-center font-black mx-auto flex-shrink-0 shadow-lg overflow-hidden`}
       style={{
-        background: isRiver ? 'linear-gradient(135deg, #E30613 0%, #a00000 100%)' : bg,
-        color: text,
+        background: showLogo ? '#1a1a1a' : isRiver ? 'linear-gradient(135deg, #E30613 0%, #a00000 100%)' : bg,
         boxShadow: isRiver ? '0 4px 20px rgba(227,6,19,0.4)' : undefined,
       }}
     >
-      {abbrev(name)}
+      {showLogo ? (
+        <img
+          src={logo}
+          alt={name}
+          className={`${imgClass} object-contain drop-shadow`}
+          onError={() => setImgFailed(true)}
+        />
+      ) : (
+        <span style={{ color: text }} className={size === 'lg' ? 'text-xl' : size === 'sm' ? 'text-xs' : 'text-sm'}>
+          {abbrev(name)}
+        </span>
+      )}
     </div>
   );
 }
