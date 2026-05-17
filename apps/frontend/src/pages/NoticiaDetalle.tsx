@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Heart, Share2, FileText, Inbox, ExternalLink } from 'lucide-react';
+import FavoriteButton from '../components/FavoriteButton';
 import {
   addComment,
   deleteComment,
@@ -370,6 +371,7 @@ export default function NoticiaDetalle() {
                 <Heart className={`w-3.5 h-3.5 ${liked ? 'fill-current' : ''}`} />
                 {likeError ? <span>!</span> : likeCount > 0 && <span>{likeCount}</span>}
               </button>
+              {me && <FavoriteButton type="news" targetId={id!} size="md" />}
               <button
                 onClick={handleShare}
                 className="bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 hover:border-riverRed text-xs px-4 py-2 rounded-xl transition-all flex items-center gap-2"

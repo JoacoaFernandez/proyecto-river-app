@@ -6,6 +6,7 @@ import { getNews } from '../services/news.service';
 import { getLiveDashboard } from '../services/live.service';
 import { timeAgo } from '../utils/time';
 import { useTeamLogo } from '../hooks/useTeamLogo';
+import SurveyWidget from '../components/SurveyWidget';
 
 const RIVER_RX = /river\s*plate|^river$/i;
 
@@ -376,6 +377,9 @@ export default function Home() {
 
         {/* COLUMNA LATERAL */}
         <div className="space-y-6">
+          {/* Encuesta de la semana */}
+          <SurveyWidget />
+
           {/* 4. Tabla de Posiciones */}
           <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl">
             <h2 className="text-xs font-semibold text-neutral-400 uppercase tracking-widest mb-4 flex items-center gap-2">

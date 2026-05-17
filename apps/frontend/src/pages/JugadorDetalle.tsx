@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { UserX, Star, User, AlertTriangle, Calendar } from 'lucide-react';
 import { getPlayer, getPlayerStats, type Player, type PlayerStats } from '../services/players.service';
+import FavoriteButton from '../components/FavoriteButton';
 
 const positionLabel: Record<string, string> = {
   Goalkeeper: 'Arquero',
@@ -175,7 +176,10 @@ export default function JugadorDetalle() {
               {positionDisplay}
             </div>
 
-            <h1 className="text-3xl md:text-4xl font-black mb-1">{player.name}</h1>
+            <div className="flex items-center gap-3 justify-center md:justify-start mb-1">
+              <h1 className="text-3xl md:text-4xl font-black">{player.name}</h1>
+              <FavoriteButton type="player" targetId={player.id} size="md" />
+            </div>
             {player.nickname && (
               <p className="text-neutral-400 text-base italic mb-3">"{player.nickname}"</p>
             )}
