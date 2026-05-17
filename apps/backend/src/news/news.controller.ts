@@ -44,6 +44,55 @@ export class NewsController {
     return this.newsService.getReportedComments();
   }
 
+  @Get('admin/all-comments')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Todos los comentarios para moderación (admin)' })
+  getAllCommentsAdmin() {
+    return this.newsService.getAllCommentsAdmin();
+  }
+
+  @Patch('comments/:id/hide')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth('JWT-auth')
+  hideComment(@Param('id') id: string) {
+    return this.newsService.hideComment(id);
+  }
+
+  @Patch('comments/:id/unhide')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth('JWT-auth')
+  unhideComment(@Param('id') id: string) {
+    return this.newsService.unhideComment(id);
+  }
+
+  @Patch('comments/:id/dismiss')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth('JWT-auth')
+  dismissReport(@Param('id') id: string) {
+    return this.newsService.dismissReport(id);
+  }
+
+  @Patch('users/:userId/ban')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth('JWT-auth')
+  banUser(@Param('userId') userId: string) {
+    return this.newsService.banUser(userId);
+  }
+
+  @Patch('users/:userId/unban')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth('JWT-auth')
+  unbanUser(@Param('userId') userId: string) {
+    return this.newsService.unbanUser(userId);
+  }
+
   @Get()
   @ApiOperation({ summary: 'Obtener todas las noticias' })
   findAll() {

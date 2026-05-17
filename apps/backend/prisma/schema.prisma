@@ -14,6 +14,7 @@ model User {
   display_name    String
   avatar_url      String?
   role            String            @default("user")
+  isBanned        Boolean           @default(false)
   created_at      DateTime          @default(now())
   points          Int               @default(0)
   city            String?
@@ -86,6 +87,7 @@ model Comment {
   createdAt  DateTime      @default(now())
   parentId   String?
   reportedAt DateTime?
+  hidden     Boolean       @default(false)
   news       News          @relation(fields: [newsId], references: [id], onDelete: Cascade)
   user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   parent     Comment?      @relation("CommentReplies", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
