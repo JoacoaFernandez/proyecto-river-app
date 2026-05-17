@@ -54,25 +54,44 @@ export class NewsService {
     }
 
     // 5. Guardamos en Render enlazando el ID del autor de forma transparente
-    return this.prisma.news.create({
+    const status = createNewsDto.status || 'published';
+    const publishedAt =
+      status === 'scheduled' && createNewsDto.publishedAt
+        ? new Date(createNewsDto.publishedAt)
+        : status === 'published'
+          ? new Date()
+          : null;
+
+    const created = await this.prisma.news.create({
       data: {
         title: createNewsDto.title,
         body: createNewsDto.body,
         category: createNewsDto.category || 'Actualidad',
-        status: createNewsDto.status || 'published',
+        status,
         slug,
         imageUrl: createNewsDto.imageUrl || null,
         authorId: createNewsDto.authorId || author.id,
+        urgent: createNewsDto.urgent ?? false,
+        publishedAt,
       },
     });
+
+    if (createNewsDto.urgent) {
+      this.push.sendToAll({
+        title: `🚨 URGENTE: ${created.title}`,
+        body: created.category,
+        link: `/noticias/${created.id}`,
+        icon: created.imageUrl ?? undefined,
+      }).catch(() => {/* fire and forget */});
+    }
+
+    return created;
   }
 
   // OBTENER TODAS LAS NOTICIAS (Las más nuevas primero)
   async findAll() {
     return this.prisma.news.findMany({
-      orderBy: {
-        createdAt: 'desc',
-      },
+      orderBy: { publishedAt: 'desc' },
       include: {
         author: {
           select: {

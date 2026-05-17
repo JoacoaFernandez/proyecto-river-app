@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X, Plus } from 'lucide-react';
+import { X, Plus, Trash2 } from 'lucide-react';
 import type { Match, MatchEvent } from '../../services/matches.service';
 import {
   createMatchAdmin,
@@ -7,6 +7,8 @@ import {
   getAllMatchesAdmin,
   updateMatchAdmin,
   getMatchEvents,
+  createMatchEventAdmin,
+  deleteMatchEventAdmin,
 } from '../../services/matches.service';
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -60,9 +62,20 @@ export default function AdminPartidos() {
     date: '',
   });
 
-  // Events (read-only, auto-synced from ESPN)
+  // Events
   const [events, setEvents] = useState<MatchEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
+  const [addingEvent, setAddingEvent] = useState(false);
+  const [eventForm, setEventForm] = useState({
+    type: 'goal',
+    minute: '',
+    team: '',
+    playerName: '',
+    playerInName: '',
+    assistName: '',
+    period: '1',
+  });
+  const [savingEvent, setSavingEvent] = useState(false);
 
   const showFlash = (msg: string, error = false) => {
     setFlash({ msg, error });
@@ -109,6 +122,14 @@ export default function AdminPartidos() {
     }
   };
 
+  const reloadEvents = (matchId: string) => {
+    setEventsLoading(true);
+    getMatchEvents(matchId).then((ev) => {
+      setEvents(ev);
+      setEventsLoading(false);
+    });
+  };
+
   const openEdit = (m: Match) => {
     setEditing(m);
     setEditForm({
@@ -120,12 +141,47 @@ export default function AdminPartidos() {
       stadium: m.stadium ?? '',
       date: toLocalInputValue(m.date),
     });
-    // Load events for this match
-    setEventsLoading(true);
-    getMatchEvents(m.id).then((ev) => {
-      setEvents(ev);
-      setEventsLoading(false);
-    });
+    setAddingEvent(false);
+    setEventForm({ type: 'goal', minute: '', team: '', playerName: '', playerInName: '', assistName: '', period: '1' });
+    reloadEvents(m.id);
+  };
+
+  const handleAddEvent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editing || !eventForm.minute || !eventForm.team) return;
+    setSavingEvent(true);
+    try {
+      await createMatchEventAdmin(editing.id, {
+        type: eventForm.type,
+        minute: parseInt(eventForm.minute),
+        team: eventForm.team,
+        playerName: eventForm.playerName || null,
+        playerInName: eventForm.playerInName || null,
+        assistName: eventForm.assistName || null,
+        detail: null,
+        period: parseInt(eventForm.period),
+      });
+      setEventForm({ type: 'goal', minute: '', team: '', playerName: '', playerInName: '', assistName: '', period: '1' });
+      setAddingEvent(false);
+      reloadEvents(editing.id);
+      // Refresh match list to get updated score
+      await load();
+    } catch {
+      showFlash('Error al agregar el evento.', true);
+    } finally {
+      setSavingEvent(false);
+    }
+  };
+
+  const handleDeleteEvent = async (eventId: string) => {
+    if (!editing) return;
+    try {
+      await deleteMatchEventAdmin(editing.id, eventId);
+      reloadEvents(editing.id);
+      await load();
+    } catch {
+      showFlash('Error al eliminar el evento.', true);
+    }
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -358,32 +414,104 @@ export default function AdminPartidos() {
               <input type="datetime-local" className={inputClass} value={editForm.date} onChange={(e) => setEditForm({ ...editForm, date: e.target.value })} />
             </div>
 
-            {/* ── Eventos del Partido (auto-sync desde ESPN) ── */}
-            <div className="border-t border-neutral-800 pt-4 mt-2">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-riverRed mb-1 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-riverRed" />
-                Eventos del partido
-              </h3>
-              <p className="text-[10px] text-neutral-600 mb-3">
-                Los eventos se importan automáticamente desde ESPN.
-              </p>
+            {/* ── Eventos del Partido ── */}
+            <div className="border-t border-neutral-800 pt-4 mt-2 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-riverRed flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-riverRed" />
+                  Eventos del partido
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setAddingEvent((v) => !v)}
+                  className="flex items-center gap-1.5 text-xs bg-riverRed/10 hover:bg-riverRed/20 border border-riverRed/30 text-riverRed px-3 py-1.5 rounded-lg transition-all font-semibold"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  {addingEvent ? 'Cancelar' : 'Agregar evento'}
+                </button>
+              </div>
 
+              {/* Formulario nuevo evento */}
+              {addingEvent && (
+                <form onSubmit={handleAddEvent} className="bg-neutral-950 border border-neutral-800 rounded-xl p-4 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={labelClass}>Tipo</label>
+                      <select className={inputClass} value={eventForm.type} onChange={(e) => setEventForm({ ...eventForm, type: e.target.value })}>
+                        <option value="goal">⚽ Gol</option>
+                        <option value="own-goal">🥅 Gol en contra</option>
+                        <option value="penalty-goal">🎯 Penal convertido</option>
+                        <option value="yellow-card">🟡 Tarjeta amarilla</option>
+                        <option value="red-card">🔴 Tarjeta roja</option>
+                        <option value="substitution">🔄 Cambio</option>
+                        <option value="var">📺 VAR</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className={labelClass}>Minuto</label>
+                      <input type="number" min="1" max="120" required className={inputClass} placeholder="45" value={eventForm.minute} onChange={(e) => setEventForm({ ...eventForm, minute: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className={labelClass}>Equipo</label>
+                      <select className={inputClass} value={eventForm.team} onChange={(e) => setEventForm({ ...eventForm, team: e.target.value })} required>
+                        <option value="">Seleccionar…</option>
+                        {editing && <option value={editing.homeTeam}>{editing.homeTeam}</option>}
+                        {editing && <option value={editing.awayTeam}>{editing.awayTeam}</option>}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={labelClass}>Período</label>
+                      <select className={inputClass} value={eventForm.period} onChange={(e) => setEventForm({ ...eventForm, period: e.target.value })}>
+                        <option value="1">1er tiempo</option>
+                        <option value="2">2do tiempo</option>
+                        <option value="3">Prórroga</option>
+                        <option value="4">Penales</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className={labelClass}>
+                        {eventForm.type === 'substitution' ? 'Sale' : 'Jugador'}
+                      </label>
+                      <input className={inputClass} placeholder="Ej: Borré" value={eventForm.playerName} onChange={(e) => setEventForm({ ...eventForm, playerName: e.target.value })} />
+                    </div>
+                    {eventForm.type === 'substitution' ? (
+                      <div>
+                        <label className={labelClass}>Entra</label>
+                        <input className={inputClass} placeholder="Ej: Aliendro" value={eventForm.playerInName} onChange={(e) => setEventForm({ ...eventForm, playerInName: e.target.value })} />
+                      </div>
+                    ) : (
+                      <div>
+                        <label className={labelClass}>Asistencia</label>
+                        <input className={inputClass} placeholder="Ej: De La Cruz" value={eventForm.assistName} onChange={(e) => setEventForm({ ...eventForm, assistName: e.target.value })} />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex justify-end">
+                    <button type="submit" disabled={savingEvent} className="bg-riverRed hover:bg-red-700 disabled:bg-neutral-800 px-4 py-2 rounded-xl text-xs font-bold transition-all">
+                      {savingEvent ? 'Guardando…' : 'Guardar evento'}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* Lista de eventos */}
               {eventsLoading ? (
                 <div className="text-center py-4">
                   <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-riverRed mx-auto" />
                 </div>
               ) : events.length === 0 ? (
                 <p className="text-xs text-neutral-500 text-center py-3 bg-neutral-950 border border-neutral-800 rounded-xl">
-                  Sin eventos registrados. Se importarán automáticamente cuando finalice el partido.
+                  Sin eventos. Agregá uno con el botón de arriba o se importarán desde ESPN.
                 </p>
               ) : (
                 <div className="space-y-1.5 max-h-56 overflow-y-auto">
                   {events.map((ev) => (
-                    <div key={ev.id} className="flex items-center gap-2 bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs">
+                    <div key={ev.id} className="flex items-center gap-2 bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs group">
                       <span className="font-bold text-neutral-500 tabular-nums w-8">{ev.minute}'</span>
                       <span className={`font-bold uppercase tracking-wider text-[10px] ${
                         ev.type.includes('goal') ? 'text-green-400' :
-                        ev.type.includes('card') ? (ev.type === 'yellow-card' ? 'text-yellow-400' : 'text-red-400') :
+                        ev.type === 'yellow-card' ? 'text-yellow-400' :
+                        ev.type === 'red-card' ? 'text-red-400' :
                         ev.type === 'substitution' ? 'text-blue-400' :
                         ev.type === 'var' ? 'text-purple-400' : 'text-neutral-400'
                       }`}>
@@ -394,7 +522,15 @@ export default function AdminPartidos() {
                         {ev.type === 'substitution' && ev.playerInName ? ` → ${ev.playerInName}` : ''}
                         {ev.assistName ? ` (${ev.assistName})` : ''}
                       </span>
-                      <span className="text-[10px] text-neutral-600 truncate max-w-[80px]">{ev.team}</span>
+                      <span className="text-[10px] text-neutral-600 truncate max-w-[70px]">{ev.team}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteEvent(ev.id)}
+                        className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-950/40 hover:text-riverRed text-neutral-600 transition-all"
+                        title="Eliminar evento"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
                     </div>
                   ))}
                 </div>

@@ -95,6 +95,21 @@ export class AuthService {
     return { message: 'Cuenta eliminada.' };
   }
 
+  // ESTADÍSTICAS DE USUARIOS (para admin dashboard)
+  async getUserStats() {
+    const now = new Date();
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const [total, newThisWeek] = await Promise.all([
+      this.prisma.user.count(),
+      this.prisma.user.count({ where: { created_at: { gte: startOfWeek } } }),
+    ]);
+
+    return { total, newThisWeek };
+  }
+
   // RANKING
   async getTopRanking() {
     const users = await this.prisma.user.findMany({

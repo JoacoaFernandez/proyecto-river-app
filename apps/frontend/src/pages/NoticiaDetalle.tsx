@@ -380,9 +380,22 @@ export default function NoticiaDetalle() {
           </div>
 
           {/* Cuerpo */}
-          <div className="space-y-4 text-[15px] leading-relaxed text-neutral-200">
-            {bodyParagraphs.map((p, idx) => renderParagraph(p, idx))}
-          </div>
+          {news.body.trimStart().startsWith('<') ? (
+            <div
+              className="prose prose-invert prose-neutral prose-sm md:prose-base max-w-none
+                prose-headings:font-black prose-headings:text-white
+                prose-p:text-neutral-200 prose-p:leading-relaxed
+                prose-a:text-riverRed prose-a:no-underline hover:prose-a:underline
+                prose-blockquote:border-riverRed prose-blockquote:text-neutral-400
+                prose-strong:text-white prose-li:text-neutral-200
+                prose-hr:border-neutral-800"
+              dangerouslySetInnerHTML={{ __html: news.body }}
+            />
+          ) : (
+            <div className="space-y-4 text-[15px] leading-relaxed text-neutral-200">
+              {bodyParagraphs.map((p, idx) => renderParagraph(p, idx))}
+            </div>
+          )}
 
           {/* Link a la fuente original */}
           {news.url && (
