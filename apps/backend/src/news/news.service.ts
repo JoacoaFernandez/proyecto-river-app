@@ -165,12 +165,13 @@ export class NewsService {
   async getComments(newsId: string) {
     await this.findOne(newsId);
     return this.prisma.comment.findMany({
-      where: { newsId, parentId: null },
+      where: { newsId, parentId: null, hidden: false },
       orderBy: { createdAt: 'asc' },
       include: {
         user: { select: { id: true, display_name: true, avatar_url: true } },
         _count: { select: { likes: true } },
         replies: {
+          where: { hidden: false },
           orderBy: { createdAt: 'asc' },
           include: {
             user: { select: { id: true, display_name: true, avatar_url: true } },
@@ -183,6 +184,8 @@ export class NewsService {
 
   async addComment(newsId: string, userId: string, body: string, parentId?: string | null) {
     await this.findOne(newsId);
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (user?.isBanned) throw new ForbiddenException('Tu cuenta está suspendida y no podés comentar.');
     return this.prisma.comment.create({
       data: { newsId, userId, body, parentId: parentId ?? null },
       include: {
@@ -255,14 +258,62 @@ export class NewsService {
 
   // ── COMENTARIOS — THREADS ─────────────────────────────────────────────────────
 
+  async getAllCommentsAdmin() {
+    return this.prisma.comment.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      include: {
+        user: { select: { id: true, display_name: true, avatar_url: true, isBanned: true } },
+        news: { select: { id: true, title: true } },
+      },
+    });
+  }
+
   async getReportedComments() {
     return this.prisma.comment.findMany({
       where: { reportedAt: { not: null } },
       orderBy: { reportedAt: 'desc' },
       include: {
-        user: { select: { id: true, display_name: true, avatar_url: true } },
+        user: { select: { id: true, display_name: true, avatar_url: true, isBanned: true } },
         news: { select: { id: true, title: true } },
       },
+    });
+  }
+
+  async hideComment(commentId: string) {
+    return this.prisma.comment.update({
+      where: { id: commentId },
+      data: { hidden: true, reportedAt: null },
+    });
+  }
+
+  async unhideComment(commentId: string) {
+    return this.prisma.comment.update({
+      where: { id: commentId },
+      data: { hidden: false },
+    });
+  }
+
+  async dismissReport(commentId: string) {
+    return this.prisma.comment.update({
+      where: { id: commentId },
+      data: { reportedAt: null },
+    });
+  }
+
+  async banUser(userId: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { isBanned: true },
+      select: { id: true, display_name: true, isBanned: true },
+    });
+  }
+
+  async unbanUser(userId: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { isBanned: false },
+      select: { id: true, display_name: true, isBanned: true },
     });
   }
 

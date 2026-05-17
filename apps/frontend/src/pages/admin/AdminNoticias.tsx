@@ -9,6 +9,12 @@ import {
   deleteNews,
   getNews,
   getReportedComments,
+  getAllCommentsAdmin,
+  hideComment,
+  unhideComment,
+  dismissReport,
+  banUser,
+  unbanUser,
   triggerAiNews,
   updateNews,
 } from '../../services/news.service';
@@ -20,12 +26,15 @@ const inputClass =
 const labelClass =
   'block text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-1.5';
 
-type Tab = 'noticias' | 'reportados';
+type Tab = 'noticias' | 'moderacion';
+type ModeFilter = 'all' | 'reported' | 'hidden';
 
 export default function AdminNoticias() {
   const [tab, setTab] = useState<Tab>('noticias');
   const [news, setNews] = useState<NewsItem[]>([]);
   const [reported, setReported] = useState<ReportedComment[]>([]);
+  const [allComments, setAllComments] = useState<ReportedComment[]>([]);
+  const [modeFilter, setModeFilter] = useState<ModeFilter>('reported');
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -57,9 +66,10 @@ export default function AdminNoticias() {
 
   const loadNews = async () => {
     setLoading(true);
-    const [list, rep] = await Promise.all([getNews(), getReportedComments()]);
+    const [list, rep, all] = await Promise.all([getNews(), getReportedComments(), getAllCommentsAdmin()]);
     setNews(list);
     setReported(rep);
+    setAllComments(all);
     setLoading(false);
   };
 
@@ -202,19 +212,19 @@ export default function AdminNoticias() {
 
       {/* Tabs */}
       <div className="flex gap-2 border-b border-neutral-800 pb-0">
-        {(['noticias', 'reportados'] as Tab[]).map((t) => (
+        {([['noticias', 'Noticias'], ['moderacion', 'Moderación']] as [Tab, string][]).map(([t, label]) => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-2.5 text-sm font-semibold rounded-t-xl transition-all border-b-2 -mb-px ${
               tab === t ? 'border-riverRed text-white' : 'border-transparent text-neutral-500 hover:text-white'
             }`}>
-            {t === 'noticias' ? 'Noticias' : (
+            {t === 'moderacion' ? (
               <span className="flex items-center gap-1.5">
-                <Flag className="w-3.5 h-3.5" /> Reportados
+                <Flag className="w-3.5 h-3.5" /> {label}
                 {reported.length > 0 && (
                   <span className="bg-riverRed text-white text-[9px] font-black px-1.5 py-0.5 rounded-full">{reported.length}</span>
                 )}
               </span>
-            )}
+            ) : label}
           </button>
         ))}
       </div>
@@ -340,31 +350,109 @@ export default function AdminNoticias() {
         </>
       )}
 
-      {tab === 'reportados' && (
-        <div className="space-y-3">
-          {reported.length === 0 ? (
-            <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-12 text-center text-sm text-neutral-500">
-              No hay comentarios reportados. ✅
-            </div>
-          ) : reported.map((r) => (
-            <div key={r.id} className="bg-neutral-900 border border-red-900/40 rounded-2xl p-4 flex flex-col gap-2">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-semibold">{r.user.display_name}</span>
-                    <span className="text-[11px] text-neutral-500">en</span>
-                    <Link to={`/noticias/${r.news.id}`} className="text-[11px] text-riverRed hover:underline truncate max-w-[200px]">{r.news.title}</Link>
-                    <span className="text-[10px] text-neutral-600">· {timeAgo(r.reportedAt)}</span>
-                  </div>
-                  <p className="text-sm text-neutral-300">{r.body}</p>
+      {tab === 'moderacion' && (
+        <div className="space-y-4">
+          {/* Filtros */}
+          <div className="flex gap-2">
+            {([['reported', 'Reportados'], ['hidden', 'Ocultos'], ['all', 'Todos']] as [ModeFilter, string][]).map(([f, label]) => (
+              <button key={f} onClick={() => setModeFilter(f)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
+                  modeFilter === f
+                    ? 'bg-riverRed/20 border-riverRed/40 text-riverRed'
+                    : 'border-neutral-800 text-neutral-400 hover:text-white'
+                }`}>
+                {label}
+                {f === 'reported' && reported.length > 0 && (
+                  <span className="ml-1.5 bg-riverRed text-white text-[9px] font-black px-1.5 py-0.5 rounded-full">{reported.length}</span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Lista */}
+          {(() => {
+            const list = modeFilter === 'reported'
+              ? reported
+              : modeFilter === 'hidden'
+                ? allComments.filter((c) => c.hidden)
+                : allComments;
+
+            if (list.length === 0) {
+              return (
+                <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-12 text-center text-sm text-neutral-500">
+                  {modeFilter === 'reported' ? 'No hay comentarios reportados. ✅' :
+                   modeFilter === 'hidden' ? 'No hay comentarios ocultos.' :
+                   'No hay comentarios aún.'}
                 </div>
-                <button onClick={() => handleDeleteReported(r.newsId, r.id)}
-                  className="flex-shrink-0 text-xs bg-red-950/40 hover:bg-red-950/70 border border-red-900/40 text-red-300 px-3 py-1.5 rounded-lg transition-all">
-                  Eliminar
-                </button>
+              );
+            }
+
+            return (
+              <div className="space-y-2">
+                {list.map((r) => (
+                  <div key={r.id} className={`bg-neutral-900 rounded-2xl p-4 border ${
+                    r.hidden ? 'border-neutral-700 opacity-60' :
+                    r.reportedAt ? 'border-red-900/40' : 'border-neutral-800'
+                  }`}>
+                    <div className="flex items-start gap-3">
+                      <div className="flex-1 min-w-0">
+                        {/* Meta */}
+                        <div className="flex flex-wrap items-center gap-2 mb-1.5 text-[11px]">
+                          <span className={`font-bold ${r.user.isBanned ? 'text-riverRed line-through' : 'text-white'}`}>
+                            {r.user.display_name}
+                          </span>
+                          {r.user.isBanned && <span className="text-[9px] bg-red-950/60 text-red-400 border border-red-900/40 px-1.5 py-0.5 rounded-full font-bold">BANEADO</span>}
+                          <span className="text-neutral-500">en</span>
+                          <Link to={`/noticias/${r.news.id}`} className="text-riverRed hover:underline truncate max-w-[180px]">{r.news.title}</Link>
+                          <span className="text-neutral-600">· {timeAgo(r.reportedAt ?? '')}</span>
+                          {r.reportedAt && <span className="text-[9px] bg-yellow-950/40 text-yellow-400 border border-yellow-900/40 px-1.5 py-0.5 rounded-full font-bold">REPORTADO</span>}
+                          {r.hidden && <span className="text-[9px] bg-neutral-800 text-neutral-400 border border-neutral-700 px-1.5 py-0.5 rounded-full font-bold">OCULTO</span>}
+                        </div>
+                        {/* Cuerpo */}
+                        <p className="text-sm text-neutral-300 leading-relaxed">{r.body}</p>
+                      </div>
+
+                      {/* Acciones */}
+                      <div className="flex flex-col gap-1.5 flex-shrink-0">
+                        {r.reportedAt && (
+                          <button onClick={async () => { await dismissReport(r.id); await loadNews(); }}
+                            className="text-[11px] bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-neutral-300 px-2.5 py-1 rounded-lg transition-all whitespace-nowrap">
+                            Desestimar
+                          </button>
+                        )}
+                        {r.hidden ? (
+                          <button onClick={async () => { await unhideComment(r.id); await loadNews(); }}
+                            className="text-[11px] bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-green-400 px-2.5 py-1 rounded-lg transition-all">
+                            Mostrar
+                          </button>
+                        ) : (
+                          <button onClick={async () => { await hideComment(r.id); await loadNews(); }}
+                            className="text-[11px] bg-neutral-800 hover:bg-yellow-950/40 border border-neutral-700 hover:border-yellow-700 text-neutral-300 hover:text-yellow-400 px-2.5 py-1 rounded-lg transition-all">
+                            Ocultar
+                          </button>
+                        )}
+                        {r.user.isBanned ? (
+                          <button onClick={async () => { await unbanUser(r.userId); await loadNews(); }}
+                            className="text-[11px] bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-green-400 px-2.5 py-1 rounded-lg transition-all">
+                            Desbanear
+                          </button>
+                        ) : (
+                          <button onClick={async () => { if (!confirm(`¿Banear a ${r.user.display_name}?`)) return; await banUser(r.userId); await loadNews(); }}
+                            className="text-[11px] bg-neutral-800 hover:bg-orange-950/40 border border-neutral-700 hover:border-orange-700 text-neutral-300 hover:text-orange-400 px-2.5 py-1 rounded-lg transition-all">
+                            Banear
+                          </button>
+                        )}
+                        <button onClick={() => handleDeleteReported(r.newsId, r.id)}
+                          className="text-[11px] bg-neutral-800 hover:bg-red-950/40 border border-neutral-700 hover:border-riverRed text-neutral-300 hover:text-riverRed px-2.5 py-1 rounded-lg transition-all">
+                          Eliminar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
-          ))}
+            );
+          })()}
         </div>
       )}
 

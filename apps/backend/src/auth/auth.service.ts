@@ -95,6 +95,33 @@ export class AuthService {
     return { message: 'Cuenta eliminada.' };
   }
 
+  // LISTAR TODOS LOS USUARIOS (admin)
+  async getAllUsers() {
+    return this.prisma.user.findMany({
+      select: {
+        id: true,
+        email: true,
+        display_name: true,
+        avatar_url: true,
+        role: true,
+        isBanned: true,
+        points: true,
+        created_at: true,
+        _count: { select: { predictions: true, comments: true } },
+      },
+      orderBy: { created_at: 'desc' },
+    });
+  }
+
+  // CAMBIAR ROL DE USUARIO (admin)
+  async updateUserRole(userId: string, role: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { role },
+      select: { id: true, display_name: true, role: true },
+    });
+  }
+
   // ESTADÍSTICAS DE USUARIOS (para admin dashboard)
   async getUserStats() {
     const now = new Date();

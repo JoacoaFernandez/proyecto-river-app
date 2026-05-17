@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
-import { X, Plus, Trash2 } from 'lucide-react';
-import type { Match, MatchEvent } from '../../services/matches.service';
+import { X, Plus, Trash2, Image } from 'lucide-react';
+import type { Match, MatchEvent, MatchStatistics } from '../../services/matches.service';
 import {
   createMatchAdmin,
   deleteMatchAdmin,
   getAllMatchesAdmin,
   updateMatchAdmin,
+  updateMatchStatistics,
+  updateMatchPhotos,
   getMatchEvents,
   createMatchEventAdmin,
   deleteMatchEventAdmin,
@@ -77,6 +79,29 @@ export default function AdminPartidos() {
   });
   const [savingEvent, setSavingEvent] = useState(false);
 
+  // Photos
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [photoInput, setPhotoInput] = useState('');
+  const [savingPhotos, setSavingPhotos] = useState(false);
+
+  // Statistics
+  type StatKey = keyof Omit<MatchStatistics, 'homeTeam' | 'awayTeam'>;
+  const STAT_FIELDS: { key: StatKey; label: string }[] = [
+    { key: 'possession', label: 'Posesión (%)' },
+    { key: 'totalShots', label: 'Tiros totales' },
+    { key: 'shotsOnTarget', label: 'Tiros al arco' },
+    { key: 'corners', label: 'Córners' },
+    { key: 'fouls', label: 'Faltas' },
+    { key: 'yellowCards', label: 'Tarjetas amarillas' },
+    { key: 'redCards', label: 'Tarjetas rojas' },
+    { key: 'saves', label: 'Atajadas' },
+    { key: 'offsides', label: 'Fuera de juego' },
+  ];
+  const emptyStats = () =>
+    Object.fromEntries(STAT_FIELDS.map(({ key }) => [key, { home: '', away: '' }])) as Record<StatKey, { home: string; away: string }>;
+  const [statsForm, setStatsForm] = useState<Record<StatKey, { home: string; away: string }>>(emptyStats());
+  const [savingStats, setSavingStats] = useState(false);
+
   const showFlash = (msg: string, error = false) => {
     setFlash({ msg, error });
     setTimeout(() => setFlash(null), 4000);
@@ -143,7 +168,23 @@ export default function AdminPartidos() {
     });
     setAddingEvent(false);
     setEventForm({ type: 'goal', minute: '', team: '', playerName: '', playerInName: '', assistName: '', period: '1' });
+    setPhotos(Array.isArray(m.photos) ? m.photos : []);
+    setPhotoInput('');
     reloadEvents(m.id);
+    // Init stats form from existing data
+    const existing = m.statistics as any;
+    if (existing) {
+      const filled = emptyStats();
+      for (const { key } of STAT_FIELDS) {
+        filled[key] = {
+          home: existing[key]?.home?.toString() ?? '',
+          away: existing[key]?.away?.toString() ?? '',
+        };
+      }
+      setStatsForm(filled);
+    } else {
+      setStatsForm(emptyStats());
+    }
   };
 
   const handleAddEvent = async (e: React.FormEvent) => {
@@ -173,6 +214,29 @@ export default function AdminPartidos() {
     }
   };
 
+  const handleSaveStats = async () => {
+    if (!editing) return;
+    setSavingStats(true);
+    try {
+      const built: any = {
+        homeTeam: editing.homeTeam,
+        awayTeam: editing.awayTeam,
+      };
+      for (const { key } of STAT_FIELDS) {
+        const h = statsForm[key].home !== '' ? parseFloat(statsForm[key].home) : null;
+        const a = statsForm[key].away !== '' ? parseFloat(statsForm[key].away) : null;
+        built[key] = { home: h, away: a };
+      }
+      await updateMatchStatistics(editing.id, built);
+      showFlash('✅ Estadísticas guardadas.');
+      await load();
+    } catch {
+      showFlash('Error al guardar estadísticas.', true);
+    } finally {
+      setSavingStats(false);
+    }
+  };
+
   const handleDeleteEvent = async (eventId: string) => {
     if (!editing) return;
     try {
@@ -181,6 +245,31 @@ export default function AdminPartidos() {
       await load();
     } catch {
       showFlash('Error al eliminar el evento.', true);
+    }
+  };
+
+  const handleAddPhoto = () => {
+    const url = photoInput.trim();
+    if (!url || photos.includes(url)) return;
+    setPhotos((prev) => [...prev, url]);
+    setPhotoInput('');
+  };
+
+  const handleRemovePhoto = (url: string) => {
+    setPhotos((prev) => prev.filter((p) => p !== url));
+  };
+
+  const handleSavePhotos = async () => {
+    if (!editing) return;
+    setSavingPhotos(true);
+    try {
+      await updateMatchPhotos(editing.id, photos);
+      showFlash('✅ Fotos guardadas.');
+      await load();
+    } catch {
+      showFlash('Error al guardar las fotos.', true);
+    } finally {
+      setSavingPhotos(false);
     }
   };
 
@@ -546,6 +635,127 @@ export default function AdminPartidos() {
               </button>
             </div>
           </form>
+
+          {/* ── Estadísticas del Partido ── */}
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 space-y-4">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-riverRed flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-riverRed" />
+              Estadísticas del partido
+            </h3>
+            <p className="text-[10px] text-neutral-600 -mt-2">
+              Se completan automáticamente desde ESPN. Podés editarlas manualmente si hace falta.
+            </p>
+
+            {/* Header columnas */}
+            <div className="grid grid-cols-[1fr_80px_80px] gap-2 text-[10px] font-bold uppercase tracking-widest text-neutral-500 px-1">
+              <div>Estadística</div>
+              <div className="text-center">{editing?.homeTeam.split(' ')[0]}</div>
+              <div className="text-center">{editing?.awayTeam.split(' ')[0]}</div>
+            </div>
+
+            <div className="space-y-2">
+              {STAT_FIELDS.map(({ key, label }) => (
+                <div key={key} className="grid grid-cols-[1fr_80px_80px] gap-2 items-center">
+                  <span className="text-xs text-neutral-400">{label}</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step={key === 'possession' ? '0.1' : '1'}
+                    placeholder="—"
+                    value={statsForm[key]?.home ?? ''}
+                    onChange={(e) => setStatsForm((prev) => ({ ...prev, [key]: { ...prev[key], home: e.target.value } }))}
+                    className="bg-neutral-950 border border-neutral-800 focus:border-riverRed text-white rounded-lg px-2 py-1.5 text-xs text-center outline-none transition-all w-full"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    step={key === 'possession' ? '0.1' : '1'}
+                    placeholder="—"
+                    value={statsForm[key]?.away ?? ''}
+                    onChange={(e) => setStatsForm((prev) => ({ ...prev, [key]: { ...prev[key], away: e.target.value } }))}
+                    className="bg-neutral-950 border border-neutral-800 focus:border-riverRed text-white rounded-lg px-2 py-1.5 text-xs text-center outline-none transition-all w-full"
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                onClick={handleSaveStats}
+                disabled={savingStats}
+                className="bg-riverRed hover:bg-red-700 disabled:bg-neutral-800 px-4 py-2 rounded-xl text-xs font-bold transition-all"
+              >
+                {savingStats ? 'Guardando…' : 'Guardar estadísticas'}
+              </button>
+            </div>
+          </div>
+
+          {/* ── Galería de fotos ── */}
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 space-y-4">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-riverRed flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-riverRed" />
+              Galería de fotos
+            </h3>
+            <p className="text-[10px] text-neutral-600 -mt-2">
+              Pegá URLs de imágenes del partido para mostrarlas en la página del evento.
+            </p>
+
+            {/* Input agregar URL */}
+            <div className="flex gap-2">
+              <input
+                type="url"
+                placeholder="https://ejemplo.com/foto.jpg"
+                value={photoInput}
+                onChange={(e) => setPhotoInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddPhoto())}
+                className="flex-1 bg-neutral-950 border border-neutral-800 focus:border-riverRed text-white rounded-xl px-3 py-2 text-xs outline-none transition-all"
+              />
+              <button
+                type="button"
+                onClick={handleAddPhoto}
+                disabled={!photoInput.trim()}
+                className="flex items-center gap-1 bg-riverRed/10 hover:bg-riverRed/20 disabled:opacity-40 border border-riverRed/30 text-riverRed px-3 py-2 rounded-xl text-xs font-semibold transition-all"
+              >
+                <Plus className="w-3.5 h-3.5" /> Agregar
+              </button>
+            </div>
+
+            {/* Thumbnails */}
+            {photos.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-2 py-6 bg-neutral-950 border border-neutral-800 rounded-xl text-neutral-600">
+                <Image className="w-6 h-6" />
+                <span className="text-xs">Sin fotos. Agregá URLs arriba.</span>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto">
+                {photos.map((url) => (
+                  <div key={url} className="relative group rounded-xl overflow-hidden border border-neutral-800 bg-neutral-950 aspect-video">
+                    <img src={url} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.opacity = '0.3'; }} />
+                    <button
+                      type="button"
+                      onClick={() => handleRemovePhoto(url)}
+                      className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 bg-black/70 hover:bg-red-950/80 text-white hover:text-riverRed p-1 rounded-lg transition-all"
+                      title="Eliminar foto"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                onClick={handleSavePhotos}
+                disabled={savingPhotos}
+                className="bg-riverRed hover:bg-red-700 disabled:bg-neutral-800 px-4 py-2 rounded-xl text-xs font-bold transition-all"
+              >
+                {savingPhotos ? 'Guardando…' : `Guardar fotos (${photos.length})`}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

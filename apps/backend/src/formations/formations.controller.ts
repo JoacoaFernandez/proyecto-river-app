@@ -1,5 +1,5 @@
 // apps/backend/src/formations/formations.controller.ts
-import { Controller, Get, Post, Body, Param, Delete, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Delete, Query, UseGuards } from '@nestjs/common';
 import { FormationsService } from './formations.service';
 import { CreateFormationDto } from './dto/create-formation.dto';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -46,6 +46,24 @@ export class FormationsController {
   @ApiOperation({ summary: 'Obtener los detalles de una formación específica' })
   findOne(@Param('id') id: string) {
     return this.formationsService.findOne(id);
+  }
+
+  @Get('match/:matchId')
+  @ApiOperation({ summary: 'Obtener formación guardada para un partido' })
+  getForMatch(@Param('matchId') matchId: string) {
+    return this.formationsService.getForMatch(matchId);
+  }
+
+  @Put('match/:matchId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Guardar/actualizar formación para un partido (admin)' })
+  upsertForMatch(
+    @Param('matchId') matchId: string,
+    @Body() body: { scheme: string; type: string; lineup: any[] },
+  ) {
+    return this.formationsService.upsertForMatch(matchId, body);
   }
 
   @Delete(':id')

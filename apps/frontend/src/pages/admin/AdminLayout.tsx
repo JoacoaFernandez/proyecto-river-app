@@ -1,7 +1,7 @@
 // apps/frontend/src/pages/admin/AdminLayout.tsx
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Calendar, Newspaper, Users, LogOut, ArrowLeft } from 'lucide-react';
+import { LayoutDashboard, Calendar, Newspaper, Users, LogOut, ArrowLeft, Trophy, UserCog } from 'lucide-react';
 import { clearCurrentUser, getCurrentUser, type CurrentUser } from '../../services/me.service';
 
 const navItems = [
@@ -9,6 +9,8 @@ const navItems = [
   { to: '/admin/partidos', label: 'Partidos', Icon: Calendar, end: false },
   { to: '/admin/noticias', label: 'Noticias', Icon: Newspaper, end: false },
   { to: '/admin/plantel', label: 'Plantel', Icon: Users, end: false },
+  { to: '/admin/formaciones', label: 'Formaciones', Icon: Trophy, end: false },
+  { to: '/admin/usuarios', label: 'Usuarios', Icon: UserCog, end: false },
 ];
 
 export default function AdminLayout() {

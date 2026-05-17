@@ -213,6 +213,14 @@ export class MatchesService implements OnModuleInit {
     return this.prisma.match.update({ where: { id }, data: update });
   }
 
+  async updateStatistics(id: string, stats: Record<string, any>) {
+    return this.prisma.match.update({ where: { id }, data: { statistics: stats as any } });
+  }
+
+  async updatePhotos(id: string, photos: string[]) {
+    return this.prisma.match.update({ where: { id }, data: { photos: photos as any } });
+  }
+
   async removeMatch(id: string) {
     return this.prisma.match.delete({ where: { id } });
   }

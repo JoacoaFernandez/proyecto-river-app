@@ -14,6 +14,7 @@ model User {
   display_name    String
   avatar_url      String?
   role            String            @default("user")
+  isBanned        Boolean           @default(false)
   created_at      DateTime          @default(now())
   points          Int               @default(0)
   city            String?
@@ -53,9 +54,11 @@ model Player {
 
 model Formation {
   id       String  @id @default(uuid())
-  matchId  String
+  matchId  String  @unique
   scheme   String
   isLineup Boolean @default(true)
+  type     String  @default("probable")
+  lineup   Json?
   match    Match   @relation(fields: [matchId], references: [id])
 }
 
@@ -86,6 +89,7 @@ model Comment {
   createdAt  DateTime      @default(now())
   parentId   String?
   reportedAt DateTime?
+  hidden     Boolean       @default(false)
   news       News          @relation(fields: [newsId], references: [id], onDelete: Cascade)
   user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   parent     Comment?      @relation("CommentReplies", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -142,6 +146,7 @@ model Match {
   predictions Prediction[]
   events      MatchEvent[]
   statistics  Json?             // ESPN match stats snapshot
+  photos      Json?             // Array of image URLs
   referee     String?           // Árbitro designado
   tvChannel   String?           // Canal de TV que transmite
 }

@@ -139,10 +139,11 @@ export const toggleCommentLike = async (
 export interface ReportedComment {
   id: string;
   body: string;
-  reportedAt: string;
+  reportedAt: string | null;
+  hidden: boolean;
   newsId: string;
   userId: string;
-  user: { id: string; display_name: string; avatar_url: string | null };
+  user: { id: string; display_name: string; avatar_url: string | null; isBanned: boolean };
   news: { id: string; title: string };
 }
 
@@ -153,6 +154,35 @@ export const getReportedComments = async (): Promise<ReportedComment[]> => {
   } catch {
     return [];
   }
+};
+
+export const getAllCommentsAdmin = async (): Promise<ReportedComment[]> => {
+  try {
+    const res = await api.get<ReportedComment[]>('/news/admin/all-comments');
+    return res.data ?? [];
+  } catch {
+    return [];
+  }
+};
+
+export const hideComment = async (commentId: string): Promise<void> => {
+  await api.patch(`/news/comments/${commentId}/hide`);
+};
+
+export const unhideComment = async (commentId: string): Promise<void> => {
+  await api.patch(`/news/comments/${commentId}/unhide`);
+};
+
+export const dismissReport = async (commentId: string): Promise<void> => {
+  await api.patch(`/news/comments/${commentId}/dismiss`);
+};
+
+export const banUser = async (userId: string): Promise<void> => {
+  await api.patch(`/news/users/${userId}/ban`);
+};
+
+export const unbanUser = async (userId: string): Promise<void> => {
+  await api.patch(`/news/users/${userId}/unban`);
 };
 
 // ── Likes ─────────────────────────────────────────────────────────────────────

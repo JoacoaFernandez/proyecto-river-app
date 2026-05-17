@@ -1,7 +1,7 @@
 // apps/frontend/src/pages/admin/AdminDashboard.tsx
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Newspaper, PenLine, Users, Calendar, Globe, FileText, UserPlus } from 'lucide-react';
+import { Newspaper, PenLine, Users, Calendar, Globe, FileText, UserPlus, Edit3, Plus } from 'lucide-react';
 import { getNews } from '../../services/news.service';
 import { getPlayers } from '../../services/players.service';
 import { getLiveDashboard } from '../../services/live.service';
@@ -21,6 +21,7 @@ interface Metrics {
 export default function AdminDashboard() {
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [latestNews, setLatestNews] = useState<any[]>([]);
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -32,6 +33,19 @@ export default function AdminDashboard() {
     ])
       .then(([news, players, dashboard, userStats]) => {
         setLatestNews(news.slice(0, 5));
+        // Actividad editorial: noticias ordenadas por updatedAt
+        const activity = [...news]
+          .sort((a, b) => new Date(b.updatedAt ?? b.createdAt).getTime() - new Date(a.updatedAt ?? a.createdAt).getTime())
+          .slice(0, 8)
+          .map((n) => ({
+            id: n.id,
+            title: n.title,
+            author: n.author?.display_name ?? 'Anónimo',
+            action: new Date(n.updatedAt).getTime() - new Date(n.createdAt).getTime() < 60000 ? 'creó' : 'editó',
+            at: n.updatedAt ?? n.createdAt,
+            status: n.status,
+          }));
+        setRecentActivity(activity);
         setMetrics({
           noticias: news.length,
           publicadas: news.filter((n) => n.status === 'published').length,
@@ -166,6 +180,46 @@ export default function AdminDashboard() {
                 >
                   {n.status}
                 </span>
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Actividad editorial reciente */}
+      <section>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold">Actividad editorial reciente</h2>
+          <Link to="/admin/noticias" className="text-xs text-riverRed font-semibold hover:underline">
+            Ir al editor →
+          </Link>
+        </div>
+
+        {recentActivity.length === 0 ? (
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-8 text-center text-sm text-neutral-500">
+            Sin actividad registrada.
+          </div>
+        ) : (
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden">
+            {recentActivity.map((a, i) => (
+              <Link
+                key={a.id}
+                to={`/admin/noticias`}
+                className={`flex items-center gap-3 px-4 py-3 hover:bg-neutral-800/50 transition-colors ${
+                  i !== recentActivity.length - 1 ? 'border-b border-neutral-800' : ''
+                }`}
+              >
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                  a.action === 'creó' ? 'bg-green-950/40 text-green-400' : 'bg-blue-950/40 text-blue-400'
+                }`}>
+                  {a.action === 'creó' ? <Plus className="w-3.5 h-3.5" /> : <Edit3 className="w-3.5 h-3.5" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="text-xs font-semibold text-neutral-300">{a.author}</span>
+                  <span className="text-xs text-neutral-500"> {a.action} </span>
+                  <span className="text-xs font-semibold truncate">{a.title}</span>
+                </div>
+                <span className="text-[10px] text-neutral-600 flex-shrink-0">{timeAgo(a.at)}</span>
               </Link>
             ))}
           </div>

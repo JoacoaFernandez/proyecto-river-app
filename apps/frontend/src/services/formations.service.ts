@@ -72,3 +72,37 @@ export const getFormationHistory = async (limit = 12): Promise<FormHistoryEntry[
     return [];
   }
 };
+
+export interface SavedFormation {
+  id: string;
+  matchId: string;
+  scheme: string;
+  type: 'probable' | 'confirmada';
+  lineup: SavedSlot[] | null;
+}
+
+export interface SavedSlot {
+  x: number;
+  y: number;
+  role: SlotRole;
+  playerId: string | null;
+}
+
+export const getFormationForMatch = async (matchId: string): Promise<SavedFormation | null> => {
+  try {
+    const { data } = await api.get<SavedFormation>(`/formations/match/${matchId}`);
+    return data ?? null;
+  } catch {
+    return null;
+  }
+};
+
+export const saveFormationForMatch = async (
+  matchId: string,
+  scheme: string,
+  type: 'probable' | 'confirmada',
+  lineup: SavedSlot[],
+): Promise<SavedFormation> => {
+  const { data } = await api.put<SavedFormation>(`/formations/match/${matchId}`, { scheme, type, lineup });
+  return data;
+};
