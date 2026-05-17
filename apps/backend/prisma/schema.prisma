@@ -54,9 +54,11 @@ model Player {
 
 model Formation {
   id       String  @id @default(uuid())
-  matchId  String
+  matchId  String  @unique
   scheme   String
   isLineup Boolean @default(true)
+  type     String  @default("probable")
+  lineup   Json?
   match    Match   @relation(fields: [matchId], references: [id])
 }
 

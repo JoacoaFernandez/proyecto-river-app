@@ -115,6 +115,20 @@ export class FormationsService {
     return formation;
   }
 
+  async getForMatch(matchId: string) {
+    return this.prisma.formation.findUnique({ where: { matchId } });
+  }
+
+  async upsertForMatch(matchId: string, data: { scheme: string; type: string; lineup: any[] }) {
+    const match = await this.prisma.match.findUnique({ where: { id: matchId } });
+    if (!match) throw new NotFoundException(`Partido ${matchId} no encontrado.`);
+    return this.prisma.formation.upsert({
+      where: { matchId },
+      update: { scheme: data.scheme, type: data.type, lineup: data.lineup as any },
+      create: { matchId, scheme: data.scheme, type: data.type, lineup: data.lineup as any, isLineup: true },
+    });
+  }
+
   async remove(id: string) {
     await this.findOne(id);
     return this.prisma.formation.delete({ where: { id } });

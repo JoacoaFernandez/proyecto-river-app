@@ -23,6 +23,7 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminNoticias from './pages/admin/AdminNoticias';
 import AdminPartidos from './pages/admin/AdminPartidos';
 import AdminPlantel from './pages/admin/AdminPlantel';
+import AdminFormaciones from './pages/admin/AdminFormaciones';
 import Layout from './components/Layout';
 import RequireAuth from './components/RequireAuth';
 import RequireAdmin from './components/RequireAdmin';
@@ -88,6 +89,7 @@ export default function App() {
           <Route path="partidos" element={<AdminPartidos />} />
           <Route path="noticias" element={<AdminNoticias />} />
           <Route path="plantel" element={<AdminPlantel />} />
+          <Route path="formaciones" element={<AdminFormaciones />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />
