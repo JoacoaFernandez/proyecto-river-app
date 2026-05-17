@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { X, Plus, Flag } from 'lucide-react';
+import RichTextEditor from '../../components/RichTextEditor';
 import {
   createNews,
   deleteComment,
@@ -257,7 +258,7 @@ export default function AdminNoticias() {
               )}
               <div>
                 <label className={labelClass}>Cuerpo</label>
-                <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Escribí el contenido de la nota…" rows={8} className={`${inputClass} resize-y`} required />
+                <RichTextEditor value={body} onChange={setBody} placeholder="Escribí el contenido de la nota…" />
               </div>
               <div>
                 <label className={labelClass}>Imagen de portada (URL)</label>
@@ -411,7 +412,7 @@ export default function AdminNoticias() {
 
             <div>
               <label className={labelClass}>Cuerpo</label>
-              <textarea className={`${inputClass} resize-y`} value={editForm.body} onChange={(e) => setEditForm({ ...editForm, body: e.target.value })} rows={12} required />
+              <RichTextEditor value={editForm.body} onChange={(html) => setEditForm({ ...editForm, body: html })} minHeight="320px" />
             </div>
 
             <label className="flex items-center gap-3 cursor-pointer">

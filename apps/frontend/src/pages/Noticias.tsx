@@ -8,9 +8,9 @@ import { timeAgo } from '../utils/time';
 const PAGE_SIZE = 12;
 
 function excerpt(body: string, maxChars = 180) {
-  const clean = body.replace(/\s+/g, ' ').trim();
-  if (clean.length <= maxChars) return clean;
-  return clean.slice(0, maxChars).trimEnd() + '…';
+  const stripped = body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  if (stripped.length <= maxChars) return stripped;
+  return stripped.slice(0, maxChars).trimEnd() + '…';
 }
 
 export default function Noticias() {
