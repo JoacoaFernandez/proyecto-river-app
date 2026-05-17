@@ -45,6 +45,7 @@ export interface Match {
   aiPrediction?: string | null;
   events?: MatchEvent[];
   statistics?: MatchStatistics | null;
+  photos?: string[] | null;
 }
 
 export const getLatestMatch = async () => {
@@ -109,6 +110,10 @@ export const deleteMatchAdmin = async (id: string): Promise<void> => {
 
 export const updateMatchStatistics = async (id: string, stats: MatchStatistics): Promise<void> => {
   await api.patch(`/matches/${id}/statistics`, stats);
+};
+
+export const updateMatchPhotos = async (id: string, photos: string[]): Promise<void> => {
+  await api.patch(`/matches/${id}/photos`, { photos });
 };
 
 export const getMatchById = async (id: string): Promise<Match | null> => {

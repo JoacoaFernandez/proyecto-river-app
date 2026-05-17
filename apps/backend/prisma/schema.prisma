@@ -146,6 +146,7 @@ model Match {
   predictions Prediction[]
   events      MatchEvent[]
   statistics  Json?             // ESPN match stats snapshot
+  photos      Json?             // Array of image URLs
   referee     String?           // Árbitro designado
   tvChannel   String?           // Canal de TV que transmite
 }

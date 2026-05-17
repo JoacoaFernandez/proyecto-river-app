@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X, Plus, Trash2 } from 'lucide-react';
+import { X, Plus, Trash2, Image } from 'lucide-react';
 import type { Match, MatchEvent, MatchStatistics } from '../../services/matches.service';
 import {
   createMatchAdmin,
@@ -7,6 +7,7 @@ import {
   getAllMatchesAdmin,
   updateMatchAdmin,
   updateMatchStatistics,
+  updateMatchPhotos,
   getMatchEvents,
   createMatchEventAdmin,
   deleteMatchEventAdmin,
@@ -77,6 +78,11 @@ export default function AdminPartidos() {
     period: '1',
   });
   const [savingEvent, setSavingEvent] = useState(false);
+
+  // Photos
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [photoInput, setPhotoInput] = useState('');
+  const [savingPhotos, setSavingPhotos] = useState(false);
 
   // Statistics
   type StatKey = keyof Omit<MatchStatistics, 'homeTeam' | 'awayTeam'>;
@@ -162,6 +168,8 @@ export default function AdminPartidos() {
     });
     setAddingEvent(false);
     setEventForm({ type: 'goal', minute: '', team: '', playerName: '', playerInName: '', assistName: '', period: '1' });
+    setPhotos(Array.isArray(m.photos) ? m.photos : []);
+    setPhotoInput('');
     reloadEvents(m.id);
     // Init stats form from existing data
     const existing = m.statistics as any;
@@ -237,6 +245,31 @@ export default function AdminPartidos() {
       await load();
     } catch {
       showFlash('Error al eliminar el evento.', true);
+    }
+  };
+
+  const handleAddPhoto = () => {
+    const url = photoInput.trim();
+    if (!url || photos.includes(url)) return;
+    setPhotos((prev) => [...prev, url]);
+    setPhotoInput('');
+  };
+
+  const handleRemovePhoto = (url: string) => {
+    setPhotos((prev) => prev.filter((p) => p !== url));
+  };
+
+  const handleSavePhotos = async () => {
+    if (!editing) return;
+    setSavingPhotos(true);
+    try {
+      await updateMatchPhotos(editing.id, photos);
+      showFlash('✅ Fotos guardadas.');
+      await load();
+    } catch {
+      showFlash('Error al guardar las fotos.', true);
+    } finally {
+      setSavingPhotos(false);
     }
   };
 
@@ -654,6 +687,72 @@ export default function AdminPartidos() {
                 className="bg-riverRed hover:bg-red-700 disabled:bg-neutral-800 px-4 py-2 rounded-xl text-xs font-bold transition-all"
               >
                 {savingStats ? 'Guardando…' : 'Guardar estadísticas'}
+              </button>
+            </div>
+          </div>
+
+          {/* ── Galería de fotos ── */}
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 space-y-4">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-riverRed flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-riverRed" />
+              Galería de fotos
+            </h3>
+            <p className="text-[10px] text-neutral-600 -mt-2">
+              Pegá URLs de imágenes del partido para mostrarlas en la página del evento.
+            </p>
+
+            {/* Input agregar URL */}
+            <div className="flex gap-2">
+              <input
+                type="url"
+                placeholder="https://ejemplo.com/foto.jpg"
+                value={photoInput}
+                onChange={(e) => setPhotoInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddPhoto())}
+                className="flex-1 bg-neutral-950 border border-neutral-800 focus:border-riverRed text-white rounded-xl px-3 py-2 text-xs outline-none transition-all"
+              />
+              <button
+                type="button"
+                onClick={handleAddPhoto}
+                disabled={!photoInput.trim()}
+                className="flex items-center gap-1 bg-riverRed/10 hover:bg-riverRed/20 disabled:opacity-40 border border-riverRed/30 text-riverRed px-3 py-2 rounded-xl text-xs font-semibold transition-all"
+              >
+                <Plus className="w-3.5 h-3.5" /> Agregar
+              </button>
+            </div>
+
+            {/* Thumbnails */}
+            {photos.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-2 py-6 bg-neutral-950 border border-neutral-800 rounded-xl text-neutral-600">
+                <Image className="w-6 h-6" />
+                <span className="text-xs">Sin fotos. Agregá URLs arriba.</span>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto">
+                {photos.map((url) => (
+                  <div key={url} className="relative group rounded-xl overflow-hidden border border-neutral-800 bg-neutral-950 aspect-video">
+                    <img src={url} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.opacity = '0.3'; }} />
+                    <button
+                      type="button"
+                      onClick={() => handleRemovePhoto(url)}
+                      className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 bg-black/70 hover:bg-red-950/80 text-white hover:text-riverRed p-1 rounded-lg transition-all"
+                      title="Eliminar foto"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                onClick={handleSavePhotos}
+                disabled={savingPhotos}
+                className="bg-riverRed hover:bg-red-700 disabled:bg-neutral-800 px-4 py-2 rounded-xl text-xs font-bold transition-all"
+              >
+                {savingPhotos ? 'Guardando…' : `Guardar fotos (${photos.length})`}
               </button>
             </div>
           </div>

@@ -99,6 +99,15 @@ export class MatchesController {
     return this.matchesService.updateStatistics(id, body);
   }
 
+  @Patch(':id/photos')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Actualizar galería de fotos de un partido (admin)' })
+  async updatePhotos(@Param('id') id: string, @Body() body: { photos: string[] }) {
+    return this.matchesService.updatePhotos(id, body.photos);
+  }
+
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
