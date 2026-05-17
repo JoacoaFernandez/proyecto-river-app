@@ -1,9 +1,15 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Logger, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
-export class PredictionsService {
+export class PredictionsService implements OnModuleInit {
+  private readonly logger = new Logger(PredictionsService.name);
+
   constructor(private prisma: PrismaService) {}
+
+  async onModuleInit() {
+    await this.resolveAllPending();
+  }
 
   async createOrUpdate(userId: string, matchId: string, choice: string) {
     if (!['home', 'draw', 'away'].includes(choice)) {
@@ -101,6 +107,27 @@ export class PredictionsService {
           data: { points: { increment: 10 } },
         });
       }
+    }
+    return predictions.length;
+  }
+
+  async resolveAllPending() {
+    const finishedMatches = await this.prisma.match.findMany({
+      where: {
+        status: 'finished',
+        homeScore: { not: null },
+        awayScore: { not: null },
+        predictions: { some: { status: 'pending' } },
+      },
+      select: { id: true, homeScore: true, awayScore: true, homeTeam: true, awayTeam: true },
+    });
+
+    if (finishedMatches.length === 0) return;
+
+    this.logger.log(`Resolviendo predicciones pendientes para ${finishedMatches.length} partido(s) finalizado(s)...`);
+    for (const m of finishedMatches) {
+      const count = await this.resolvePredictions(m.id, m.homeScore!, m.awayScore!);
+      this.logger.log(`  ✅ ${m.homeTeam} vs ${m.awayTeam}: ${count} predicción(es) resuelta(s)`);
     }
   }
 }

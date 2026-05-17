@@ -16,6 +16,14 @@ model User {
   role            String            @default("user")
   created_at      DateTime          @default(now())
   points          Int               @default(0)
+  city            String?
+  country         String?
+  fanSince        Int?
+  notifGoals      Boolean           @default(true)
+  notifMatch      Boolean           @default(true)
+  notifNews       Boolean           @default(false)
+  quietFrom       Int?
+  quietTo         Int?
   comments        Comment[]
   liveChatMsgs    LiveChatMessage[]
   news            News[]
