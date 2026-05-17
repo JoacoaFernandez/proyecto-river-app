@@ -1,6 +1,6 @@
 // apps/backend/src/auth/auth.controller.ts
 import {
-  Body, Controller, Delete, Get, HttpCode, HttpStatus,
+  Body, Controller, Delete, Get, HttpCode, HttpStatus, Param,
   Patch, Post, UseGuards, UseInterceptors, UploadedFile,
   BadRequestException, Req, UsePipes, ValidationPipe,
 } from '@nestjs/common';
@@ -105,6 +105,38 @@ export class AuthController {
   @ApiOperation({ summary: 'Estadísticas de usuarios (solo admin)' })
   getAdminStats() {
     return this.authService.getUserStats();
+  }
+
+  @Get('admin/users')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Listar todos los usuarios (admin)' })
+  getAllUsers() {
+    return this.authService.getAllUsers();
+  }
+
+  @Patch('admin/users/:id/role')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Cambiar rol de usuario (admin)' })
+  updateUserRole(@Param('id') id: string, @Body() body: { role: string }) {
+    return this.authService.updateUserRole(id, body.role);
+  }
+
+  @Patch('admin/users/:id/ban')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Banear usuario (admin)' })
+  banUser(@Param('id') id: string) {
+    return this.authService.updateProfile(id, { isBanned: true } as any);
+  }
+
+  @Patch('admin/users/:id/unban')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Desbanear usuario (admin)' })
+  unbanUser(@Param('id') id: string) {
+    return this.authService.updateProfile(id, { isBanned: false } as any);
   }
 
   @Post('me/avatar')
