@@ -33,7 +33,14 @@ export default function Layout() {
   const { canInstall, install } = useInstallPrompt();
 
   useEffect(() => {
-    getCurrentUser().then(setUser);
+    const fetchUser = () =>
+      getCurrentUser().then((u) => {
+        setUser(u);
+        setNavAvatarError(false);
+      });
+    fetchUser();
+    window.addEventListener('user:updated', fetchUser);
+    return () => window.removeEventListener('user:updated', fetchUser);
   }, []);
 
   useEffect(() => {
@@ -54,6 +61,8 @@ export default function Layout() {
     clearCurrentUser();
     navigate('/login', { replace: true });
   };
+
+  const [navAvatarError, setNavAvatarError] = useState(false);
 
   const initials = user?.display_name
     .split(' ')
@@ -138,12 +147,12 @@ export default function Layout() {
                 onClick={() => setMenuOpen((o) => !o)}
                 className="w-9 h-9 rounded-full bg-riverRed border-2 border-neutral-800 hover:border-riverRed flex items-center justify-center text-xs font-black text-white transition-all overflow-hidden"
               >
-                {user?.avatar_url ? (
+                {user?.avatar_url && !navAvatarError ? (
                   <img
                     src={user.avatar_url}
                     alt=""
                     className="w-full h-full object-cover"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    onError={() => setNavAvatarError(true)}
                   />
                 ) : (
                   initials

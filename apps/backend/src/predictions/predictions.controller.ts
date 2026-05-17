@@ -33,4 +33,10 @@ export class PredictionsController {
   getSummary(@Param('matchId') matchId: string) {
     return this.predictionsService.getSummary(matchId);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('admin/resolve-all')
+  resolveAll() {
+    return this.predictionsService.resolveAllPending();
+  }
 }

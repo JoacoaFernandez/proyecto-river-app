@@ -1,5 +1,13 @@
 // apps/backend/src/auth/auth.controller.ts
-import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  Body, Controller, Delete, Get, HttpCode, HttpStatus,
+  Patch, Post, UseGuards, UseInterceptors, UploadedFile,
+  BadRequestException, Req, UsePipes, ValidationPipe,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname, join } from 'path';
+import { existsSync, mkdirSync } from 'fs';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -7,6 +15,10 @@ import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagg
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
 import type { AuthUser } from './decorators/current-user.decorator';
+import type { Request as ExpressRequest } from 'express';
+
+const UPLOAD_DIR = join(process.cwd(), 'uploads', 'avatars');
+if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true });
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -46,8 +58,78 @@ export class AuthController {
   @ApiOperation({ summary: 'Editar el perfil del usuario logueado' })
   updateMe(
     @CurrentUser() user: AuthUser,
-    @Body() body: { display_name?: string; avatar_url?: string },
+    @Body() body: {
+      display_name?: string;
+      avatar_url?: string;
+      city?: string | null;
+      country?: string | null;
+      fanSince?: number | null;
+      notifGoals?: boolean;
+      notifMatch?: boolean;
+      notifNews?: boolean;
+      quietFrom?: number | null;
+      quietTo?: number | null;
+    },
   ) {
     return this.authService.updateProfile(user.id, body);
+  }
+
+  @Post('change-password')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Cambiar contraseña del usuario logueado' })
+  changePassword(
+    @CurrentUser() user: AuthUser,
+    @Body() body: { currentPassword: string; newPassword: string },
+  ) {
+    return this.authService.changePassword(user.id, body.currentPassword, body.newPassword);
+  }
+
+  @Delete('me')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Eliminar la cuenta del usuario logueado' })
+  deleteMe(@CurrentUser() user: AuthUser) {
+    return this.authService.deleteAccount(user.id);
+  }
+
+  @Get('ranking')
+  @ApiOperation({ summary: 'Top 10 usuarios por puntos' })
+  getTopRanking() {
+    return this.authService.getTopRanking();
+  }
+
+  @Post('me/avatar')
+  @UseGuards(JwtAuthGuard)
+  @UsePipes(new ValidationPipe({ whitelist: false }))
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Subir foto de perfil' })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: UPLOAD_DIR,
+        filename: (_req, file, cb) => {
+          const unique = Date.now() + '-' + Math.round(Math.random() * 1e6);
+          cb(null, unique + extname(file.originalname));
+        },
+      }),
+      limits: { fileSize: 5 * 1024 * 1024 },
+      fileFilter: (_req, file, cb) => {
+        if (!file.mimetype.startsWith('image/')) {
+          return cb(new BadRequestException('Solo se permiten imágenes.'), false);
+        }
+        cb(null, true);
+      },
+    }),
+  )
+  async uploadAvatar(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: AuthUser,
+    @Req() req: ExpressRequest,
+  ) {
+    if (!file) throw new BadRequestException('No se recibió ningún archivo.');
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const avatar_url = `${baseUrl}/uploads/avatars/${file.filename}`;
+    return this.authService.updateProfile(user.id, { avatar_url });
   }
 }

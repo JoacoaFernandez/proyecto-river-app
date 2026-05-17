@@ -8,6 +8,15 @@ export interface CurrentUser {
   avatar_url: string | null;
   role: 'user' | 'editor' | 'admin' | string;
   created_at: string;
+  points: number;
+  city: string | null;
+  country: string | null;
+  fanSince: number | null;
+  notifGoals: boolean;
+  notifMatch: boolean;
+  notifNews: boolean;
+  quietFrom: number | null;
+  quietTo: number | null;
 }
 
 let cached: CurrentUser | null = null;
@@ -42,8 +51,24 @@ export function clearCurrentUser() {
 export async function updateCurrentUser(data: {
   display_name?: string;
   avatar_url?: string;
+  city?: string | null;
+  country?: string | null;
+  fanSince?: number | null;
+  notifGoals?: boolean;
+  notifMatch?: boolean;
+  notifNews?: boolean;
+  quietFrom?: number | null;
+  quietTo?: number | null;
 }): Promise<CurrentUser | null> {
   const res = await api.patch<CurrentUser>('/auth/me', data);
   cached = res.data;
   return cached;
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  await api.post('/auth/change-password', { currentPassword, newPassword });
+}
+
+export async function deleteAccount(): Promise<void> {
+  await api.delete('/auth/me');
 }
