@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
-import type { Match, MatchEvent } from '../../services/matches.service';
+import type { Match, MatchEvent, MatchStatistics } from '../../services/matches.service';
 import {
   createMatchAdmin,
   deleteMatchAdmin,
   getAllMatchesAdmin,
   updateMatchAdmin,
+  updateMatchStatistics,
   getMatchEvents,
   createMatchEventAdmin,
   deleteMatchEventAdmin,
@@ -77,6 +78,24 @@ export default function AdminPartidos() {
   });
   const [savingEvent, setSavingEvent] = useState(false);
 
+  // Statistics
+  type StatKey = keyof Omit<MatchStatistics, 'homeTeam' | 'awayTeam'>;
+  const STAT_FIELDS: { key: StatKey; label: string }[] = [
+    { key: 'possession', label: 'Posesión (%)' },
+    { key: 'totalShots', label: 'Tiros totales' },
+    { key: 'shotsOnTarget', label: 'Tiros al arco' },
+    { key: 'corners', label: 'Córners' },
+    { key: 'fouls', label: 'Faltas' },
+    { key: 'yellowCards', label: 'Tarjetas amarillas' },
+    { key: 'redCards', label: 'Tarjetas rojas' },
+    { key: 'saves', label: 'Atajadas' },
+    { key: 'offsides', label: 'Fuera de juego' },
+  ];
+  const emptyStats = () =>
+    Object.fromEntries(STAT_FIELDS.map(({ key }) => [key, { home: '', away: '' }])) as Record<StatKey, { home: string; away: string }>;
+  const [statsForm, setStatsForm] = useState<Record<StatKey, { home: string; away: string }>>(emptyStats());
+  const [savingStats, setSavingStats] = useState(false);
+
   const showFlash = (msg: string, error = false) => {
     setFlash({ msg, error });
     setTimeout(() => setFlash(null), 4000);
@@ -144,6 +163,20 @@ export default function AdminPartidos() {
     setAddingEvent(false);
     setEventForm({ type: 'goal', minute: '', team: '', playerName: '', playerInName: '', assistName: '', period: '1' });
     reloadEvents(m.id);
+    // Init stats form from existing data
+    const existing = m.statistics as any;
+    if (existing) {
+      const filled = emptyStats();
+      for (const { key } of STAT_FIELDS) {
+        filled[key] = {
+          home: existing[key]?.home?.toString() ?? '',
+          away: existing[key]?.away?.toString() ?? '',
+        };
+      }
+      setStatsForm(filled);
+    } else {
+      setStatsForm(emptyStats());
+    }
   };
 
   const handleAddEvent = async (e: React.FormEvent) => {
@@ -170,6 +203,29 @@ export default function AdminPartidos() {
       showFlash('Error al agregar el evento.', true);
     } finally {
       setSavingEvent(false);
+    }
+  };
+
+  const handleSaveStats = async () => {
+    if (!editing) return;
+    setSavingStats(true);
+    try {
+      const built: any = {
+        homeTeam: editing.homeTeam,
+        awayTeam: editing.awayTeam,
+      };
+      for (const { key } of STAT_FIELDS) {
+        const h = statsForm[key].home !== '' ? parseFloat(statsForm[key].home) : null;
+        const a = statsForm[key].away !== '' ? parseFloat(statsForm[key].away) : null;
+        built[key] = { home: h, away: a };
+      }
+      await updateMatchStatistics(editing.id, built);
+      showFlash('✅ Estadísticas guardadas.');
+      await load();
+    } catch {
+      showFlash('Error al guardar estadísticas.', true);
+    } finally {
+      setSavingStats(false);
     }
   };
 
@@ -546,6 +602,61 @@ export default function AdminPartidos() {
               </button>
             </div>
           </form>
+
+          {/* ── Estadísticas del Partido ── */}
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 space-y-4">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-riverRed flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-riverRed" />
+              Estadísticas del partido
+            </h3>
+            <p className="text-[10px] text-neutral-600 -mt-2">
+              Se completan automáticamente desde ESPN. Podés editarlas manualmente si hace falta.
+            </p>
+
+            {/* Header columnas */}
+            <div className="grid grid-cols-[1fr_80px_80px] gap-2 text-[10px] font-bold uppercase tracking-widest text-neutral-500 px-1">
+              <div>Estadística</div>
+              <div className="text-center">{editing?.homeTeam.split(' ')[0]}</div>
+              <div className="text-center">{editing?.awayTeam.split(' ')[0]}</div>
+            </div>
+
+            <div className="space-y-2">
+              {STAT_FIELDS.map(({ key, label }) => (
+                <div key={key} className="grid grid-cols-[1fr_80px_80px] gap-2 items-center">
+                  <span className="text-xs text-neutral-400">{label}</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step={key === 'possession' ? '0.1' : '1'}
+                    placeholder="—"
+                    value={statsForm[key]?.home ?? ''}
+                    onChange={(e) => setStatsForm((prev) => ({ ...prev, [key]: { ...prev[key], home: e.target.value } }))}
+                    className="bg-neutral-950 border border-neutral-800 focus:border-riverRed text-white rounded-lg px-2 py-1.5 text-xs text-center outline-none transition-all w-full"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    step={key === 'possession' ? '0.1' : '1'}
+                    placeholder="—"
+                    value={statsForm[key]?.away ?? ''}
+                    onChange={(e) => setStatsForm((prev) => ({ ...prev, [key]: { ...prev[key], away: e.target.value } }))}
+                    className="bg-neutral-950 border border-neutral-800 focus:border-riverRed text-white rounded-lg px-2 py-1.5 text-xs text-center outline-none transition-all w-full"
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                onClick={handleSaveStats}
+                disabled={savingStats}
+                className="bg-riverRed hover:bg-red-700 disabled:bg-neutral-800 px-4 py-2 rounded-xl text-xs font-bold transition-all"
+              >
+                {savingStats ? 'Guardando…' : 'Guardar estadísticas'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

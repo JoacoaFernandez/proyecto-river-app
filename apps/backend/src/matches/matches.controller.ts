@@ -90,6 +90,15 @@ export class MatchesController {
     return this.matchesService.updateMatch(id, body);
   }
 
+  @Patch(':id/statistics')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Actualizar estadísticas de un partido (admin)' })
+  async updateStatistics(@Param('id') id: string, @Body() body: Record<string, any>) {
+    return this.matchesService.updateStatistics(id, body);
+  }
+
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
