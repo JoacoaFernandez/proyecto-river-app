@@ -22,6 +22,7 @@ export interface StandingRow {
   gc: number;
   dif: number;
   pts: number;
+  trend?: 'up' | 'down' | 'same';
 }
 
 export interface StandingsGroup {
@@ -71,6 +72,7 @@ export interface StandingsResponse {
   meta: Competition;
   groups: StandingsGroup[];
   playoffs: PlayoffsBracket | null;
+  lastUpdated: string;
 }
 
 export const getCompetitions = async (): Promise<Competition[]> => {

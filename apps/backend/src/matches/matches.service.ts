@@ -70,6 +70,7 @@ export class MatchesService implements OnModuleInit {
 
   private sportsDbTeamId: string | null = null;
   private espnTeamId: string | null = null;
+  private syncInProgress = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -622,6 +623,11 @@ export class MatchesService implements OnModuleInit {
   // ── Motor de sincronización ──────────────────────────────────────────────────
 
   async syncMatches() {
+    if (this.syncInProgress) {
+      this.logger.warn('⏳ Sync ya en progreso, saltando esta ejecución.');
+      return;
+    }
+    this.syncInProgress = true;
     try {
       this.logger.log('🔄 Sincronizando fixture River Plate...');
       let matches: any[] = [];
@@ -664,6 +670,8 @@ export class MatchesService implements OnModuleInit {
       await this.saveToDatabase(deduped);
     } catch (error: any) {
       this.logger.error(`❌ Error crítico: ${error?.message}`);
+    } finally {
+      this.syncInProgress = false;
     }
   }
 
@@ -908,22 +916,22 @@ export class MatchesService implements OnModuleInit {
           this.logger.warn(`⚠️ ESPN nextEvent [${league.code}] falló: ${e?.message}`);
         }
 
-        // Scoreboard reciente para arg.1 (captura partidos de Copa de la Liga no incluidos en schedule)
-        if (league.code === 'arg.1') {
-          try {
-            const today = new Date();
-            const from = new Date(today.getTime() - 21 * 24 * 60 * 60 * 1000)
-              .toISOString().slice(0, 10).replace(/-/g, '');
-            const to = new Date(today.getTime() + 14 * 24 * 60 * 60 * 1000)
-              .toISOString().slice(0, 10).replace(/-/g, '');
-            const sbUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.code}/scoreboard?dates=${from}-${to}`;
-            const sbRes = await axios.get(sbUrl, { headers: AXIOS_HEADERS, timeout: 10000 });
-            for (const ev of sbRes.data?.events ?? []) {
-              const id = String(ev.id || `${ev.date}-${league.code}-sb`);
-              if (!eventMap.has(id)) eventMap.set(id, ev);
-            }
-          } catch { /* continuar */ }
-        }
+        // Scoreboard de las últimas 3 semanas + próximas 6 semanas para todas las ligas.
+        // Crítico para Copa Sudamericana/Libertadores cuyos schedules de temporada
+        // a veces no incluyen los próximos partidos del equipo.
+        try {
+          const today = new Date();
+          const from = new Date(today.getTime() - 21 * 24 * 60 * 60 * 1000)
+            .toISOString().slice(0, 10).replace(/-/g, '');
+          const to = new Date(today.getTime() + 42 * 24 * 60 * 60 * 1000)
+            .toISOString().slice(0, 10).replace(/-/g, '');
+          const sbUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.code}/scoreboard?dates=${from}-${to}`;
+          const sbRes = await axios.get(sbUrl, { headers: AXIOS_HEADERS, timeout: 10000 });
+          for (const ev of sbRes.data?.events ?? []) {
+            const id = String(ev.id || `${ev.date}-${league.code}-sb`);
+            if (!eventMap.has(id)) eventMap.set(id, ev);
+          }
+        } catch { /* continuar */ }
 
         const events = [...eventMap.values()];
         this.logger.log(`ESPN [${league.code}]: ${events.length} eventos totales`);
@@ -1249,7 +1257,11 @@ export class MatchesService implements OnModuleInit {
               .catch(e => this.logger.warn(`Auto-sync events falló: ${e?.message}`));
           }
         } else {
-          const newMatch = await this.prisma.match.create({ data: record });
+          const newMatch = await this.prisma.match.upsert({
+            where: { type: record.type },
+            update: record,
+            create: record,
+          });
           // For newly imported finished matches without events, sync them too
           if (record.status === 'finished') {
             const hasEvents = await this.prisma.matchEvent.count({ where: { matchId: newMatch.id } });

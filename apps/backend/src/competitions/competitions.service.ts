@@ -53,6 +53,7 @@ export interface StandingRow {
   gc: number;
   dif: number;
   pts: number;
+  trend?: 'up' | 'down' | 'same';
 }
 
 export interface StandingsGroup {
@@ -105,6 +106,8 @@ export interface StandingsResponse {
   groups: StandingsGroup[];
   /** Sólo se calcula para ligas con formato playoff y 2 zonas */
   playoffs: PlayoffsBracket | null;
+  /** ISO timestamp de la última actualización de la tabla */
+  lastUpdated: string;
 }
 
 interface EspnPlayoffMatch {
@@ -123,7 +126,7 @@ interface EspnPlayoffMatch {
 @Injectable()
 export class CompetitionsService {
   private readonly logger = new Logger(CompetitionsService.name);
-  private standingsCache = new Map<string, { data: StandingsGroup[]; ts: number }>();
+  private standingsCache = new Map<string, { data: StandingsGroup[]; prev: StandingsGroup[] | null; ts: number }>();
   private playoffsCache = new Map<string, { data: EspnPlayoffMatch[]; ts: number }>();
   private readonly TTL = 15 * 60 * 1000;
 
@@ -143,18 +146,27 @@ export class CompetitionsService {
     const meta = this.findByCode(code);
 
     if (!meta.hasStandings) {
-      return { meta, groups: [], playoffs: null };
+      return { meta, groups: [], playoffs: null, lastUpdated: new Date().toISOString() };
     }
 
     const cached = this.standingsCache.get(code);
     let groups: StandingsGroup[];
+    let cacheTs: number;
 
     if (cached && Date.now() - cached.ts < this.TTL) {
       groups = cached.data;
+      cacheTs = cached.ts;
     } else {
-      groups = await this.fetchGroups(code, cached?.data);
-      if (groups.length > 0) {
-        this.standingsCache.set(code, { data: groups, ts: Date.now() });
+      const fresh = await this.fetchGroups(code, cached?.data);
+      if (fresh.length > 0) {
+        this.applyTrends(fresh, cached?.data ?? null);
+        const prev = cached?.data ?? null;
+        cacheTs = Date.now();
+        this.standingsCache.set(code, { data: fresh, prev, ts: cacheTs });
+        groups = fresh;
+      } else {
+        groups = cached?.data ?? [];
+        cacheTs = cached?.ts ?? Date.now();
       }
     }
 
@@ -164,7 +176,26 @@ export class CompetitionsService {
     } else if (code === 'conmebol.libertadores' || code === 'conmebol.sudamericana') {
       playoffs = await this.buildCopaBracket(code);
     }
-    return { meta, groups, playoffs };
+    return { meta, groups, playoffs, lastUpdated: new Date(cacheTs).toISOString() };
+  }
+
+  private applyTrends(newGroups: StandingsGroup[], oldGroups: StandingsGroup[] | null): void {
+    if (!oldGroups) {
+      for (const g of newGroups) {
+        for (const row of g.standings) row.trend = 'same';
+      }
+      return;
+    }
+    for (const newGroup of newGroups) {
+      const oldGroup = oldGroups.find((g) => g.key === newGroup.key);
+      for (const row of newGroup.standings) {
+        const oldRow = oldGroup?.standings.find((r) => this.normalize(r.team) === this.normalize(row.team));
+        if (!oldRow) { row.trend = 'same'; continue; }
+        if (row.pos < oldRow.pos) row.trend = 'up';
+        else if (row.pos > oldRow.pos) row.trend = 'down';
+        else row.trend = 'same';
+      }
+    }
   }
 
   private async fetchGroups(code: string, fallback?: StandingsGroup[]): Promise<StandingsGroup[]> {

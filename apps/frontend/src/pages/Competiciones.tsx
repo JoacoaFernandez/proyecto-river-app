@@ -13,6 +13,24 @@ import {
 
 const RIVER_RX = /river\s*plate|^river$/i;
 
+function formatLastUpdated(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMin = Math.floor((now.getTime() - d.getTime()) / 60000);
+  if (diffMin < 1) return 'Actualizado hace unos segundos';
+  if (diffMin === 1) return 'Actualizado hace 1 min';
+  if (diffMin < 60) return `Actualizado hace ${diffMin} min`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `Actualizado hace ${diffH} h`;
+  return `Actualizado el ${d.toLocaleDateString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`;
+}
+
+function TrendArrow({ trend }: { trend?: 'up' | 'down' | 'same' }) {
+  if (!trend || trend === 'same') return <span className="w-3 inline-block text-neutral-600 text-[9px]">—</span>;
+  if (trend === 'up') return <span className="text-green-400 text-[10px] font-bold">↑</span>;
+  return <span className="text-red-400 text-[10px] font-bold">↓</span>;
+}
+
 function zoneFor(
   pos: number,
   totalRows: number,
@@ -53,15 +71,18 @@ function ZoneTable({ group, advanceTop = 8 }: { group: StandingsGroup; advanceTo
         <span className="text-[10px] text-neutral-500">{totalRows} equipos</span>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[560px]">
+        <table className="w-full text-sm min-w-[660px]">
           <thead>
             <tr className="text-[10px] uppercase tracking-widest text-neutral-500 font-bold border-b border-neutral-800">
               <th className="text-center py-3 px-2 w-10">#</th>
+              <th className="text-center py-3 px-1 w-6"></th>
               <th className="text-left py-3 px-2">Equipo</th>
               <th className="text-center py-3 px-2 w-10">PJ</th>
               <th className="text-center py-3 px-2 w-10">G</th>
               <th className="text-center py-3 px-2 w-10">E</th>
               <th className="text-center py-3 px-2 w-10">P</th>
+              <th className="text-center py-3 px-2 w-10">GF</th>
+              <th className="text-center py-3 px-2 w-10">GC</th>
               <th className="text-center py-3 px-2 w-10">DG</th>
               <th className="text-center py-3 px-2 w-12 text-riverRed">Pts</th>
             </tr>
@@ -74,11 +95,14 @@ function ZoneTable({ group, advanceTop = 8 }: { group: StandingsGroup; advanceTo
                 <tr
                   key={`${group.key}-${row.pos}-${row.team}`}
                   className={`border-b border-neutral-800/50 last:border-0 transition-colors hover:bg-neutral-800/40 ${
-                    river ? 'bg-red-950/40 font-bold' : zone?.color ?? ''
+                    river ? `bg-red-950/40 font-bold ${zone?.color ?? ''}` : zone?.color ?? ''
                   }`}
                 >
                   <td className={`text-center py-2.5 px-2 tabular-nums ${river ? 'text-riverRed' : 'text-neutral-500'}`}>
                     {row.pos}
+                  </td>
+                  <td className="text-center py-2.5 px-1">
+                    <TrendArrow trend={row.trend} />
                   </td>
                   <td className="py-2.5 px-2">
                     <div className="flex items-center gap-2 min-w-0">
@@ -99,6 +123,8 @@ function ZoneTable({ group, advanceTop = 8 }: { group: StandingsGroup; advanceTo
                   <td className="text-center py-2.5 px-2 tabular-nums text-green-400">{row.pg}</td>
                   <td className="text-center py-2.5 px-2 tabular-nums text-yellow-400">{row.pe}</td>
                   <td className="text-center py-2.5 px-2 tabular-nums text-red-400">{row.pp}</td>
+                  <td className="text-center py-2.5 px-2 tabular-nums text-neutral-300">{row.gf}</td>
+                  <td className="text-center py-2.5 px-2 tabular-nums text-neutral-300">{row.gc}</td>
                   <td
                     className={`text-center py-2.5 px-2 tabular-nums ${
                       row.dif > 0 ? 'text-green-400' : row.dif < 0 ? 'text-red-400' : 'text-neutral-400'
@@ -276,6 +302,7 @@ export default function Competiciones() {
   const [selected, setSelected] = useState<string | null>(null);
   const [groups, setGroups] = useState<StandingsGroup[]>([]);
   const [playoffs, setPlayoffs] = useState<PlayoffsBracket | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [loadingList, setLoadingList] = useState(true);
   const [loadingStandings, setLoadingStandings] = useState(false);
 
@@ -296,6 +323,7 @@ export default function Competiciones() {
       .then((res) => {
         setGroups(res?.groups ?? []);
         setPlayoffs(res?.playoffs ?? null);
+        setLastUpdated(res?.lastUpdated ?? null);
       })
       .finally(() => setLoadingStandings(false));
   }, [selected]);
@@ -361,16 +389,21 @@ export default function Competiciones() {
                     {selectedMeta.country} · {selectedMeta.type === 'league' ? 'Liga' : 'Copa'}
                   </p>
                 </div>
-                {selectedMeta.hasStandings && orderedGroups.length > 0 && (
-                  <span className="text-xs text-neutral-500">
-                    {orderedGroups.length === 1
-                      ? `${orderedGroups[0].standings.length} equipos`
-                      : `${orderedGroups.length} ${isCopa ? 'grupos' : 'zonas'} · ${orderedGroups.reduce(
-                          (acc, g) => acc + g.standings.length,
-                          0,
-                        )} equipos`}
-                  </span>
-                )}
+                <div className="flex flex-col items-end gap-1">
+                  {selectedMeta.hasStandings && orderedGroups.length > 0 && (
+                    <span className="text-xs text-neutral-500">
+                      {orderedGroups.length === 1
+                        ? `${orderedGroups[0].standings.length} equipos`
+                        : `${orderedGroups.length} ${isCopa ? 'grupos' : 'zonas'} · ${orderedGroups.reduce(
+                            (acc, g) => acc + g.standings.length,
+                            0,
+                          )} equipos`}
+                    </span>
+                  )}
+                  {lastUpdated && (
+                    <span className="text-[11px] text-neutral-600">{formatLastUpdated(lastUpdated)}</span>
+                  )}
+                </div>
               </div>
             </div>
           )}
