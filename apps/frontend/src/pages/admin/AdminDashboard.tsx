@@ -1,10 +1,11 @@
 // apps/frontend/src/pages/admin/AdminDashboard.tsx
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Newspaper, PenLine, Users, Calendar, Globe, FileText } from 'lucide-react';
+import { Newspaper, PenLine, Users, Calendar, Globe, FileText, UserPlus } from 'lucide-react';
 import { getNews } from '../../services/news.service';
 import { getPlayers } from '../../services/players.service';
 import { getLiveDashboard } from '../../services/live.service';
+import { api } from '../../services/api';
 import { timeAgo } from '../../utils/time';
 
 interface Metrics {
@@ -13,7 +14,8 @@ interface Metrics {
   borradores: number;
   jugadores: number;
   proximosPartidos: number;
-  partidosTotales: number;
+  usuariosTotal: number;
+  usuariosNuevos: number;
 }
 
 export default function AdminDashboard() {
@@ -22,8 +24,13 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([getNews(), getPlayers(), getLiveDashboard()])
-      .then(([news, players, dashboard]) => {
+    Promise.all([
+      getNews(),
+      getPlayers(),
+      getLiveDashboard(),
+      api.get('/auth/admin/stats').then((r) => r.data).catch(() => ({ total: 0, newThisWeek: 0 })),
+    ])
+      .then(([news, players, dashboard, userStats]) => {
         setLatestNews(news.slice(0, 5));
         setMetrics({
           noticias: news.length,
@@ -31,8 +38,8 @@ export default function AdminDashboard() {
           borradores: news.filter((n) => n.status === 'draft').length,
           jugadores: players.length,
           proximosPartidos: dashboard?.upcomingMatches?.length ?? 0,
-          partidosTotales: (dashboard?.upcomingMatches?.length ?? 0)
-            + (dashboard?.lastMatch ? 1 : 0),
+          usuariosTotal: userStats.total,
+          usuariosNuevos: userStats.newThisWeek,
         });
       })
       .finally(() => setLoading(false));
@@ -56,12 +63,14 @@ export default function AdminDashboard() {
       </div>
 
       {/* Métricas */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {[
           { label: 'Noticias', value: metrics?.noticias ?? 0, sub: `${metrics?.publicadas ?? 0} publicadas`, Icon: Newspaper, color: 'text-blue-400' },
-          { label: 'Borradores', value: metrics?.borradores ?? 0, sub: 'Pendientes de revisión', Icon: PenLine, color: 'text-yellow-400' },
-          { label: 'Plantel', value: metrics?.jugadores ?? 0, sub: 'Jugadores cargados', Icon: Users, color: 'text-green-400' },
-          { label: 'Partidos próximos', value: metrics?.proximosPartidos ?? 0, sub: 'En el fixture', Icon: Calendar, color: 'text-riverRed' },
+          { label: 'Borradores', value: metrics?.borradores ?? 0, sub: 'Sin publicar', Icon: PenLine, color: 'text-yellow-400' },
+          { label: 'Plantel', value: metrics?.jugadores ?? 0, sub: 'Jugadores', Icon: Users, color: 'text-green-400' },
+          { label: 'Partidos', value: metrics?.proximosPartidos ?? 0, sub: 'Próximos', Icon: Calendar, color: 'text-riverRed' },
+          { label: 'Usuarios', value: metrics?.usuariosTotal ?? 0, sub: 'Registrados', Icon: Users, color: 'text-purple-400' },
+          { label: 'Nuevos', value: metrics?.usuariosNuevos ?? 0, sub: 'Esta semana', Icon: UserPlus, color: 'text-emerald-400' },
         ].map((m) => (
           <div key={m.label} className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 hover:border-neutral-700 transition-all">
             <div className="flex justify-between items-start mb-3">

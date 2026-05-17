@@ -99,6 +99,14 @@ export class AuthController {
     return this.authService.getTopRanking();
   }
 
+  @Get('admin/stats')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Estadísticas de usuarios (solo admin)' })
+  getAdminStats() {
+    return this.authService.getUserStats();
+  }
+
   @Post('me/avatar')
   @UseGuards(JwtAuthGuard)
   @UsePipes(new ValidationPipe({ whitelist: false }))
