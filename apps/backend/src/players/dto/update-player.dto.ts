@@ -1,5 +1,5 @@
 // apps/backend/src/players/dto/update-player.dto.ts
-import { IsOptional, IsString, IsInt, Min, Max, IsDateString } from 'class-validator';
+import { IsOptional, IsString, IsInt, Min, Max, IsDateString, IsArray } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class UpdatePlayerDto {
@@ -69,4 +69,10 @@ export class UpdatePlayerDto {
   @IsDateString()
   @IsOptional()
   injuryReturnDate?: string;
+
+  @ApiProperty({ description: 'URLs de fotos del jugador (galería)', required: false, type: [String] })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  photos?: string[];
 }

@@ -131,6 +131,13 @@ function computeBadges(
       earned: consecutive >= 3,
     },
     {
+      id: 'racha5',
+      emoji: '⚡',
+      name: 'Adivino 5 Seguidos',
+      desc: 'Acertó 5 predicciones consecutivas',
+      earned: consecutive >= 5,
+    },
+    {
       id: 'halcon',
       emoji: '🦅',
       name: 'Ojo de Halcón',

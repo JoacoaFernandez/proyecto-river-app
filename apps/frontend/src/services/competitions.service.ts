@@ -56,6 +56,17 @@ export interface PlayoffMatch {
   date: string | null;
   winner: 'home' | 'away' | null;
   penaltyDecided: boolean;
+  legs?: PlayoffLeg[];
+}
+
+export interface PlayoffLeg {
+  leg: 1 | 2;
+  homeTeam: string;
+  awayTeam: string;
+  homeScore: number | null;
+  awayScore: number | null;
+  status: PlayoffStatus;
+  date: string | null;
 }
 
 export interface PlayoffsBracket {

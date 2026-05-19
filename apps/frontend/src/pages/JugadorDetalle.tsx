@@ -1,7 +1,7 @@
 // apps/frontend/src/pages/JugadorDetalle.tsx
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { UserX, Star, User, AlertTriangle, Calendar } from 'lucide-react';
+import { UserX, Star, User, AlertTriangle, Calendar, X } from 'lucide-react';
 import { getPlayer, getPlayerStats, type Player, type PlayerStats } from '../services/players.service';
 import FavoriteButton from '../components/FavoriteButton';
 
@@ -408,6 +408,89 @@ export default function JugadorDetalle() {
           )}
         </div>
       </section>
+
+      {/* Galería de fotos del jugador */}
+      {Array.isArray(player.photos) && player.photos.length > 0 && (
+        <PlayerGallery photos={player.photos} name={player.name} />
+      )}
     </div>
+  );
+}
+
+function PlayerGallery({ photos, name }: { photos: string[]; name: string }) {
+  const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (lightboxIdx === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLightboxIdx(null);
+      if (e.key === 'ArrowRight') setLightboxIdx((i) => (i === null ? null : (i + 1) % photos.length));
+      if (e.key === 'ArrowLeft') setLightboxIdx((i) => (i === null ? null : (i - 1 + photos.length) % photos.length));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [lightboxIdx, photos.length]);
+
+  return (
+    <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
+      <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-4">
+        Galería de {name.split(' ')[0]}
+      </h3>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+        {photos.map((url, idx) => (
+          <button
+            key={idx}
+            onClick={() => setLightboxIdx(idx)}
+            className="relative aspect-square overflow-hidden rounded-lg bg-neutral-800 group"
+          >
+            <img
+              src={url}
+              alt={`${name} ${idx + 1}`}
+              loading="lazy"
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+              onError={(e) => { (e.target as HTMLImageElement).style.opacity = '0.3'; }}
+            />
+          </button>
+        ))}
+      </div>
+
+      {lightboxIdx !== null && (
+        <div
+          className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-4"
+          onClick={() => setLightboxIdx(null)}
+        >
+          <button
+            onClick={(e) => { e.stopPropagation(); setLightboxIdx(null); }}
+            className="absolute top-4 right-4 p-2 rounded-full bg-neutral-900/80 hover:bg-neutral-800 text-white"
+            aria-label="Cerrar"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setLightboxIdx((i) => i === null ? null : (i - 1 + photos.length) % photos.length); }}
+            className="absolute left-4 p-3 rounded-full bg-neutral-900/80 hover:bg-neutral-800 text-white text-xl font-bold"
+            aria-label="Anterior"
+          >
+            ‹
+          </button>
+          <img
+            src={photos[lightboxIdx]}
+            alt=""
+            onClick={(e) => e.stopPropagation()}
+            className="max-w-full max-h-[90vh] object-contain rounded-lg"
+          />
+          <button
+            onClick={(e) => { e.stopPropagation(); setLightboxIdx((i) => i === null ? null : (i + 1) % photos.length); }}
+            className="absolute right-4 p-3 rounded-full bg-neutral-900/80 hover:bg-neutral-800 text-white text-xl font-bold"
+            aria-label="Siguiente"
+          >
+            ›
+          </button>
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-xs text-neutral-400 bg-neutral-900/80 px-3 py-1 rounded-full">
+            {lightboxIdx + 1} / {photos.length}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }

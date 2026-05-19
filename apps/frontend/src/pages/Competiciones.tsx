@@ -255,6 +255,33 @@ function BracketCard({ match }: { match: PlayoffMatch }) {
         isLoser={awayLost}
         score={match.awayScore}
       />
+      {match.legs && match.legs.length >= 2 && (
+        <div className="px-3 py-1.5 bg-neutral-950/60 flex items-center justify-between gap-2 text-[10px] text-neutral-500 uppercase tracking-wide">
+          <span className="font-semibold">Agregado</span>
+          <div className="flex items-center gap-2 tabular-nums normal-case">
+            {match.legs.map((l) => {
+              const played = l.homeScore != null && l.awayScore != null;
+              return (
+                <span
+                  key={l.leg}
+                  className={`px-1.5 py-0.5 rounded ${
+                    played ? 'bg-neutral-800 text-neutral-200' : 'bg-neutral-900 text-neutral-600 border border-dashed border-neutral-800'
+                  }`}
+                  title={l.date ? new Date(l.date).toLocaleDateString('es-AR') : undefined}
+                >
+                  <span className="text-neutral-500 text-[9px] mr-1">{l.leg === 1 ? 'Ida' : 'Vuelta'}</span>
+                  {played ? `${l.homeScore}-${l.awayScore}` : '—'}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {match.legs && match.legs.length === 1 && (
+        <div className="px-3 py-1 bg-neutral-950/60 flex items-center justify-end gap-1 text-[9px] text-neutral-600 uppercase tracking-wide">
+          <span>Ida jugada · Vuelta pendiente</span>
+        </div>
+      )}
       {match.penaltyDecided && finished && (
         <div className="px-3 py-1.5 flex items-center justify-center gap-1.5 bg-neutral-950/60">
           <span className="text-[10px] text-neutral-500 uppercase tracking-wide">Penales</span>
