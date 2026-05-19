@@ -3,9 +3,10 @@ import { Module } from '@nestjs/common';
 import { PushController } from './push.controller';
 import { PushService } from './push.service';
 import { PrismaModule } from '../prisma/prisma.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, AuthModule],
   controllers: [PushController],
   providers: [PushService],
   exports: [PushService],

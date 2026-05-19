@@ -51,8 +51,28 @@ export class PushService implements OnModuleInit {
   }
 
   async sendToAll(payload: PushPayload) {
-    if (!this.enabled) return;
-    const subs = await this.prisma.pushSubscription.findMany();
+    return this.sendToSegment(payload, 'all');
+  }
+
+  async countSegment(segment: PushSegment): Promise<number> {
+    const userIds = await this.resolveSegmentUserIds(segment);
+    if (userIds === null) return this.prisma.pushSubscription.count();
+    if (userIds.size === 0) return 0;
+    return this.prisma.pushSubscription.count({ where: { userId: { in: [...userIds] } } });
+  }
+
+  async sendToSegment(payload: PushPayload, segment: PushSegment): Promise<{ sent: number; failed: number; total: number }> {
+    if (!this.enabled) return { sent: 0, failed: 0, total: 0 };
+
+    const userIds = await this.resolveSegmentUserIds(segment);
+    const subs = userIds === null
+      ? await this.prisma.pushSubscription.findMany()
+      : userIds.size === 0
+        ? []
+        : await this.prisma.pushSubscription.findMany({ where: { userId: { in: [...userIds] } } });
+
+    if (subs.length === 0) return { sent: 0, failed: 0, total: 0 };
+
     const results = await Promise.allSettled(
       subs.map((sub) =>
         webpush.sendNotification(
@@ -61,9 +81,53 @@ export class PushService implements OnModuleInit {
         ),
       ),
     );
-    const failed = results.filter((r) => r.status === 'rejected');
-    if (failed.length) {
-      this.logger.warn(`${failed.length}/${subs.length} push notifications failed`);
+    const failed = results.filter((r) => r.status === 'rejected').length;
+    if (failed > 0) this.logger.warn(`${failed}/${subs.length} push notifications failed (segment=${segment})`);
+    return { sent: subs.length - failed, failed, total: subs.length };
+  }
+
+  /**
+   * Devuelve los userIds que corresponden al segmento, o null si el segmento es 'all'
+   * (todos los subs, incluyendo anónimos sin userId).
+   */
+  private async resolveSegmentUserIds(segment: PushSegment): Promise<Set<string> | null> {
+    if (segment === 'all') return null;
+
+    if (segment === 'authenticated') {
+      const subs = await this.prisma.pushSubscription.findMany({
+        where: { userId: { not: null } },
+        select: { userId: true },
+      });
+      return new Set(subs.map((s) => s.userId!).filter(Boolean));
     }
+
+    if (segment === 'notifGoals' || segment === 'notifMatch' || segment === 'notifNews') {
+      const users = await this.prisma.user.findMany({
+        where: { [segment]: true, isBanned: false } as any,
+        select: { id: true },
+      });
+      return new Set(users.map((u) => u.id));
+    }
+
+    if (segment === 'active7d') {
+      const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const [comments, votes, predictions, likes] = await Promise.all([
+        this.prisma.comment.findMany({ where: { createdAt: { gte: since } }, select: { userId: true } }),
+        this.prisma.surveyVote.findMany({ where: { createdAt: { gte: since } }, select: { userId: true } }),
+        this.prisma.prediction.findMany({ where: { createdAt: { gte: since } }, select: { userId: true } }),
+        this.prisma.newsLike.findMany({ select: { userId: true } }),
+      ]);
+      const ids = new Set<string>([
+        ...comments.map((c) => c.userId),
+        ...votes.map((v) => v.userId),
+        ...predictions.map((p) => p.userId),
+        ...likes.map((l) => l.userId),
+      ]);
+      return ids;
+    }
+
+    return new Set();
   }
 }
+
+export type PushSegment = 'all' | 'authenticated' | 'active7d' | 'notifGoals' | 'notifMatch' | 'notifNews';
