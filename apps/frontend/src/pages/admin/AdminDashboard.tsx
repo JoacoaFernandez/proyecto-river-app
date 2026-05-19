@@ -1,8 +1,8 @@
 // apps/frontend/src/pages/admin/AdminDashboard.tsx
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Newspaper, PenLine, Users, Calendar, Globe, FileText, UserPlus, Edit3, Plus } from 'lucide-react';
-import { getNews } from '../../services/news.service';
+import { Newspaper, PenLine, Users, Calendar, Globe, FileText, UserPlus, Edit3, Plus, MessageSquareWarning } from 'lucide-react';
+import { getNews, getReportedComments } from '../../services/news.service';
 import { getPlayers } from '../../services/players.service';
 import { getLiveDashboard } from '../../services/live.service';
 import { api } from '../../services/api';
@@ -16,6 +16,7 @@ interface Metrics {
   proximosPartidos: number;
   usuariosTotal: number;
   usuariosNuevos: number;
+  comentariosPendientes: number;
 }
 
 export default function AdminDashboard() {
@@ -30,8 +31,9 @@ export default function AdminDashboard() {
       getPlayers(),
       getLiveDashboard(),
       api.get('/auth/admin/stats').then((r) => r.data).catch(() => ({ total: 0, newThisWeek: 0 })),
+      getReportedComments().then((c) => c.length).catch(() => 0),
     ])
-      .then(([news, players, dashboard, userStats]) => {
+      .then(([news, players, dashboard, userStats, comentariosPendientes]) => {
         setLatestNews(news.slice(0, 5));
         // Actividad editorial: noticias ordenadas por updatedAt
         const activity = [...news]
@@ -54,6 +56,7 @@ export default function AdminDashboard() {
           proximosPartidos: dashboard?.upcomingMatches?.length ?? 0,
           usuariosTotal: userStats.total,
           usuariosNuevos: userStats.newThisWeek,
+          comentariosPendientes,
         });
       })
       .finally(() => setLoading(false));
@@ -75,6 +78,29 @@ export default function AdminDashboard() {
         <h1 className="text-3xl font-black mb-1">Dashboard</h1>
         <p className="text-sm text-neutral-400">Vista general del contenido publicado en River App.</p>
       </div>
+
+      {/* Alerta de moderación */}
+      {(metrics?.comentariosPendientes ?? 0) > 0 && (
+        <Link
+          to="/admin/noticias?tab=moderacion"
+          className="block bg-yellow-950/30 border border-yellow-800/50 hover:border-yellow-700 rounded-2xl p-5 transition-all group"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-yellow-950/60 border border-yellow-800/50 flex items-center justify-center flex-shrink-0">
+              <MessageSquareWarning className="w-6 h-6 text-yellow-400" />
+            </div>
+            <div className="flex-1">
+              <div className="text-sm font-bold text-yellow-300">
+                {metrics?.comentariosPendientes} comentario{(metrics?.comentariosPendientes ?? 0) === 1 ? '' : 's'} esperando moderación
+              </div>
+              <div className="text-xs text-yellow-500/80 mt-0.5">
+                Revisá los comentarios reportados por usuarios.
+              </div>
+            </div>
+            <span className="text-yellow-500 font-bold text-lg group-hover:translate-x-1 transition-transform">→</span>
+          </div>
+        </Link>
+      )}
 
       {/* Métricas */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
