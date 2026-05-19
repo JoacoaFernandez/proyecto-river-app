@@ -15,6 +15,7 @@ import { PushModule } from './push/push.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { SurveysModule } from './surveys/surveys.module';
 import { FavoritesModule } from './favorites/favorites.module';
+import { RatingsModule } from './ratings/ratings.module';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -37,6 +38,7 @@ import { AppService } from './app.service';
     NotificationsModule,
     SurveysModule,
     FavoritesModule,
+    RatingsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

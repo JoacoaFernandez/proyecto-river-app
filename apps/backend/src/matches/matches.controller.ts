@@ -52,6 +52,12 @@ export class MatchesController {
     return this.matchesService.findOne(id);
   }
 
+  @Get('by-id/:id/lineups')
+  @ApiOperation({ summary: 'Obtener lineups de ambos equipos para un partido (ESPN, público)' })
+  async getLineups(@Param('id') id: string) {
+    return this.matchesService.getMatchLineups(id);
+  }
+
   // ── Admin ───────────────────────────────────────────────────────────────────
 
   @Get()
