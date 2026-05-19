@@ -16,6 +16,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { SurveysModule } from './surveys/surveys.module';
 import { FavoritesModule } from './favorites/favorites.module';
 import { RatingsModule } from './ratings/ratings.module';
+import { MetricsModule } from './metrics/metrics.module';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -39,6 +40,7 @@ import { AppService } from './app.service';
     SurveysModule,
     FavoritesModule,
     RatingsModule,
+    MetricsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -3,13 +3,34 @@ import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import Link from '@tiptap/extension-link';
 import TextAlign from '@tiptap/extension-text-align';
-import { useEffect, useCallback } from 'react';
+import Image from '@tiptap/extension-image';
+import { useEffect, useCallback, useRef } from 'react';
 import {
   Bold, Italic, UnderlineIcon, Strikethrough,
   List, ListOrdered, Quote, Minus,
   AlignLeft, AlignCenter, AlignRight,
-  Link2, Link2Off, Undo, Redo,
+  Link2, Link2Off, Undo, Redo, Image as ImageIcon,
 } from 'lucide-react';
+
+function resizeImageToBase64(file: File, maxSize = 1200): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new window.Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(maxSize / img.width, maxSize / img.height, 1);
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+}
 
 interface Props {
   value: string;
@@ -52,6 +73,7 @@ export default function RichTextEditor({ value, onChange, placeholder = 'Escrib√
       Underline,
       Link.configure({ openOnClick: false, HTMLAttributes: { class: 'text-riverRed underline' } }),
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
+      Image.configure({ HTMLAttributes: { class: 'max-w-full rounded-lg my-3' } }),
     ],
     content: value || '',
     editorProps: {
@@ -72,6 +94,22 @@ export default function RichTextEditor({ value, onChange, placeholder = 'Escrib√
       editor.commands.setContent(value || '', { emitUpdate: false });
     }
   }, [value, editor]);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const onImageFile = useCallback(async (file: File) => {
+    if (!editor) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Solo se permiten archivos de imagen.');
+      return;
+    }
+    try {
+      const dataUrl = await resizeImageToBase64(file, 1200);
+      editor.chain().focus().setImage({ src: dataUrl }).run();
+    } catch {
+      alert('No se pudo procesar la imagen.');
+    }
+  }, [editor]);
 
   const setLink = useCallback(() => {
     if (!editor) return;
@@ -160,6 +198,20 @@ export default function RichTextEditor({ value, onChange, placeholder = 'Escrib√
         <ToolbarBtn onClick={() => editor.chain().focus().unsetLink().run()} active={false} disabled={!editor.isActive('link')} title="Quitar enlace">
           <Link2Off className="w-3.5 h-3.5" />
         </ToolbarBtn>
+        <ToolbarBtn onClick={() => fileInputRef.current?.click()} active={false} title="Insertar imagen">
+          <ImageIcon className="w-3.5 h-3.5" />
+        </ToolbarBtn>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) onImageFile(f);
+            e.target.value = '';
+          }}
+        />
 
         {sep}
 

@@ -26,6 +26,7 @@ import AdminPlantel from './pages/admin/AdminPlantel';
 import AdminFormaciones from './pages/admin/AdminFormaciones';
 import AdminUsuarios from './pages/admin/AdminUsuarios';
 import AdminEncuestas from './pages/admin/AdminEncuestas';
+import AdminLogs from './pages/admin/AdminLogs';
 import Layout from './components/Layout';
 import RequireAuth from './components/RequireAuth';
 import RequireAdmin from './components/RequireAdmin';
@@ -94,6 +95,7 @@ export default function App() {
           <Route path="formaciones" element={<AdminFormaciones />} />
           <Route path="usuarios" element={<AdminUsuarios />} />
           <Route path="encuestas" element={<AdminEncuestas />} />
+          <Route path="logs" element={<AdminLogs />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

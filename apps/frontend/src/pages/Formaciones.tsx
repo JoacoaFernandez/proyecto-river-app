@@ -4,11 +4,14 @@ import { Link } from 'react-router-dom';
 import {
   getLineup,
   getFormationHistory,
+  getFormationForMatch,
   type LineupResponse,
   type LineupEntry,
   type PlayerAlert,
   type FormHistoryEntry,
+  type SavedFormation,
 } from '../services/formations.service';
+import { getPlayers, type Player } from '../services/players.service';
 import CanchaTactica from '../components/CanchaTactica';
 import PlayerInfoPanel from '../components/PlayerInfoPanel';
 
@@ -241,7 +244,39 @@ function HistorialTab() {
 
 // ── Pestaña Comparar ──────────────────────────────────────────────────────────
 
+function buildHistoricalLineup(saved: SavedFormation | null, players: Player[]): LineupResponse | null {
+  if (!saved || !saved.lineup) return null;
+  const byId = new Map(players.map((p) => [p.id, p]));
+  const lineup: LineupEntry[] = saved.lineup.map((s) => {
+    const pl = s.playerId ? byId.get(s.playerId) ?? null : null;
+    return {
+      x: s.x,
+      y: s.y,
+      role: s.role,
+      player: pl
+        ? {
+            id: pl.id,
+            name: pl.name,
+            number: pl.number,
+            photo: pl.photo,
+            nationality: pl.nationality,
+            position: pl.position,
+          }
+        : null,
+    };
+  });
+  return {
+    scheme: saved.scheme,
+    schemes: [saved.scheme],
+    lineup,
+    bench: [],
+    source: 'last-match',
+    alerts: [],
+  };
+}
+
 function CompararTab() {
+  const [mode, setMode] = useState<'esquema' | 'historico'>('esquema');
   const [schemeA, setSchemeA] = useState('4-3-3');
   const [schemeB, setSchemeB] = useState('4-4-2');
   const [dataA, setDataA] = useState<LineupResponse | null>(null);
@@ -250,15 +285,76 @@ function CompararTab() {
   const [loadingB, setLoadingB] = useState(true);
   const [selectedSlot, setSelectedSlot] = useState<{ slot: LineupEntry; alert?: PlayerAlert } | null>(null);
 
-  useEffect(() => {
-    setLoadingA(true);
-    getLineup(schemeA).then(setDataA).finally(() => setLoadingA(false));
-  }, [schemeA]);
+  const [history, setHistory] = useState<FormHistoryEntry[]>([]);
+  const [matchAId, setMatchAId] = useState<string>('');
+  const [matchBId, setMatchBId] = useState<string>('');
+  const [plantel, setPlantel] = useState<Player[]>([]);
 
   useEffect(() => {
+    getFormationHistory(20).then((h) => {
+      const withScheme = h.filter((e) => e.scheme);
+      setHistory(withScheme);
+      if (withScheme[0]) setMatchAId(withScheme[0].matchId);
+      if (withScheme[1]) setMatchBId(withScheme[1].matchId);
+    });
+    getPlayers().then(setPlantel);
+  }, []);
+
+  useEffect(() => {
+    if (mode !== 'esquema') return;
+    setLoadingA(true);
+    getLineup(schemeA).then(setDataA).finally(() => setLoadingA(false));
+  }, [schemeA, mode]);
+
+  useEffect(() => {
+    if (mode !== 'esquema') return;
     setLoadingB(true);
     getLineup(schemeB).then(setDataB).finally(() => setLoadingB(false));
-  }, [schemeB]);
+  }, [schemeB, mode]);
+
+  useEffect(() => {
+    if (mode !== 'historico' || !matchAId) return;
+    setLoadingA(true);
+    getFormationForMatch(matchAId)
+      .then((saved) => setDataA(buildHistoricalLineup(saved, plantel)))
+      .finally(() => setLoadingA(false));
+  }, [matchAId, mode, plantel]);
+
+  useEffect(() => {
+    if (mode !== 'historico' || !matchBId) return;
+    setLoadingB(true);
+    getFormationForMatch(matchBId)
+      .then((saved) => setDataB(buildHistoricalLineup(saved, plantel)))
+      .finally(() => setLoadingB(false));
+  }, [matchBId, mode, plantel]);
+
+  function matchLabel(e: FormHistoryEntry): string {
+    const isHome = RIVER_RX.test(e.homeTeam);
+    const opp = isHome ? e.awayTeam : e.homeTeam;
+    const dateStr = new Date(e.date).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' });
+    const sc =
+      e.homeScore != null && e.awayScore != null
+        ? ` (${isHome ? `${e.homeScore}-${e.awayScore}` : `${e.awayScore}-${e.homeScore}`})`
+        : '';
+    return `${dateStr} · vs ${opp}${sc} · ${e.scheme}`;
+  }
+
+  function MatchSelector({ value, onChange }: { value: string; onChange: (id: string) => void }) {
+    return (
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full bg-neutral-950 border border-neutral-800 focus:border-riverRed text-white rounded-xl px-3 py-2 text-xs outline-none"
+      >
+        {history.length === 0 && <option value="">(sin partidos)</option>}
+        {history.map((e) => (
+          <option key={e.matchId} value={e.matchId}>
+            {matchLabel(e)}
+          </option>
+        ))}
+      </select>
+    );
+  }
 
   function SchemeSelector({ value, onChange }: { value: string; onChange: (s: string) => void }) {
     return (
@@ -282,14 +378,40 @@ function CompararTab() {
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-neutral-500">
-        Compará cómo se distribuyen los mismos jugadores en dos esquemas tácticos distintos.
-      </p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <p className="text-xs text-neutral-500">
+          {mode === 'esquema'
+            ? 'Compará cómo se distribuyen los mismos jugadores en dos esquemas tácticos distintos.'
+            : 'Compará las formaciones reales que jugó River en dos partidos del historial.'}
+        </p>
+        <div className="flex gap-1 bg-neutral-950 border border-neutral-800 rounded-xl p-1">
+          <button
+            onClick={() => setMode('esquema')}
+            className={`px-3 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all ${
+              mode === 'esquema' ? 'bg-riverRed text-white' : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            Esquemas
+          </button>
+          <button
+            onClick={() => setMode('historico')}
+            className={`px-3 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all ${
+              mode === 'historico' ? 'bg-riverRed text-white' : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            Partidos jugados
+          </button>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Column A */}
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 space-y-3">
-          <SchemeSelector value={schemeA} onChange={setSchemeA} />
+          {mode === 'esquema' ? (
+            <SchemeSelector value={schemeA} onChange={setSchemeA} />
+          ) : (
+            <MatchSelector value={matchAId} onChange={setMatchAId} />
+          )}
           {loadingA ? (
             <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-riverRed" /></div>
           ) : dataA ? (
@@ -297,12 +419,18 @@ function CompararTab() {
               data={dataA}
               onPlayerClick={(slot, alert) => setSelectedSlot({ slot, alert })}
             />
-          ) : null}
+          ) : (
+            <p className="text-center text-xs text-neutral-500 py-12">Sin formación guardada para este partido.</p>
+          )}
         </div>
 
         {/* Column B */}
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 space-y-3">
-          <SchemeSelector value={schemeB} onChange={setSchemeB} />
+          {mode === 'esquema' ? (
+            <SchemeSelector value={schemeB} onChange={setSchemeB} />
+          ) : (
+            <MatchSelector value={matchBId} onChange={setMatchBId} />
+          )}
           {loadingB ? (
             <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-riverRed" /></div>
           ) : dataB ? (
@@ -310,7 +438,9 @@ function CompararTab() {
               data={dataB}
               onPlayerClick={(slot, alert) => setSelectedSlot({ slot, alert })}
             />
-          ) : null}
+          ) : (
+            <p className="text-center text-xs text-neutral-500 py-12">Sin formación guardada para este partido.</p>
+          )}
         </div>
       </div>
 
