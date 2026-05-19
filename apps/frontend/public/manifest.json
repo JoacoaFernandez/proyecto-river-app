@@ -1,6 +1,6 @@
 {
-  "name": "River App",
-  "short_name": "River",
+  "name": "CARP Fans",
+  "short_name": "CARP",
   "description": "App para hinchas de River Plate — partidos, noticias, plantel y más.",
   "start_url": "/",
   "scope": "/",
@@ -11,21 +11,21 @@
   "categories": ["sports", "entertainment"],
   "icons": [
     {
-      "src": "/icon-192.svg",
+      "src": "/logo.png",
       "sizes": "192x192",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icon-512.svg",
+      "src": "/logo.png",
       "sizes": "512x512",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icon-maskable.svg",
+      "src": "/logo.png",
       "sizes": "512x512",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "maskable"
     }
   ],
@@ -36,14 +36,14 @@
       "short_name": "Partidos",
       "description": "Ver fixture y resultados",
       "url": "/partidos",
-      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+      "icons": [{ "src": "/logo.png", "sizes": "any" }]
     },
     {
       "name": "Noticias",
       "short_name": "Noticias",
       "description": "Últimas noticias de River",
       "url": "/noticias",
-      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+      "icons": [{ "src": "/logo.png", "sizes": "any" }]
     }
   ]
 }

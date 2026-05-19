@@ -179,7 +179,7 @@ export default function Noticias() {
                   </h3>
                   <p className="text-sm text-neutral-400 mb-4">{excerpt(featured.body, 220)}</p>
                   <div className="flex items-center justify-between text-xs text-neutral-500">
-                    <span>{featured.author?.display_name ?? 'Redacción River App'}</span>
+                    <span>{featured.author?.display_name ?? 'Redacción CARP Fans'}</span>
                     <span>{timeAgo(featured.publishedAt ?? featured.createdAt)}</span>
                   </div>
                 </div>
@@ -220,7 +220,7 @@ export default function Noticias() {
                     {excerpt(n.body, 140)}
                   </p>
                   <span className="text-[11px] text-neutral-600 mt-auto">
-                    {n.author?.display_name ?? 'Redacción River App'}
+                    {n.author?.display_name ?? 'Redacción CARP Fans'}
                   </span>
                 </div>
               </Link>
