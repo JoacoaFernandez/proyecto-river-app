@@ -53,6 +53,7 @@ model Player {
   injuryReturnDate DateTime?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
+  photos           Json?
   ratings          PlayerRating[]
 }
 

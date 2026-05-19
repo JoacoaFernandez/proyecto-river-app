@@ -101,6 +101,8 @@ export default function AdminPlantel() {
 
   const [editing, setEditing] = useState<Player | null>(null);
   const [editForm, setEditForm] = useState<PlayerForm>(emptyForm);
+  const [editPhotos, setEditPhotos] = useState<string[]>([]);
+  const [photoInput, setPhotoInput] = useState('');
   const [saving, setSaving] = useState(false);
 
   const load = async () => {
@@ -154,6 +156,20 @@ export default function AdminPlantel() {
   const openEdit = (p: Player) => {
     setEditing(p);
     setEditForm(playerToForm(p));
+    setEditPhotos(Array.isArray(p.photos) ? p.photos : []);
+    setPhotoInput('');
+  };
+
+  const addPhoto = () => {
+    const url = photoInput.trim();
+    if (!url) return;
+    if (editPhotos.includes(url)) return;
+    setEditPhotos([...editPhotos, url]);
+    setPhotoInput('');
+  };
+
+  const removePhoto = (url: string) => {
+    setEditPhotos(editPhotos.filter((u) => u !== url));
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -162,7 +178,7 @@ export default function AdminPlantel() {
     if (!editForm.name.trim()) { flash('El nombre es obligatorio.', true); return; }
     setSaving(true);
     try {
-      await updatePlayer(editing.id, formToPayload(editForm) as any);
+      await updatePlayer(editing.id, { ...formToPayload(editForm), photos: editPhotos } as any);
       flash('✅ Jugador actualizado.');
       setEditing(null);
       await load();
@@ -478,6 +494,51 @@ export default function AdminPlantel() {
                 <p className="text-xs font-bold uppercase tracking-wider text-riverRed mb-3">Estado físico</p>
               </div>
               <StatusFields f={editForm} setF={setEditForm} />
+
+              {/* Galería de fotos */}
+              <div className="md:col-span-2 border-t border-neutral-800 pt-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-riverRed mb-2">Galería de fotos</p>
+                <p className="text-[11px] text-neutral-500 mb-3">URLs de fotos del jugador (festejos, entrenamientos, partidos). Aparecen en su ficha como carrusel.</p>
+                <div className="flex gap-2 mb-3">
+                  <input
+                    type="url"
+                    placeholder="https://ejemplo.com/foto.jpg"
+                    className={inputClass + ' flex-1'}
+                    value={photoInput}
+                    onChange={(e) => setPhotoInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addPhoto(); } }}
+                  />
+                  <button
+                    type="button"
+                    onClick={addPhoto}
+                    className="bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-1"
+                  >
+                    <Plus className="w-4 h-4" /> Agregar
+                  </button>
+                </div>
+                {editPhotos.length > 0 && (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+                    {editPhotos.map((url) => (
+                      <div key={url} className="relative group">
+                        <img
+                          src={url}
+                          alt=""
+                          className="w-full aspect-square object-cover rounded-lg border border-neutral-700"
+                          onError={(e) => { (e.target as HTMLImageElement).style.opacity = '0.3'; }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removePhoto(url)}
+                          className="absolute top-1 right-1 w-6 h-6 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Quitar foto"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="flex gap-2 justify-end pt-2">

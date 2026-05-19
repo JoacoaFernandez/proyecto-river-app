@@ -16,6 +16,7 @@ export interface Player {
   injuryType: string | null;
   injuryZone: string | null;
   injuryReturnDate: string | null;
+  photos?: string[] | null;
 }
 
 export interface PlayerStats {
