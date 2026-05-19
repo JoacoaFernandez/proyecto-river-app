@@ -12,6 +12,7 @@ import { getPredictionSummary, type PredictionSummary } from '../services/predic
 import ReactMarkdown from 'react-markdown';
 import CanchaTactica from '../components/CanchaTactica';
 import PlayerInfoPanel from '../components/PlayerInfoPanel';
+import SurveyWidget from '../components/SurveyWidget';
 import { Bot, Sparkles, AlertCircle } from 'lucide-react';
 
 const TEAM_COLORS: Record<string, { bg: string; text: string }> = {
@@ -739,6 +740,9 @@ export default function ProximoPartido() {
       <div id="formacion">
         <FormacionSection />
       </div>
+
+      {/* Encuesta táctica del editor */}
+      <SurveyWidget />
 
       <H2HSection rival={rival} />
     </div>
