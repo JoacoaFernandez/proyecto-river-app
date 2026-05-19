@@ -259,6 +259,155 @@ export class MatchesService implements OnModuleInit {
     return out.slice(0, 11);
   }
 
+  /**
+   * Importa una lista de partidos históricos desde CSV. Cada fila debe traer:
+   * date,homeTeam,awayTeam,homeScore,awayScore,competition,stadium
+   * (stadium opcional). Si dryRun=true devuelve solo la preview sin tocar la DB.
+   */
+  async importMatchesCsv(csv: string, dryRun: boolean): Promise<{
+    parsed: number;
+    created: number;
+    skipped: number;
+    errors: Array<{ line: number; reason: string }>;
+    preview: Array<{
+      date: string;
+      homeTeam: string;
+      awayTeam: string;
+      homeScore: number | null;
+      awayScore: number | null;
+      competition: string | null;
+      stadium: string | null;
+    }>;
+  }> {
+    const lines = csv.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length === 0) {
+      return { parsed: 0, created: 0, skipped: 0, errors: [], preview: [] };
+    }
+
+    const headerLine = lines[0].toLowerCase();
+    const hasHeader = headerLine.includes('date') && headerLine.includes('hometeam');
+    const dataLines = hasHeader ? lines.slice(1) : lines;
+
+    const errors: Array<{ line: number; reason: string }> = [];
+    const preview: Array<{
+      date: string;
+      homeTeam: string;
+      awayTeam: string;
+      homeScore: number | null;
+      awayScore: number | null;
+      competition: string | null;
+      stadium: string | null;
+    }> = [];
+
+    const parsed: Array<{
+      date: Date;
+      homeTeam: string;
+      awayTeam: string;
+      homeScore: number | null;
+      awayScore: number | null;
+      competition: string;
+      stadium: string | null;
+    }> = [];
+
+    dataLines.forEach((rawLine, idx) => {
+      const lineNum = idx + (hasHeader ? 2 : 1);
+      const cols = this.parseCsvLine(rawLine);
+      if (cols.length < 3) {
+        errors.push({ line: lineNum, reason: `Fila con muy pocas columnas (${cols.length})` });
+        return;
+      }
+      const [dateStr, homeTeam, awayTeam, homeScoreStr, awayScoreStr, competition, stadium] = cols;
+
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) {
+        errors.push({ line: lineNum, reason: `Fecha inválida: "${dateStr}"` });
+        return;
+      }
+      if (!homeTeam || !awayTeam) {
+        errors.push({ line: lineNum, reason: 'homeTeam y awayTeam son obligatorios' });
+        return;
+      }
+
+      const homeScore = homeScoreStr != null && homeScoreStr !== '' ? parseInt(homeScoreStr, 10) : null;
+      const awayScore = awayScoreStr != null && awayScoreStr !== '' ? parseInt(awayScoreStr, 10) : null;
+
+      parsed.push({
+        date,
+        homeTeam,
+        awayTeam,
+        homeScore: homeScore != null && !isNaN(homeScore) ? homeScore : null,
+        awayScore: awayScore != null && !isNaN(awayScore) ? awayScore : null,
+        competition: (competition ?? '').trim() || 'Importado',
+        stadium: (stadium ?? '').trim() || null,
+      });
+
+      preview.push({
+        date: date.toISOString(),
+        homeTeam,
+        awayTeam,
+        homeScore: homeScore != null && !isNaN(homeScore) ? homeScore : null,
+        awayScore: awayScore != null && !isNaN(awayScore) ? awayScore : null,
+        competition: (competition ?? '').trim() || 'Importado',
+        stadium: (stadium ?? '').trim() || null,
+      });
+    });
+
+    if (dryRun) {
+      return { parsed: parsed.length, created: 0, skipped: 0, errors, preview };
+    }
+
+    let created = 0;
+    let skipped = 0;
+    const baseTs = Date.now();
+    for (let i = 0; i < parsed.length; i++) {
+      const m = parsed[i];
+      try {
+        const finished = m.homeScore != null && m.awayScore != null;
+        await this.prisma.match.create({
+          data: {
+            type: `IMPORT_${baseTs}_${i}`,
+            homeTeam: m.homeTeam,
+            awayTeam: m.awayTeam,
+            date: m.date,
+            competition: m.competition,
+            stadium: m.stadium,
+            status: finished ? 'finished' : 'scheduled',
+            homeScore: m.homeScore,
+            awayScore: m.awayScore,
+            manualOverride: true,
+          },
+        });
+        created++;
+      } catch (e: any) {
+        skipped++;
+        errors.push({ line: i + (hasHeader ? 2 : 1), reason: e?.message ?? 'Error al crear' });
+      }
+    }
+
+    return { parsed: parsed.length, created, skipped, errors, preview };
+  }
+
+  /** Parser CSV simple con soporte para campos entre comillas. */
+  private parseCsvLine(line: string): string[] {
+    const out: string[] = [];
+    let buf = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQuotes) {
+        if (ch === '"' && line[i + 1] === '"') { buf += '"'; i++; }
+        else if (ch === '"') inQuotes = false;
+        else buf += ch;
+      } else {
+        if (ch === ',') { out.push(buf.trim()); buf = ''; }
+        else if (ch === '"') inQuotes = true;
+        else buf += ch;
+      }
+    }
+    out.push(buf.trim());
+    return out;
+  }
+
   async createManual(data: {
     homeTeam: string;
     awayTeam: string;
