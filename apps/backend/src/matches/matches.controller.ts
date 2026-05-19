@@ -78,6 +78,15 @@ export class MatchesController {
     return this.matchesService.createManual(body);
   }
 
+  @Post('import/csv')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Importar partidos desde CSV (admin)' })
+  async importCsv(@Body() body: { csv: string; dryRun?: boolean }) {
+    return this.matchesService.importMatchesCsv(body?.csv ?? '', !!body?.dryRun);
+  }
+
   @Get(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')

@@ -1,7 +1,7 @@
 // apps/frontend/src/pages/admin/AdminLayout.tsx
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Calendar, Newspaper, Users, LogOut, ArrowLeft, Trophy, UserCog, BarChart2, Activity, Bell } from 'lucide-react';
+import { LayoutDashboard, Calendar, Newspaper, Users, LogOut, ArrowLeft, Trophy, UserCog, BarChart2, Activity, Bell, Upload } from 'lucide-react';
 import { clearCurrentUser, getCurrentUser, type CurrentUser } from '../../services/me.service';
 
 const navItems = [
@@ -13,6 +13,7 @@ const navItems = [
   { to: '/admin/usuarios', label: 'Usuarios', Icon: UserCog, end: false },
   { to: '/admin/encuestas', label: 'Encuestas', Icon: BarChart2, end: false },
   { to: '/admin/push', label: 'Push', Icon: Bell, end: false },
+  { to: '/admin/import', label: 'Importar', Icon: Upload, end: false },
   { to: '/admin/logs', label: 'Sistema', Icon: Activity, end: false },
 ];
 

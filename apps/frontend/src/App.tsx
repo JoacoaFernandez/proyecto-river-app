@@ -28,6 +28,7 @@ import AdminUsuarios from './pages/admin/AdminUsuarios';
 import AdminEncuestas from './pages/admin/AdminEncuestas';
 import AdminLogs from './pages/admin/AdminLogs';
 import AdminPush from './pages/admin/AdminPush';
+import AdminImport from './pages/admin/AdminImport';
 import Layout from './components/Layout';
 import RequireAuth from './components/RequireAuth';
 import RequireAdmin from './components/RequireAdmin';
@@ -98,6 +99,7 @@ export default function App() {
           <Route path="encuestas" element={<AdminEncuestas />} />
           <Route path="logs" element={<AdminLogs />} />
           <Route path="push" element={<AdminPush />} />
+          <Route path="import" element={<AdminImport />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />
