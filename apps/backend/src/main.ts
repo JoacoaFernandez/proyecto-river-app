@@ -10,7 +10,21 @@ import { IoAdapter } from '@nestjs/platform-socket.io';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.useWebSocketAdapter(new IoAdapter(app));
-  app.enableCors();
+  app.enableCors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      const allowed = [
+        /^http:\/\/localhost:\d+$/,
+        /\.vercel\.app$/,
+      ];
+      if (allowed.some((rx) => rx.test(origin))) {
+        callback(null, true);
+      } else {
+        callback(new Error(`Origin ${origin} not allowed by CORS`));
+      }
+    },
+    credentials: true,
+  });
   app.useStaticAssets(join(__dirname, '..', 'uploads'), { prefix: '/uploads' });
 
   // Habilitar validaciones automáticas de datos en los endpoints

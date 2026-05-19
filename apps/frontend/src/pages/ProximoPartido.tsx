@@ -165,7 +165,7 @@ function FormacionSection() {
           <div className="max-w-md mx-auto lg:max-w-none">
             <CanchaTactica
                 data={data}
-                onPlayerClick={(slot, alert) => setSelectedSlot(slot)}
+                onPlayerClick={(slot) => setSelectedSlot(slot)}
               />
           </div>
           <div className="bg-neutral-950 border border-neutral-800 rounded-xl p-3 space-y-2">
