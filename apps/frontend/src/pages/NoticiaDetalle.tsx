@@ -372,11 +372,29 @@ export default function NoticiaDetalle() {
                 {likeError ? <span>!</span> : likeCount > 0 && <span>{likeCount}</span>}
               </button>
               {me && <FavoriteButton type="news" targetId={id!} size="md" />}
+              <a
+                href={`https://wa.me/?text=${encodeURIComponent(`${news?.title ?? ''} ${typeof window !== 'undefined' ? window.location.href : ''}`)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Compartir por WhatsApp"
+                className="bg-neutral-950 hover:bg-green-950/40 border border-neutral-800 hover:border-green-700/50 hover:text-green-400 text-xs p-2 rounded-xl transition-all flex items-center justify-center"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.1-1.7-.8-2-.9-.3-.1-.5-.1-.7.1-.2.3-.8.9-.9 1.1-.2.2-.3.2-.6.1-.3-.2-1.2-.5-2.4-1.5-.9-.8-1.5-1.8-1.6-2.1-.2-.3 0-.4.1-.6.1-.1.3-.3.4-.5.1-.2.2-.3.3-.5.1-.2.1-.4 0-.5-.1-.1-.7-1.7-.9-2.3-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.1.2 2.1 3.2 5.1 4.5.7.3 1.3.5 1.7.6.7.2 1.4.2 1.9.1.6-.1 1.7-.7 2-1.4.2-.7.2-1.3.2-1.4-.1-.1-.3-.2-.6-.3M12 22C6.5 22 2 17.5 2 12S6.5 2 12 2s10 4.5 10 10-4.5 10-10 10m0-18C7.6 4 4 7.6 4 12s3.6 8 8 8 8-3.6 8-8-3.6-8-8-8"/></svg>
+              </a>
+              <a
+                href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(news?.title ?? '')}&url=${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : '')}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Compartir en X / Twitter"
+                className="bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 hover:border-white/40 hover:text-white text-xs p-2 rounded-xl transition-all flex items-center justify-center"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+              </a>
               <button
                 onClick={handleShare}
                 className="bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 hover:border-riverRed text-xs px-4 py-2 rounded-xl transition-all flex items-center gap-2"
               >
-                {shared ? '✓ Copiado' : <><Share2 className="w-3.5 h-3.5" /> Compartir</>}
+                {shared ? '✓ Copiado' : <><Share2 className="w-3.5 h-3.5" /> Link</>}
               </button>
             </div>
           </div>

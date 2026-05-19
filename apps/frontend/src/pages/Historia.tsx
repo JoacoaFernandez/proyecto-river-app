@@ -581,6 +581,22 @@ function TimelineItem({ moment, isLast, isActive, onToggle }: {
 
 const TOTAL_TITLES = PALMARES.flatMap((g) => g.items).reduce((s, i) => s + i.count, 0);
 
+// Encontrar el título más reciente (mayor año en todos los items)
+const MOST_RECENT_TITLE: { name: string; year: number; icon: string } | null = (() => {
+  let best: { name: string; year: number; icon: string } | null = null;
+  for (const group of PALMARES) {
+    for (const item of group.items) {
+      const years = Array.isArray(item.years) ? item.years : [];
+      if (years.length === 0) continue;
+      const maxYear = Math.max(...years);
+      if (!best || maxYear > best.year) {
+        best = { name: item.name, year: maxYear, icon: item.icon };
+      }
+    }
+  }
+  return best;
+})();
+
 export default function Historia() {
   const [activeTimeline, setActiveTimeline] = useState<string | null>(null);
 
@@ -617,6 +633,17 @@ export default function Historia() {
           <span className="text-4xl font-black text-riverRed">{TOTAL_TITLES}</span>
           <span className="text-sm text-neutral-400 ml-2">títulos oficiales</span>
         </div>
+        {MOST_RECENT_TITLE && (
+          <div className="mt-4 flex items-center justify-center gap-3 max-w-md mx-auto bg-gradient-to-r from-amber-950/30 via-yellow-950/30 to-amber-950/30 border border-yellow-700/30 rounded-2xl px-5 py-3">
+            <span className="text-3xl">{MOST_RECENT_TITLE.icon}</span>
+            <div className="text-left">
+              <div className="text-[10px] font-bold text-yellow-500/80 uppercase tracking-widest">Último título</div>
+              <div className="text-sm font-bold text-white">
+                {MOST_RECENT_TITLE.name} <span className="text-yellow-400 tabular-nums">{MOST_RECENT_TITLE.year}</span>
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* ── Palmarés ── */}

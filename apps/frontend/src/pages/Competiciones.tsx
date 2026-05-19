@@ -52,23 +52,47 @@ function isRiver(team: string | undefined | null): boolean {
   return !!team && RIVER_RX.test(team);
 }
 
-function ZoneTable({ group, advanceTop = 8 }: { group: StandingsGroup; advanceTop?: number }) {
+function ZoneTable({ group, advanceTop = 8, isHomeAndAway = false }: { group: StandingsGroup; advanceTop?: number; isHomeAndAway?: boolean }) {
   const totalRows = group.standings.length;
   const hasRiver = group.standings.some((r) => isRiver(r.team));
+
+  // Partidos jugados vs totales del grupo
+  const sumPj = group.standings.reduce((s, r) => s + (r.pj ?? 0), 0);
+  const played = Math.floor(sumPj / 2);
+  // En home-and-away cada par juega 2 veces -> N*(N-1). En single round-robin -> N*(N-1)/2.
+  const totalMatches = isHomeAndAway
+    ? totalRows * (totalRows - 1)
+    : Math.floor((totalRows * (totalRows - 1)) / 2);
+  const remaining = Math.max(0, totalMatches - played);
+  const progressPct = totalMatches > 0 ? Math.round((played / totalMatches) * 100) : 0;
+
   return (
     <div
       className={`bg-neutral-900 border rounded-2xl overflow-hidden ${
         hasRiver ? 'border-riverRed/50 shadow-lg shadow-red-900/20' : 'border-neutral-800'
       }`}
     >
-      <div className="px-4 py-3 border-b border-neutral-800 flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-neutral-800 flex items-center justify-between gap-3 flex-wrap">
         <h3 className="font-black tracking-wide uppercase text-sm">
           {group.name}
           {hasRiver && (
             <span className="ml-2 text-[10px] text-riverRed font-bold uppercase">· River</span>
           )}
         </h3>
-        <span className="text-[10px] text-neutral-500">{totalRows} equipos</span>
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] text-neutral-500">{totalRows} equipos</span>
+          {totalMatches > 0 && (
+            <span
+              className="text-[10px] font-bold text-neutral-400 bg-neutral-950 border border-neutral-800 px-2 py-0.5 rounded-full tabular-nums"
+              title={`${remaining} partidos pendientes`}
+            >
+              <span className="text-green-400">{played}</span>
+              <span className="text-neutral-600">/</span>
+              <span>{totalMatches}</span>
+              <span className="text-neutral-600 ml-1">({progressPct}%)</span>
+            </span>
+          )}
+        </div>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm min-w-[660px]">
@@ -449,7 +473,7 @@ export default function Competiciones() {
                 }`}
               >
                 {orderedGroups.map((g) => (
-                  <ZoneTable key={g.key} group={g} advanceTop={advanceTop} />
+                  <ZoneTable key={g.key} group={g} advanceTop={advanceTop} isHomeAndAway={isCopa} />
                 ))}
               </div>
 
