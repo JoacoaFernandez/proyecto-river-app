@@ -6,6 +6,7 @@ import { getMatchById, getH2H } from '../services/matches.service';
 import type { Match } from '../services/matches.service';
 import EventTimeline from '../components/EventTimeline';
 import MatchStatsPanel from '../components/MatchStatsPanel';
+import FavoriteButton from '../components/FavoriteButton';
 import { useTeamLogo } from '../hooks/useTeamLogo';
 
 type DetailTab = 'resumen' | 'estadisticas' | 'h2h' | 'galeria';
@@ -255,15 +256,18 @@ export default function PartidoDetalle() {
           <span className="mx-2">/</span>
           <span className="text-white truncate">{match.homeTeam} vs {match.awayTeam}</span>
         </div>
-        <button
-          onClick={handleShare}
-          className="text-xs bg-neutral-900 border border-neutral-800 hover:border-neutral-700 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5"
-        >
-          {copied
-            ? <><Check className="w-3.5 h-3.5 text-green-400" /> Copiado</>
-            : <><Link2 className="w-3.5 h-3.5" /> Compartir</>
-          }
-        </button>
+        <div className="flex items-center gap-2">
+          <FavoriteButton type="match" targetId={match.id} size="sm" />
+          <button
+            onClick={handleShare}
+            className="text-xs bg-neutral-900 border border-neutral-800 hover:border-neutral-700 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5"
+          >
+            {copied
+              ? <><Check className="w-3.5 h-3.5 text-green-400" /> Copiado</>
+              : <><Link2 className="w-3.5 h-3.5" /> Compartir</>
+            }
+          </button>
+        </div>
       </div>
 
       {/* Card principal */}

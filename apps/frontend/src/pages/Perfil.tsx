@@ -11,6 +11,11 @@ import {
 import type { CurrentUser } from '../services/me.service';
 import { getMyAllPredictions } from '../services/predictions.service';
 import { api } from '../services/api';
+import { getMyFavorites } from '../services/favorites.service';
+import type { Favorite } from '../services/favorites.service';
+import { getPlayer } from '../services/players.service';
+import { getMatchById } from '../services/matches.service';
+import { getNewsById } from '../services/news.service';
 
 function resizeImageToBase64(file: File, maxSize = 256): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -681,6 +686,9 @@ export default function Perfil() {
         </div>
       )}
 
+      {/* Mis Favoritos */}
+      <MisFavoritosSection />
+
       {/* Account actions */}
       <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 space-y-2">
         <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-3">
@@ -910,5 +918,189 @@ export default function Perfil() {
         </Modal>
       )}
     </div>
+  );
+}
+
+type FavTab = 'player' | 'match' | 'news';
+type EnrichedFavorite = Favorite & { item: any | null };
+
+function MisFavoritosSection() {
+  const [favs, setFavs] = useState<EnrichedFavorite[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<FavTab>('player');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await getMyFavorites();
+        const enriched = await Promise.all(
+          list.map(async (f) => {
+            try {
+              let item: any = null;
+              if (f.type === 'player') item = await getPlayer(f.targetId);
+              else if (f.type === 'match') item = await getMatchById(f.targetId);
+              else if (f.type === 'news') item = await getNewsById(f.targetId);
+              return { ...f, item };
+            } catch {
+              return { ...f, item: null };
+            }
+          }),
+        );
+        if (!cancelled) {
+          setFavs(enriched);
+          // Auto-select first tab with items
+          const firstWithItems = (['player', 'match', 'news'] as FavTab[]).find(
+            (t) => enriched.some((e) => e.type === t),
+          );
+          if (firstWithItems) setTab(firstWithItems);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const counts = {
+    player: favs.filter((f) => f.type === 'player').length,
+    match: favs.filter((f) => f.type === 'match').length,
+    news: favs.filter((f) => f.type === 'news').length,
+  };
+  const total = counts.player + counts.match + counts.news;
+
+  const tabs: { id: FavTab; label: string; count: number }[] = [
+    { id: 'player', label: 'Jugadores', count: counts.player },
+    { id: 'match', label: 'Partidos', count: counts.match },
+    { id: 'news', label: 'Noticias', count: counts.news },
+  ];
+
+  const visibleFavs = favs.filter((f) => f.type === tab);
+
+  return (
+    <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest">
+          Mis Favoritos
+        </h3>
+        <span className="text-[10px] text-neutral-600">{total} guardados</span>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-6">
+          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-riverRed" />
+        </div>
+      ) : total === 0 ? (
+        <p className="text-sm text-neutral-500 text-center py-6">
+          Todavía no guardaste favoritos. Tocá el corazón en jugadores, partidos o noticias para
+          agregarlos.
+        </p>
+      ) : (
+        <>
+          <div className="flex gap-1.5 mb-4 border-b border-neutral-800">
+            {tabs.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`px-3 py-2 text-xs font-bold uppercase tracking-wider transition-all border-b-2 -mb-px ${
+                  tab === t.id
+                    ? 'text-riverRed border-riverRed'
+                    : 'text-neutral-500 border-transparent hover:text-neutral-300'
+                }`}
+              >
+                {t.label} {t.count > 0 && <span className="text-neutral-600">({t.count})</span>}
+              </button>
+            ))}
+          </div>
+
+          {visibleFavs.length === 0 ? (
+            <p className="text-sm text-neutral-500 text-center py-4">Vacío.</p>
+          ) : (
+            <div className="space-y-2">
+              {visibleFavs.map((f) => <FavoriteRow key={f.id} fav={f} />)}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function FavoriteRow({ fav }: { fav: EnrichedFavorite }) {
+  if (!fav.item) {
+    return (
+      <div className="px-3 py-2 rounded-xl bg-neutral-950 border border-neutral-800 text-xs text-neutral-500">
+        Item eliminado o no disponible
+      </div>
+    );
+  }
+
+  if (fav.type === 'player') {
+    const p = fav.item;
+    return (
+      <Link
+        to={`/plantel/${p.id}`}
+        className="flex items-center gap-3 p-3 rounded-xl bg-neutral-950 border border-neutral-800 hover:border-neutral-700 transition-all"
+      >
+        <div className="w-9 h-9 rounded-full bg-neutral-800 border border-neutral-700 overflow-hidden flex-shrink-0">
+          {p.photo && <img src={p.photo} alt="" className="w-full h-full object-cover" />}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold truncate">{p.name}</div>
+          <div className="text-[10px] text-neutral-500 uppercase tracking-wider">
+            {p.position}{p.number != null && ` · #${p.number}`}
+          </div>
+        </div>
+        <span className="text-neutral-600 text-sm">›</span>
+      </Link>
+    );
+  }
+
+  if (fav.type === 'match') {
+    const m = fav.item;
+    const date = m.date ? new Date(m.date).toLocaleDateString('es-AR', { day: '2-digit', month: 'short' }) : '';
+    return (
+      <Link
+        to={`/partidos/${m.id}`}
+        className="flex items-center gap-3 p-3 rounded-xl bg-neutral-950 border border-neutral-800 hover:border-neutral-700 transition-all"
+      >
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold truncate">
+            {m.homeTeam} vs {m.awayTeam}
+          </div>
+          <div className="text-[10px] text-neutral-500 uppercase tracking-wider">
+            {date}{m.competition && ` · ${m.competition}`}
+          </div>
+        </div>
+        {m.status === 'finished' && m.homeScore != null && (
+          <span className="text-sm font-black tabular-nums text-neutral-300">
+            {m.homeScore}–{m.awayScore}
+          </span>
+        )}
+        <span className="text-neutral-600 text-sm">›</span>
+      </Link>
+    );
+  }
+
+  // news
+  const n = fav.item;
+  return (
+    <Link
+      to={`/noticias/${n.id}`}
+      className="flex items-center gap-3 p-3 rounded-xl bg-neutral-950 border border-neutral-800 hover:border-neutral-700 transition-all"
+    >
+      {n.imageUrl && (
+        <img src={n.imageUrl} alt="" className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
+      )}
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-semibold line-clamp-2">{n.title}</div>
+        {n.category && (
+          <div className="text-[10px] text-neutral-500 uppercase tracking-wider mt-0.5">
+            {n.category}
+          </div>
+        )}
+      </div>
+      <span className="text-neutral-600 text-sm">›</span>
+    </Link>
   );
 }
