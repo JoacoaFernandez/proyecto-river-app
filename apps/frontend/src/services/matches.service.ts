@@ -116,6 +116,27 @@ export const updateMatchPhotos = async (id: string, photos: string[]): Promise<v
   await api.patch(`/matches/${id}/photos`, { photos });
 };
 
+export interface MatchLineupPlayer {
+  name: string;
+  jersey: number | null;
+  position: string;
+  starter: boolean;
+}
+export interface MatchLineups {
+  home: { team: string; players: MatchLineupPlayer[] };
+  away: { team: string; players: MatchLineupPlayer[] };
+  source: 'espn' | 'none';
+}
+
+export const getMatchLineups = async (id: string): Promise<MatchLineups | null> => {
+  try {
+    const res = await api.get<MatchLineups>(`/matches/by-id/${id}/lineups`);
+    return res.data;
+  } catch {
+    return null;
+  }
+};
+
 export const getMatchById = async (id: string): Promise<Match | null> => {
   try {
     const res = await api.get(`/matches/by-id/${id}`);

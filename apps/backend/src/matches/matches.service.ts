@@ -165,6 +165,100 @@ export class MatchesService implements OnModuleInit {
     return match;
   }
 
+  // ── Lineups de ambos equipos desde ESPN summary ─────────────────────────────
+  // Fetch one-off (sin persistir) para mostrar en PartidoDetalle.
+  async getMatchLineups(matchId: string): Promise<{
+    home: { team: string; players: Array<{ name: string; jersey: number | null; position: string; starter: boolean }> };
+    away: { team: string; players: Array<{ name: string; jersey: number | null; position: string; starter: boolean }> };
+    source: 'espn' | 'none';
+  } | null> {
+    const match = await this.prisma.match.findUnique({ where: { id: matchId } });
+    if (!match) return null;
+
+    try {
+      const dayBefore = new Date(match.date.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10).replace(/-/g, '');
+      const dayAfter = new Date(match.date.getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10).replace(/-/g, '');
+
+      let espnEventId: string | null = null;
+      let espnLeague = 'arg.1';
+
+      for (const league of ESPN_LEAGUES) {
+        try {
+          const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.code}/scoreboard?dates=${dayBefore}-${dayAfter}`;
+          const res = await axios.get(url, { headers: AXIOS_HEADERS, timeout: 8000 });
+          const events: any[] = res.data?.events ?? [];
+          const riverEvent = events.find((ev) => {
+            const competitors: any[] = ev.competitions?.[0]?.competitors ?? [];
+            return competitors.some((c) => /river plate/i.test(c.team?.displayName ?? ''));
+          });
+          if (riverEvent) { espnEventId = String(riverEvent.id); espnLeague = league.code; break; }
+        } catch { /* try next league */ }
+      }
+
+      if (!espnEventId) return { home: { team: match.homeTeam, players: [] }, away: { team: match.awayTeam, players: [] }, source: 'none' };
+
+      const summaryUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/${espnLeague}/summary?event=${espnEventId}`;
+      const res = await axios.get(summaryUrl, { headers: AXIOS_HEADERS, timeout: 8000 });
+      const summary = res.data;
+
+      const rosters: any[] = summary?.rosters ?? [];
+      const homeRoster = this.extractTeamRoster(rosters, match.homeTeam) ?? this.extractTeamRosterFromBoxscore(summary, match.homeTeam) ?? [];
+      const awayRoster = this.extractTeamRoster(rosters, match.awayTeam) ?? this.extractTeamRosterFromBoxscore(summary, match.awayTeam) ?? [];
+
+      return {
+        home: { team: match.homeTeam, players: homeRoster },
+        away: { team: match.awayTeam, players: awayRoster },
+        source: (homeRoster.length + awayRoster.length) > 0 ? 'espn' : 'none',
+      };
+    } catch (e: any) {
+      this.logger.warn(`getMatchLineups falló: ${e?.message}`);
+      return { home: { team: match.homeTeam, players: [] }, away: { team: match.awayTeam, players: [] }, source: 'none' };
+    }
+  }
+
+  private extractTeamRoster(rosters: any[], teamName: string) {
+    const norm = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+    const target = norm(teamName);
+    for (const teamRoster of rosters) {
+      const name = norm(teamRoster?.team?.displayName ?? teamRoster?.team?.name ?? '');
+      if (name && (name === target || target.includes(name) || name.includes(target))) {
+        const entries: any[] = teamRoster?.roster ?? teamRoster?.athletes ?? [];
+        return this.parseEspnRosterEntries(entries);
+      }
+    }
+    return null;
+  }
+
+  private extractTeamRosterFromBoxscore(summary: any, teamName: string) {
+    const norm = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+    const target = norm(teamName);
+    const bsPlayers: any[] = summary?.boxscore?.players ?? [];
+    for (const td of bsPlayers) {
+      const name = norm(td?.team?.displayName ?? td?.team?.name ?? '');
+      if (name && (name === target || target.includes(name) || name.includes(target))) {
+        const entries: any[] = td?.athletes ?? td?.statistics ?? [];
+        return this.parseEspnRosterEntries(entries);
+      }
+    }
+    return null;
+  }
+
+  private parseEspnRosterEntries(entries: any[]) {
+    const out: Array<{ name: string; jersey: number | null; position: string; starter: boolean }> = [];
+    for (const entry of entries) {
+      const athlete = entry?.athlete ?? entry;
+      const name: string = athlete?.displayName ?? athlete?.shortName ?? athlete?.fullName ?? '';
+      if (!name) continue;
+      const jersey = athlete?.jersey != null ? parseInt(String(athlete.jersey), 10) : null;
+      const position: string = (athlete?.position?.abbreviation ?? athlete?.position?.name ?? athlete?.position ?? '').toString();
+      const starter: boolean = entry?.starter === true || entry?.starter === 'true' || entry?.period === 1;
+      out.push({ name, jersey: jersey != null && !isNaN(jersey) ? jersey : null, position, starter });
+    }
+    const marked = out.filter((p) => p.starter);
+    if (marked.length >= 7) return marked.slice(0, 11);
+    return out.slice(0, 11);
+  }
+
   async createManual(data: {
     homeTeam: string;
     awayTeam: string;
@@ -1250,9 +1344,14 @@ export class MatchesService implements OnModuleInit {
           const isNowFinished = record.status === 'finished';
           const justFinished = !wasFinished && isNowFinished;
 
+          // No re-sincronizar `type`: es un slot label calculado por indice del array
+          // y entre syncs cambia, generando colisiones por la unique constraint.
+          // El partido se identifica por id; el `type` original (de cuando se creo)
+          // alcanza para los usos actuales.
+          const { type: _ignoredType, ...recordWithoutType } = record;
           const updatedMatch = await this.prisma.match.update({
             where: { id: match.id },
-            data: record,
+            data: recordWithoutType,
           });
 
           if (justFinished) {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X, Plus, Trash2, Image } from 'lucide-react';
+import { X, Plus, Trash2, Image, Star } from 'lucide-react';
 import type { Match, MatchEvent, MatchStatistics } from '../../services/matches.service';
 import {
   createMatchAdmin,
@@ -12,6 +12,8 @@ import {
   createMatchEventAdmin,
   deleteMatchEventAdmin,
 } from '../../services/matches.service';
+import { getPlayers, type Player } from '../../services/players.service';
+import { getRatingsByMatch, upsertRating, deleteRating, type PlayerRating } from '../../services/ratings.service';
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   scheduled: { label: 'Programado', color: 'bg-blue-950/40 text-blue-400 border-blue-900/40' },
@@ -50,6 +52,14 @@ export default function AdminPartidos() {
     competition: '',
     stadium: '',
   });
+
+  // Ratings modal
+  const [ratingsModalMatch, setRatingsModalMatch] = useState<Match | null>(null);
+  const [ratingsList, setRatingsList] = useState<PlayerRating[]>([]);
+  const [squadPlayers, setSquadPlayers] = useState<Player[]>([]);
+  const [ratingsLoading, setRatingsLoading] = useState(false);
+  const [ratingsDraft, setRatingsDraft] = useState<Record<string, string>>({}); // playerId -> "7.5"
+  const [savingRatings, setSavingRatings] = useState(false);
 
   // Edit modal
   const [editing, setEditing] = useState<Match | null>(null);
@@ -153,6 +163,57 @@ export default function AdminPartidos() {
       setEvents(ev);
       setEventsLoading(false);
     });
+  };
+
+  const openRatings = async (m: Match) => {
+    setRatingsModalMatch(m);
+    setRatingsLoading(true);
+    try {
+      const [players, ratings] = await Promise.all([
+        squadPlayers.length ? Promise.resolve(squadPlayers) : getPlayers(),
+        getRatingsByMatch(m.id),
+      ]);
+      if (!squadPlayers.length) setSquadPlayers(players);
+      setRatingsList(ratings);
+      const draft: Record<string, string> = {};
+      for (const r of ratings) draft[r.playerId] = String(r.rating);
+      setRatingsDraft(draft);
+    } finally {
+      setRatingsLoading(false);
+    }
+  };
+
+  const closeRatings = () => {
+    setRatingsModalMatch(null);
+    setRatingsList([]);
+    setRatingsDraft({});
+  };
+
+  const saveAllRatings = async () => {
+    if (!ratingsModalMatch) return;
+    setSavingRatings(true);
+    try {
+      const ops: Promise<unknown>[] = [];
+      for (const p of squadPlayers) {
+        const raw = ratingsDraft[p.id]?.trim() ?? '';
+        const existing = ratingsList.find((r) => r.playerId === p.id);
+        if (raw === '') {
+          if (existing) ops.push(deleteRating(ratingsModalMatch.id, p.id));
+          continue;
+        }
+        const num = parseFloat(raw);
+        if (isNaN(num) || num < 1 || num > 10) continue;
+        if (!existing || existing.rating !== num) {
+          ops.push(upsertRating(ratingsModalMatch.id, p.id, num));
+        }
+      }
+      await Promise.all(ops);
+      // Refresh list
+      const refreshed = await getRatingsByMatch(ratingsModalMatch.id);
+      setRatingsList(refreshed);
+    } finally {
+      setSavingRatings(false);
+    }
   };
 
   const openEdit = (m: Match) => {
@@ -438,6 +499,12 @@ export default function AdminPartidos() {
                     className="text-xs bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 px-3 py-1.5 rounded-lg transition-all"
                   >
                     Editar
+                  </button>
+                  <button
+                    onClick={() => openRatings(m)}
+                    className="text-xs bg-neutral-950 hover:bg-yellow-950/40 border border-neutral-800 hover:border-yellow-700/60 text-neutral-300 hover:text-yellow-400 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1"
+                  >
+                    <Star className="w-3 h-3" /> Ratings
                   </button>
                   <button
                     onClick={() => handleDelete(m)}
@@ -753,6 +820,88 @@ export default function AdminPartidos() {
                 className="bg-riverRed hover:bg-red-700 disabled:bg-neutral-800 px-4 py-2 rounded-xl text-xs font-bold transition-all"
               >
                 {savingPhotos ? 'Guardando…' : `Guardar fotos (${photos.length})`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Ratings de jugadores */}
+      {ratingsModalMatch && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-800">
+              <div>
+                <h2 className="font-black text-lg flex items-center gap-2"><Star className="w-4 h-4 text-yellow-400" /> Ratings de jugadores</h2>
+                <div className="text-xs text-neutral-500 mt-0.5">{ratingsModalMatch.homeTeam} vs {ratingsModalMatch.awayTeam}</div>
+              </div>
+              <button onClick={closeRatings} className="text-neutral-500 hover:text-white p-1 rounded-lg hover:bg-neutral-800 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="px-5 py-3 border-b border-neutral-800 text-xs text-neutral-500">
+              Asigná una nota entre <b className="text-neutral-300">1</b> y <b className="text-neutral-300">10</b>. Dejá vacío para borrar la nota de ese jugador.
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4">
+              {ratingsLoading ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-yellow-400 mx-auto" />
+                </div>
+              ) : squadPlayers.length === 0 ? (
+                <p className="text-sm text-neutral-500 text-center py-6">No hay jugadores en el plantel.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {squadPlayers.map((p) => {
+                    const value = ratingsDraft[p.id] ?? '';
+                    const hasExisting = ratingsList.some((r) => r.playerId === p.id);
+                    return (
+                      <div key={p.id} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-neutral-950 border border-neutral-800">
+                        <div className="w-8 h-8 rounded-full bg-neutral-800 border border-neutral-700 overflow-hidden flex-shrink-0">
+                          {p.photo && <img src={p.photo} alt="" className="w-full h-full object-cover" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-semibold truncate">{p.name}</div>
+                          <div className="text-[10px] text-neutral-500 uppercase tracking-wider">
+                            {p.position}{p.number != null && ` · #${p.number}`}
+                          </div>
+                        </div>
+                        <input
+                          type="number"
+                          min="1"
+                          max="10"
+                          step="0.5"
+                          inputMode="decimal"
+                          value={value}
+                          onChange={(e) => setRatingsDraft({ ...ratingsDraft, [p.id]: e.target.value })}
+                          placeholder="—"
+                          className="w-20 px-3 py-1.5 bg-neutral-900 border border-neutral-700 rounded-lg text-center text-sm font-bold tabular-nums focus:outline-none focus:border-yellow-400 transition-colors"
+                        />
+                        {hasExisting && (
+                          <span className="text-[10px] text-green-500 font-semibold">●</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="px-5 py-4 border-t border-neutral-800 flex justify-end gap-2">
+              <button
+                onClick={closeRatings}
+                className="px-4 py-2 text-sm bg-neutral-950 hover:bg-neutral-800 border border-neutral-800 rounded-lg transition-all"
+                disabled={savingRatings}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={saveAllRatings}
+                disabled={savingRatings || ratingsLoading}
+                className="px-4 py-2 text-sm bg-yellow-600 hover:bg-yellow-500 text-black font-bold rounded-lg transition-all disabled:opacity-50"
+              >
+                {savingRatings ? 'Guardando…' : 'Guardar ratings'}
               </button>
             </div>
           </div>

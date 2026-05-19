@@ -1,15 +1,16 @@
 // apps/frontend/src/pages/PartidoDetalle.tsx
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Inbox, Link2, Check, MapPin, Camera, X } from 'lucide-react';
-import { getMatchById, getH2H } from '../services/matches.service';
-import type { Match } from '../services/matches.service';
+import { Inbox, Link2, Check, MapPin, Camera, X, Users } from 'lucide-react';
+import { getMatchById, getH2H, getMatchLineups } from '../services/matches.service';
+import type { Match, MatchLineups } from '../services/matches.service';
+import { getRatingsByMatch, type PlayerRating } from '../services/ratings.service';
 import EventTimeline from '../components/EventTimeline';
 import MatchStatsPanel from '../components/MatchStatsPanel';
 import FavoriteButton from '../components/FavoriteButton';
 import { useTeamLogo } from '../hooks/useTeamLogo';
 
-type DetailTab = 'resumen' | 'estadisticas' | 'h2h' | 'galeria';
+type DetailTab = 'resumen' | 'estadisticas' | 'alineaciones' | 'h2h' | 'galeria';
 
 const RIVER_RX = /river\s*plate|^river$/i;
 
@@ -171,6 +172,9 @@ function H2HSection({ rival }: { rival: string }) {
 export default function PartidoDetalle() {
   const { id } = useParams<{ id: string }>();
   const [match, setMatch] = useState<Match | null>(null);
+  const [lineups, setLineups] = useState<MatchLineups | null>(null);
+  const [lineupsLoading, setLineupsLoading] = useState(false);
+  const [ratings, setRatings] = useState<PlayerRating[]>([]);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [detailTab, setDetailTab] = useState<DetailTab>('resumen');
@@ -178,7 +182,15 @@ export default function PartidoDetalle() {
   useEffect(() => {
     if (!id) return;
     getMatchById(id).then(setMatch).finally(() => setLoading(false));
+    getRatingsByMatch(id).then(setRatings).catch(() => setRatings([]));
   }, [id]);
+
+  // Lazy-load lineups: solo al abrir la pestaña por primera vez
+  useEffect(() => {
+    if (detailTab !== 'alineaciones' || !id || lineups || lineupsLoading) return;
+    setLineupsLoading(true);
+    getMatchLineups(id).then(setLineups).finally(() => setLineupsLoading(false));
+  }, [detailTab, id, lineups, lineupsLoading]);
 
   const handleShare = async () => {
     try {
@@ -244,6 +256,7 @@ export default function PartidoDetalle() {
     { id: 'resumen', label: 'Resumen' },
     { id: 'estadisticas', label: 'Estadísticas' },
     { id: 'h2h', label: `H2H vs ${rival.split(' ')[0]}` },
+    { id: 'alineaciones' as DetailTab, label: 'Alineaciones' },
     ...(hasPhotos ? [{ id: 'galeria' as DetailTab, label: `Galería (${match.photos!.length})` }] : []),
   ];
 
@@ -455,12 +468,20 @@ export default function PartidoDetalle() {
                   : 'No hay estadísticas disponibles para este partido.'}
             </div>
           )}
+
+          {/* Ratings de jugadores */}
+          {ratings.length > 0 && <RatingsSection ratings={ratings} />}
         </div>
       )}
 
       {/* Tab: H2H */}
       {detailTab === 'h2h' && (
         <H2HSection rival={rival} />
+      )}
+
+      {/* Tab: Alineaciones */}
+      {detailTab === 'alineaciones' && (
+        <LineupsSection lineups={lineups} loading={lineupsLoading} />
       )}
 
       {/* Tab: Galería */}
@@ -565,5 +586,125 @@ function GallerySection({ photos }: { photos: string[] }) {
         </div>
       )}
     </div>
+  );
+}
+
+function LineupsSection({ lineups, loading }: { lineups: MatchLineups | null; loading: boolean }) {
+  if (loading) {
+    return (
+      <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-8 text-center">
+        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-riverRed mx-auto mb-3" />
+        <p className="text-sm text-neutral-500">Buscando alineaciones en ESPN…</p>
+      </section>
+    );
+  }
+
+  if (!lineups || lineups.source === 'none' || (lineups.home.players.length === 0 && lineups.away.players.length === 0)) {
+    return (
+      <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-8 text-center">
+        <Users className="w-10 h-10 text-neutral-700 mx-auto mb-3" />
+        <p className="text-sm font-semibold text-neutral-400 mb-1">Sin datos de alineaciones</p>
+        <p className="text-xs text-neutral-600">
+          ESPN no tiene roster cargado para este partido. Puede que se actualice más tarde.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest flex items-center gap-2">
+          <Users className="w-3.5 h-3.5" />
+          Alineaciones
+        </h3>
+        <span className="text-[10px] text-neutral-600 border border-neutral-800 px-2 py-0.5 rounded-full">
+          Fuente: ESPN
+        </span>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <TeamLineup team={lineups.home.team} players={lineups.home.players} />
+        <TeamLineup team={lineups.away.team} players={lineups.away.players} />
+      </div>
+    </section>
+  );
+}
+
+function TeamLineup({ team, players }: { team: string; players: MatchLineups['home']['players'] }) {
+  const isRiver = RIVER_RX.test(team);
+  return (
+    <div className={`rounded-xl border p-4 ${isRiver ? 'bg-red-950/20 border-red-900/40' : 'bg-neutral-950 border-neutral-800'}`}>
+      <div className="flex items-center gap-2 mb-3 pb-2 border-b border-neutral-800">
+        <h4 className={`text-sm font-bold uppercase tracking-wider truncate ${isRiver ? 'text-riverRed' : 'text-white'}`}>{team}</h4>
+        <span className="text-[10px] text-neutral-600 ml-auto">{players.length} jugadores</span>
+      </div>
+      {players.length === 0 ? (
+        <p className="text-xs text-neutral-600 text-center py-6">Sin datos</p>
+      ) : (
+        <div className="space-y-1.5">
+          {players.map((p, i) => (
+            <div key={`${p.name}-${i}`} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-neutral-900/50 transition-colors">
+              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black tabular-nums flex-shrink-0 ${isRiver ? 'bg-riverRed text-white' : 'bg-neutral-800 text-neutral-300'}`}>
+                {p.jersey ?? '–'}
+              </span>
+              <span className="text-xs font-medium truncate flex-1">{p.name}</span>
+              {p.position && (
+                <span className="text-[9px] uppercase tracking-widest text-neutral-500 flex-shrink-0">{p.position}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RatingsSection({ ratings }: { ratings: PlayerRating[] }) {
+  const sorted = [...ratings].sort((a, b) => b.rating - a.rating);
+  const avg = ratings.reduce((s, r) => s + r.rating, 0) / ratings.length;
+  const best = sorted[0];
+
+  const ratingColor = (r: number) =>
+    r >= 8 ? 'text-green-400' :
+    r >= 7 ? 'text-emerald-400' :
+    r >= 6 ? 'text-yellow-400' :
+    r >= 5 ? 'text-orange-400' : 'text-red-400';
+
+  return (
+    <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest flex items-center gap-2">
+          <span>★</span> Notas individuales
+        </h3>
+        <div className="flex items-center gap-4 text-[10px]">
+          {best && (
+            <span className="text-neutral-500">
+              Mejor: <span className={`font-bold ${ratingColor(best.rating)}`}>{best.player.name}</span> ({best.rating.toFixed(1)})
+            </span>
+          )}
+          <span className="text-neutral-500">
+            Promedio: <span className={`font-bold ${ratingColor(avg)}`}>{avg.toFixed(2)}</span>
+          </span>
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        {sorted.map((r) => (
+          <div key={r.id} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-neutral-950 border border-neutral-800">
+            <div className="w-8 h-8 rounded-full bg-neutral-800 border border-neutral-700 overflow-hidden flex-shrink-0">
+              {r.player.photo && <img src={r.player.photo} alt="" className="w-full h-full object-cover" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold truncate">{r.player.name}</div>
+              <div className="text-[10px] text-neutral-500 uppercase tracking-wider">
+                {r.player.position}{r.player.number != null && ` · #${r.player.number}`}
+              </div>
+            </div>
+            <div className={`text-xl font-black tabular-nums ${ratingColor(r.rating)}`}>
+              {r.rating.toFixed(1)}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
