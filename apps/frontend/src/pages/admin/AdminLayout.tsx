@@ -36,11 +36,13 @@ export default function AdminLayout() {
       {/* Sidebar */}
       <aside className="md:w-64 md:min-h-screen bg-neutral-900 border-b md:border-b-0 md:border-r border-neutral-800 flex flex-col">
         {/* Brand */}
-        <div className="p-6 border-b border-neutral-800">
+        <div className="pl-3 pr-4 py-4 border-b border-neutral-800">
           <Link to="/" className="flex items-center gap-3">
-            <img src="/favicon.svg" alt="River App" className="w-9 h-9 rounded-full border border-neutral-700" />
+            <span className="w-9 h-9 rounded-full border border-neutral-700 overflow-hidden flex items-center justify-center bg-neutral-950 flex-shrink-0">
+              <img src="/logo.png" alt="CARP Fans" className="w-full h-full object-cover" />
+            </span>
             <div>
-              <div className="font-bold text-sm tracking-wide">River App</div>
+              <div className="font-bold text-sm tracking-wide">CARP Fans</div>
               <div className="text-[10px] text-riverRed font-bold uppercase tracking-widest">Admin Panel</div>
             </div>
           </Link>

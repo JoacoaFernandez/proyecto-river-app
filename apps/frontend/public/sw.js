@@ -22,10 +22,10 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('push', (event) => {
   const data = event.data?.json() ?? {};
   event.waitUntil(
-    self.registration.showNotification(data.title ?? 'River App', {
+    self.registration.showNotification(data.title ?? 'CARP Fans', {
       body: data.body ?? '',
-      icon: '/icon-192.svg',
-      badge: '/icon-192.svg',
+      icon: '/logo.png',
+      badge: '/logo.png',
       data: { link: data.link ?? '/' },
     })
   );

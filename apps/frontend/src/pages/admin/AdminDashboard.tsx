@@ -76,7 +76,7 @@ export default function AdminDashboard() {
       {/* Header */}
       <div>
         <h1 className="text-3xl font-black mb-1">Dashboard</h1>
-        <p className="text-sm text-neutral-400">Vista general del contenido publicado en River App.</p>
+        <p className="text-sm text-neutral-400">Vista general del contenido publicado en CARP Fans.</p>
       </div>
 
       {/* Alerta de moderación */}

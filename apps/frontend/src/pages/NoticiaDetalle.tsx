@@ -351,7 +351,7 @@ export default function NoticiaDetalle() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold text-white">
-                {news.author?.display_name ?? 'Redacción River App'}
+                {news.author?.display_name ?? 'Redacción CARP Fans'}
               </div>
               <div className="text-[11px] text-neutral-500">{fullDate}</div>
             </div>

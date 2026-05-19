@@ -74,17 +74,15 @@ export default function Layout() {
   return (
     <div className="min-h-screen bg-neutral-950 text-white pb-20 md:pb-12">
       {/* Navegación Desktop */}
-      <nav className="bg-neutral-900/95 backdrop-blur border-b border-neutral-800 px-6 py-3 sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
+      <nav className="bg-neutral-900/95 backdrop-blur border-b border-neutral-800 pl-3 pr-6 py-2 sticky top-0 z-50">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-8">
             {/* Logo */}
             <NavLink to="/" className="flex items-center gap-3 group">
-              <img
-                src="/favicon.svg"
-                alt="River App"
-                className="w-9 h-9 rounded-full border border-neutral-700 group-hover:border-riverRed transition-colors"
-              />
-              <span className="font-black text-base tracking-wide hidden sm:block">River App</span>
+              <span className="w-9 h-9 rounded-full border border-neutral-700 group-hover:border-riverRed transition-colors overflow-hidden flex items-center justify-center bg-neutral-950 flex-shrink-0">
+                <img src="/logo.png" alt="CARP Fans" className="w-full h-full object-cover" />
+              </span>
+              <span className="font-black text-base tracking-wide hidden sm:block">CARP Fans</span>
             </NavLink>
 
             {/* Links desktop */}
@@ -194,7 +192,7 @@ export default function Layout() {
         <div className="bg-riverRed/10 border-b border-riverRed/20 px-4 py-2.5 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-sm">
             <Download className="w-4 h-4 text-riverRed flex-shrink-0" />
-            <span className="text-neutral-200">Instalá River App en tu dispositivo</span>
+            <span className="text-neutral-200">Instalá CARP Fans en tu dispositivo</span>
           </div>
           <button
             onClick={install}
