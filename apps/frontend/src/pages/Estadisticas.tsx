@@ -603,6 +603,81 @@ export default function Estadisticas() {
           </div>
         )}
       </section>
+
+      {/* Asistencias */}
+      <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest">Asistencias</h3>
+          {leaderboard.length > 0 && (
+            <span className="text-[10px] text-neutral-600 border border-neutral-800 px-2 py-0.5 rounded-full">
+              Temporada {leaderboard[0].season}
+            </span>
+          )}
+        </div>
+
+        {leaderboardLoading ? (
+          <div className="flex justify-center py-8">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-400" />
+          </div>
+        ) : leaderboard.filter((p) => p.assists > 0).length === 0 ? (
+          <p className="text-sm text-neutral-500 text-center py-6">
+            Sin datos de asistencias disponibles aún.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {[...leaderboard]
+              .filter((p) => p.assists > 0)
+              .sort((a, b) => b.assists - a.assists || (b.goals + b.assists) - (a.goals + a.assists))
+              .slice(0, 10)
+              .map((p, idx) => (
+                <Link
+                  key={p.id}
+                  to={`/plantel/${p.id}`}
+                  className="flex items-center gap-3 p-3 rounded-xl bg-neutral-950 border border-neutral-800 hover:border-neutral-700 transition-all"
+                >
+                  <span className="w-5 text-center text-xs font-black text-neutral-500 tabular-nums">
+                    {idx + 1}
+                  </span>
+                  <div className="w-8 h-8 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center overflow-hidden flex-shrink-0">
+                    {p.photo ? (
+                      <img
+                        src={p.photo}
+                        alt={p.name}
+                        className="w-full h-full object-cover"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    ) : (
+                      <User className="w-4 h-4 text-neutral-600" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold truncate">{p.name}</div>
+                    <div className="text-[10px] text-neutral-500 uppercase tracking-wider">
+                      {positionLabel[p.position] ?? p.position}
+                      {p.number != null && ` · #${p.number}`}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 text-right flex-shrink-0">
+                    <div>
+                      <div className="text-lg font-black text-blue-400 tabular-nums">{p.assists}</div>
+                      <div className="text-[9px] uppercase tracking-widest text-neutral-500">Asist.</div>
+                    </div>
+                    {p.goals > 0 && (
+                      <div>
+                        <div className="text-lg font-black text-riverRed tabular-nums">{p.goals}</div>
+                        <div className="text-[9px] uppercase tracking-widest text-neutral-500">Goles</div>
+                      </div>
+                    )}
+                    <div>
+                      <div className="text-sm font-bold text-neutral-400 tabular-nums">{p.goals + p.assists}</div>
+                      <div className="text-[9px] uppercase tracking-widest text-neutral-500">G+A</div>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
