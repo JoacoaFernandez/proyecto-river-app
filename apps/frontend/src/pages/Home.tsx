@@ -391,6 +391,7 @@ export default function Home() {
                 <div className="flex-1 px-2">Equipo</div>
                 <div className="w-8 text-center">Pts</div>
                 <div className="w-8 text-center">PJ</div>
+                <div className="w-10 text-center">DG</div>
               </div>
               {table.slice(0, 10).map((row) => (
                 <div
@@ -411,6 +412,12 @@ export default function Home() {
                     {row.pts}
                   </div>
                   <div className="w-8 text-center text-neutral-500">{row.pj}</div>
+                  <div className={`w-10 text-center tabular-nums text-xs ${
+                    (row.dif ?? 0) > 0 ? 'text-green-400' :
+                    (row.dif ?? 0) < 0 ? 'text-red-400' : 'text-neutral-500'
+                  }`}>
+                    {(row.dif ?? 0) > 0 ? '+' : ''}{row.dif ?? 0}
+                  </div>
                 </div>
               ))}
             </div>
