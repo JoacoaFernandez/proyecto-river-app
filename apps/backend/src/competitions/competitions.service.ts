@@ -88,6 +88,18 @@ export interface PlayoffMatch {
   date: string | null;
   winner: 'home' | 'away' | null;
   penaltyDecided: boolean;
+  /** Cuando la llave es a doble partido, contiene cada leg en orden cronológico. */
+  legs?: PlayoffLeg[];
+}
+
+export interface PlayoffLeg {
+  leg: 1 | 2;
+  homeTeam: string;
+  awayTeam: string;
+  homeScore: number | null;
+  awayScore: number | null;
+  status: PlayoffStatus;
+  date: string | null;
 }
 
 export interface PlayoffsBracket {
@@ -644,14 +656,19 @@ export class CompetitionsService {
 
     for (const legs of tieMap.values()) {
       if (result.length >= count) break;
-      const first = legs[0];
+      const sortedLegs = [...legs].sort((a, b) => {
+        const ta = a.date ? new Date(a.date).getTime() : 0;
+        const tb = b.date ? new Date(b.date).getTime() : 0;
+        return ta - tb;
+      });
+      const first = sortedLegs[0];
 
       // Suma marcadores normalizando al equipo "home" del primer partido
       let homeAgg = 0;
       let awayAgg = 0;
       let legsPlayed = 0;
 
-      for (const leg of legs) {
+      for (const leg of sortedLegs) {
         if (leg.homeScore == null || leg.awayScore == null) continue;
         const flipped = this.normalize(leg.homeTeam) !== this.normalize(first.homeTeam);
         homeAgg += flipped ? leg.awayScore : leg.homeScore;
@@ -659,7 +676,7 @@ export class CompetitionsService {
         legsPlayed++;
       }
 
-      const bothDone = legs.length >= 2 && legs.every((l) => l.status === 'finished');
+      const bothDone = sortedLegs.length >= 2 && sortedLegs.every((l) => l.status === 'finished');
       const status: PlayoffStatus = bothDone
         ? 'finished'
         : legsPlayed > 0
@@ -695,6 +712,16 @@ export class CompetitionsService {
         ? (flippedPen ? penLegFinal.homePenScore : penLegFinal.awayPenScore)
         : null;
 
+      const legsArr: PlayoffLeg[] = sortedLegs.slice(0, 2).map((l, idx) => ({
+        leg: (idx + 1) as 1 | 2,
+        homeTeam: l.homeTeam,
+        awayTeam: l.awayTeam,
+        homeScore: l.homeScore,
+        awayScore: l.awayScore,
+        status: l.status,
+        date: l.date,
+      }));
+
       result.push({
         round,
         slot: slot++,
@@ -708,6 +735,7 @@ export class CompetitionsService {
         date: first.date,
         winner,
         penaltyDecided,
+        legs: legsArr,
       });
     }
 
