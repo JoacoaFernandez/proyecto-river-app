@@ -103,6 +103,9 @@ export default function AdminPlantel() {
   const [editForm, setEditForm] = useState<PlayerForm>(emptyForm);
   const [editPhotos, setEditPhotos] = useState<string[]>([]);
   const [photoInput, setPhotoInput] = useState('');
+  const [editStats, setEditStats] = useState({
+    goals: '', assists: '', appearances: '', minutes: '', yellow: '', red: '',
+  });
   const [saving, setSaving] = useState(false);
 
   const load = async () => {
@@ -158,6 +161,21 @@ export default function AdminPlantel() {
     setEditForm(playerToForm(p));
     setEditPhotos(Array.isArray(p.photos) ? p.photos : []);
     setPhotoInput('');
+    setEditStats({
+      goals: p.manualGoals != null ? String(p.manualGoals) : '',
+      assists: p.manualAssists != null ? String(p.manualAssists) : '',
+      appearances: p.manualAppearances != null ? String(p.manualAppearances) : '',
+      minutes: p.manualMinutes != null ? String(p.manualMinutes) : '',
+      yellow: p.manualYellowCards != null ? String(p.manualYellowCards) : '',
+      red: p.manualRedCards != null ? String(p.manualRedCards) : '',
+    });
+  };
+
+  const parseStat = (s: string): number | null => {
+    const t = s.trim();
+    if (!t) return null;
+    const n = parseInt(t, 10);
+    return Number.isFinite(n) && n >= 0 ? n : null;
   };
 
   const addPhoto = () => {
@@ -178,7 +196,16 @@ export default function AdminPlantel() {
     if (!editForm.name.trim()) { flash('El nombre es obligatorio.', true); return; }
     setSaving(true);
     try {
-      await updatePlayer(editing.id, { ...formToPayload(editForm), photos: editPhotos } as any);
+      await updatePlayer(editing.id, {
+        ...formToPayload(editForm),
+        photos: editPhotos,
+        manualGoals: parseStat(editStats.goals),
+        manualAssists: parseStat(editStats.assists),
+        manualAppearances: parseStat(editStats.appearances),
+        manualMinutes: parseStat(editStats.minutes),
+        manualYellowCards: parseStat(editStats.yellow),
+        manualRedCards: parseStat(editStats.red),
+      } as any);
       flash('✅ Jugador actualizado.');
       setEditing(null);
       await load();
@@ -538,6 +565,46 @@ export default function AdminPlantel() {
                     ))}
                   </div>
                 )}
+              </div>
+
+              {/* Estadísticas manuales */}
+              <div className="md:col-span-2 border-t border-neutral-800 pt-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-riverRed mb-2">Estadísticas (override manual)</p>
+                <p className="text-[11px] text-neutral-500 mb-3">
+                  Dejá vacío para usar los datos automáticos de ESPN. Si cargás un valor, reemplaza el de ESPN en la ficha del jugador y el leaderboard.
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+                  <div>
+                    <label className={labelClass}>Goles</label>
+                    <input type="number" min="0" className={inputClass} value={editStats.goals}
+                      onChange={(e) => setEditStats({ ...editStats, goals: e.target.value })} placeholder="auto" />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Asist.</label>
+                    <input type="number" min="0" className={inputClass} value={editStats.assists}
+                      onChange={(e) => setEditStats({ ...editStats, assists: e.target.value })} placeholder="auto" />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Partidos</label>
+                    <input type="number" min="0" className={inputClass} value={editStats.appearances}
+                      onChange={(e) => setEditStats({ ...editStats, appearances: e.target.value })} placeholder="auto" />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Minutos</label>
+                    <input type="number" min="0" className={inputClass} value={editStats.minutes}
+                      onChange={(e) => setEditStats({ ...editStats, minutes: e.target.value })} placeholder="0" />
+                  </div>
+                  <div>
+                    <label className={labelClass}>T. Amarillas</label>
+                    <input type="number" min="0" className={inputClass} value={editStats.yellow}
+                      onChange={(e) => setEditStats({ ...editStats, yellow: e.target.value })} placeholder="auto" />
+                  </div>
+                  <div>
+                    <label className={labelClass}>T. Rojas</label>
+                    <input type="number" min="0" className={inputClass} value={editStats.red}
+                      onChange={(e) => setEditStats({ ...editStats, red: e.target.value })} placeholder="auto" />
+                  </div>
+                </div>
               </div>
             </div>
 

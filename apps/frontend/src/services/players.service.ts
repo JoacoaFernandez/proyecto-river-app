@@ -17,6 +17,12 @@ export interface Player {
   injuryZone: string | null;
   injuryReturnDate: string | null;
   photos?: string[] | null;
+  manualGoals?: number | null;
+  manualAssists?: number | null;
+  manualAppearances?: number | null;
+  manualMinutes?: number | null;
+  manualYellowCards?: number | null;
+  manualRedCards?: number | null;
 }
 
 export interface PlayerStats {
