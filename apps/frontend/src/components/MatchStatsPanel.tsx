@@ -8,7 +8,7 @@ interface Props {
 }
 
 // Possession donut using SVG
-function PossessionDonut({ home, away, homeTeamName, awayTeamName }: { home: number; away: number; homeTeamName: string; awayTeamName: string }) {
+function PossessionDonut({ home, homeTeamName, awayTeamName }: { home: number; away: number; homeTeamName: string; awayTeamName: string }) {
   const r = 54;
   const circ = 2 * Math.PI * r;
   const homePct = Math.min(Math.max(home, 0), 100);
@@ -57,12 +57,10 @@ function StatRow({
   label,
   home,
   away,
-  isCard = false,
 }: {
   label: string;
   home: number | null;
   away: number | null;
-  isCard?: boolean;
 }) {
   if (home === null && away === null) return null;
   const h = home ?? 0;
@@ -112,10 +110,6 @@ function abbr(name: string) {
     .toUpperCase()
     .slice(0, 3);
 }
-
-// Initialise homeTeam / awayTeam inside closure
-let homeTeam = '';
-let awayTeam = '';
 
 export default function MatchStatsPanel({ stats, homeTeam: ht, awayTeam: at }: Props) {
 

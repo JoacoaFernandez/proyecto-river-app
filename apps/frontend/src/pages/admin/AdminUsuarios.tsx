@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Search, Shield, User, Ban } from 'lucide-react';
+import { Search, User, Ban } from 'lucide-react';
 import { api } from '../../services/api';
 import { timeAgo } from '../../utils/time';
 

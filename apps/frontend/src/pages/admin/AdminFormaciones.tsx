@@ -66,7 +66,7 @@ function SlotToken({
       <circle r="4.8" fill={assigned ? '#E30613' : '#374151'} />
       <text textAnchor="middle" dominantBaseline="central" fill="white" fontSize="4.2" fontWeight="900"
         style={{ fontFamily: 'system-ui', pointerEvents: 'none' }}>
-        {assigned?.jersey_number ?? '?'}
+        {assigned?.number ?? '?'}
       </text>
       <g transform="translate(0 9.5)" style={{ pointerEvents: 'none' }}>
         <rect x="-9" y="-2.2" width="18" height="4" rx="0.8" fill="black" opacity="0.55" />
@@ -196,7 +196,6 @@ export default function AdminFormaciones() {
     return searchMatch && roleMatch;
   }).sort((a, b) => {
     // Sort by role match first
-    const roleOrder = { GK: 0, DEF: 1, MID: 2, ATK: 3 };
     const getRole = (pos: string) =>
       pos === 'Goalkeeper' ? 0 : pos === 'Defender' ? 1 : pos === 'Midfielder' ? 2 : 3;
     return getRole(a.position) - getRole(b.position);
@@ -374,7 +373,7 @@ export default function AdminFormaciones() {
                         <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-black border flex-shrink-0 ${
                           player ? 'bg-riverRed border-red-800' : 'bg-neutral-800 border-neutral-700'
                         }`}>
-                          {player?.jersey_number ?? slot.role[0]}
+                          {player?.number ?? slot.role[0]}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-xs font-semibold truncate">{player?.name ?? 'Sin asignar'}</div>
@@ -409,13 +408,13 @@ export default function AdminFormaciones() {
                           <img src={p.photo} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                         ) : (
                           <div className="w-full h-full bg-neutral-800 flex items-center justify-center text-[10px] font-black text-neutral-500">
-                            {p.jersey_number ?? '?'}
+                            {p.number ?? '?'}
                           </div>
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-semibold truncate">{p.name}</div>
-                        <div className="text-[10px] text-neutral-500">{p.position} {p.jersey_number ? `· #${p.jersey_number}` : ''}</div>
+                        <div className="text-[10px] text-neutral-500">{p.position} {p.number ? `· #${p.number}` : ''}</div>
                       </div>
                       {isCurrent && <Check className="w-4 h-4 text-riverRed flex-shrink-0" />}
                       {isAssigned && <span className="text-[9px] text-neutral-600 font-bold">YA EN CAMPO</span>}
