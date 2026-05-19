@@ -52,10 +52,13 @@ export class PlayersService implements OnModuleInit {
   // 4. Actualizar un jugador (La función que le faltaba a tu controlador)
   async update(id: string, updatePlayerDto: any) {
     await this.findOne(id);
-    return this.prisma.player.update({
+    const updated = await this.prisma.player.update({
       where: { id },
       data: updatePlayerDto,
     });
+    this.statsCache.delete(id);
+    this.leaderboardCache = null;
+    return updated;
   }
 
   // 5. Eliminar un jugador
@@ -89,13 +92,13 @@ export class PlayersService implements OnModuleInit {
           position: p.position,
           number: p.number,
           photo: p.photo,
-          goals: espn?.goals ?? 0,
-          assists: espn?.assists ?? 0,
-          appearances: espn?.appearances ?? 0,
+          goals: p.manualGoals ?? espn?.goals ?? 0,
+          assists: p.manualAssists ?? espn?.assists ?? 0,
+          appearances: p.manualAppearances ?? espn?.appearances ?? 0,
           season: 2026,
         } as LeaderboardEntry;
       })
-      .filter((e) => e.appearances > 0 || e.goals > 0)
+      .filter((e) => e.appearances > 0 || e.goals > 0 || e.assists > 0)
       .sort((a, b) => b.goals - a.goals || b.assists - a.assists);
 
     this.leaderboardCache = { data, ts: Date.now() };
@@ -395,7 +398,15 @@ export class PlayersService implements OnModuleInit {
       }
     }
 
-    if (!espn && !physical) {
+    const hasManualOverride =
+      player.manualGoals != null ||
+      player.manualAssists != null ||
+      player.manualAppearances != null ||
+      player.manualMinutes != null ||
+      player.manualYellowCards != null ||
+      player.manualRedCards != null;
+
+    if (!espn && !physical && !hasManualOverride) {
       this.statsCache.set(id, { data: null, ts: Date.now() });
       return null;
     }
@@ -407,15 +418,14 @@ export class PlayersService implements OnModuleInit {
       birthDate: physical?.birthDate ?? null,
       birthPlace: physical?.birthPlace ?? null,
       birthCountry: physical?.birthCountry ?? null,
-      // Stats de la temporada actual 2026 (ESPN)
-      appearances: espn?.appearances ?? 0,
-      goals: espn?.goals ?? 0,
-      assists: espn?.assists ?? 0,
-      yellowCards: espn?.yellowCards ?? 0,
-      redCards: espn?.redCards ?? 0,
-      // No mezclamos minutos/titular/rating de 2024 con stats de 2026
+      // Stats temporada actual: manual override > ESPN > 0
+      appearances: player.manualAppearances ?? espn?.appearances ?? 0,
+      goals: player.manualGoals ?? espn?.goals ?? 0,
+      assists: player.manualAssists ?? espn?.assists ?? 0,
+      yellowCards: player.manualYellowCards ?? espn?.yellowCards ?? 0,
+      redCards: player.manualRedCards ?? espn?.redCards ?? 0,
       lineups: 0,
-      minutes: 0,
+      minutes: player.manualMinutes ?? 0,
       rating: null,
       penaltyGoals: 0,
       season: 2026,

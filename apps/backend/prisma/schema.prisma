@@ -54,6 +54,12 @@ model Player {
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
   photos           Json?
+  manualGoals        Int?
+  manualAssists      Int?
+  manualAppearances  Int?
+  manualMinutes      Int?
+  manualYellowCards  Int?
+  manualRedCards     Int?
   ratings          PlayerRating[]
 }
 

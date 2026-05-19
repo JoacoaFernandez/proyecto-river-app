@@ -75,4 +75,34 @@ export class UpdatePlayerDto {
   @IsString({ each: true })
   @IsOptional()
   photos?: string[];
+
+  @ApiProperty({ example: 5, required: false, description: 'Override manual de goles (null = usar ESPN)' })
+  @IsInt()
+  @IsOptional()
+  manualGoals?: number | null;
+
+  @ApiProperty({ example: 3, required: false })
+  @IsInt()
+  @IsOptional()
+  manualAssists?: number | null;
+
+  @ApiProperty({ example: 15, required: false })
+  @IsInt()
+  @IsOptional()
+  manualAppearances?: number | null;
+
+  @ApiProperty({ example: 1200, required: false })
+  @IsInt()
+  @IsOptional()
+  manualMinutes?: number | null;
+
+  @ApiProperty({ example: 2, required: false })
+  @IsInt()
+  @IsOptional()
+  manualYellowCards?: number | null;
+
+  @ApiProperty({ example: 0, required: false })
+  @IsInt()
+  @IsOptional()
+  manualRedCards?: number | null;
 }
