@@ -1,14 +1,14 @@
 // apps/frontend/src/pages/PartidoDetalle.tsx
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Inbox, Link2, Check, MapPin } from 'lucide-react';
+import { Inbox, Link2, Check, MapPin, Camera, X } from 'lucide-react';
 import { getMatchById, getH2H } from '../services/matches.service';
 import type { Match } from '../services/matches.service';
 import EventTimeline from '../components/EventTimeline';
 import MatchStatsPanel from '../components/MatchStatsPanel';
 import { useTeamLogo } from '../hooks/useTeamLogo';
 
-type DetailTab = 'resumen' | 'estadisticas' | 'h2h';
+type DetailTab = 'resumen' | 'estadisticas' | 'h2h' | 'galeria';
 
 const RIVER_RX = /river\s*plate|^river$/i;
 
@@ -238,10 +238,12 @@ export default function PartidoDetalle() {
   const hasEvents = match.events && match.events.length > 0;
   const hasStats = isFinished && !!match.statistics;
 
+  const hasPhotos = (match.photos?.length ?? 0) > 0;
   const tabs: { id: DetailTab; label: string }[] = [
     { id: 'resumen', label: 'Resumen' },
     { id: 'estadisticas', label: 'Estadísticas' },
     { id: 'h2h', label: `H2H vs ${rival.split(' ')[0]}` },
+    ...(hasPhotos ? [{ id: 'galeria' as DetailTab, label: `Galería (${match.photos!.length})` }] : []),
   ];
 
   return (
@@ -457,6 +459,11 @@ export default function PartidoDetalle() {
         <H2HSection rival={rival} />
       )}
 
+      {/* Tab: Galería */}
+      {detailTab === 'galeria' && hasPhotos && (
+        <GallerySection photos={match.photos!} />
+      )}
+
       {/* Links de acción */}
       <div className="flex gap-3 flex-wrap pt-2">
         {isLive && (
@@ -475,6 +482,84 @@ export default function PartidoDetalle() {
           ← Volver al fixture
         </Link>
       </div>
+    </div>
+  );
+}
+
+function GallerySection({ photos }: { photos: string[] }) {
+  const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (lightboxIdx === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLightboxIdx(null);
+      if (e.key === 'ArrowRight') setLightboxIdx((i) => (i === null ? null : (i + 1) % photos.length));
+      if (e.key === 'ArrowLeft') setLightboxIdx((i) => (i === null ? null : (i - 1 + photos.length) % photos.length));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [lightboxIdx, photos.length]);
+
+  return (
+    <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
+      <h3 className="text-xs font-bold text-neutral-400 uppercase tracking-widest flex items-center gap-2 mb-4">
+        <Camera className="w-3.5 h-3.5" />
+        Galería del partido
+      </h3>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        {photos.map((url, idx) => (
+          <button
+            key={idx}
+            onClick={() => setLightboxIdx(idx)}
+            className="relative aspect-square overflow-hidden rounded-lg bg-neutral-800 group"
+          >
+            <img
+              src={url}
+              alt={`Foto ${idx + 1}`}
+              loading="lazy"
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            />
+          </button>
+        ))}
+      </div>
+
+      {lightboxIdx !== null && (
+        <div
+          className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-4"
+          onClick={() => setLightboxIdx(null)}
+        >
+          <button
+            onClick={(e) => { e.stopPropagation(); setLightboxIdx(null); }}
+            className="absolute top-4 right-4 p-2 rounded-full bg-neutral-900/80 hover:bg-neutral-800 text-white"
+            aria-label="Cerrar"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setLightboxIdx((i) => i === null ? null : (i - 1 + photos.length) % photos.length); }}
+            className="absolute left-4 p-3 rounded-full bg-neutral-900/80 hover:bg-neutral-800 text-white text-xl font-bold"
+            aria-label="Anterior"
+          >
+            ‹
+          </button>
+          <img
+            src={photos[lightboxIdx]}
+            alt={`Foto ${lightboxIdx + 1}`}
+            onClick={(e) => e.stopPropagation()}
+            className="max-w-full max-h-[90vh] object-contain rounded-lg"
+          />
+          <button
+            onClick={(e) => { e.stopPropagation(); setLightboxIdx((i) => i === null ? null : (i + 1) % photos.length); }}
+            className="absolute right-4 p-3 rounded-full bg-neutral-900/80 hover:bg-neutral-800 text-white text-xl font-bold"
+            aria-label="Siguiente"
+          >
+            ›
+          </button>
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-xs text-neutral-400 bg-neutral-900/80 px-3 py-1 rounded-full">
+            {lightboxIdx + 1} / {photos.length}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
