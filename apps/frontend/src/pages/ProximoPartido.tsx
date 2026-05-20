@@ -7,13 +7,14 @@ import { Calendar } from 'lucide-react';
 import { getLiveDashboard } from '../services/live.service';
 import { getLineup, type LineupResponse } from '../services/formations.service';
 import { getH2H, type Match } from '../services/matches.service';
+import { getPlayers, type Player } from '../services/players.service';
 import { getMatchPrediction } from '../services/ai.service';
 import { getPredictionSummary, type PredictionSummary } from '../services/predictions.service';
 import ReactMarkdown from 'react-markdown';
 import CanchaTactica from '../components/CanchaTactica';
 import PlayerInfoPanel from '../components/PlayerInfoPanel';
 import SurveyWidget from '../components/SurveyWidget';
-import { Bot, Sparkles, AlertCircle } from 'lucide-react';
+import { Bot, Sparkles, AlertCircle, AlertTriangle } from 'lucide-react';
 
 const TEAM_COLORS: Record<string, { bg: string; text: string }> = {
   'boca juniors': { bg: '#1a3f9e', text: '#f5c518' },
@@ -221,6 +222,126 @@ function FormacionSection() {
 }
 
 const RIVER_RX = /river\s*plate|^river$/i;
+
+// ── Bajas confirmadas (lesionados + suspendidos) ─────────────────────────────
+
+function BajasSection() {
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancel = false;
+    getPlayers()
+      .then((list) => {
+        if (!cancel) setPlayers(list);
+      })
+      .finally(() => {
+        if (!cancel) setLoading(false);
+      });
+    return () => { cancel = true; };
+  }, []);
+
+  const injured = players.filter((p) => p.status === 'injured');
+  const suspended = players.filter((p) => p.status === 'suspended');
+  const total = injured.length + suspended.length;
+
+  if (loading) {
+    return (
+      <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
+        <div className="animate-pulse text-xs text-neutral-500">Cargando bajas…</div>
+      </section>
+    );
+  }
+
+  if (total === 0) {
+    return (
+      <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
+        <div className="flex items-center gap-2 mb-2">
+          <AlertTriangle className="w-4 h-4 text-green-500" />
+          <h3 className="text-xs font-bold uppercase tracking-widest text-neutral-400">
+            Bajas confirmadas
+          </h3>
+        </div>
+        <p className="text-sm text-neutral-500">
+          🎉 Sin lesionados ni suspendidos · plantel completo a disposición.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5">
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-riverRed" />
+          <h3 className="text-xs font-bold uppercase tracking-widest text-neutral-400">
+            Bajas confirmadas
+          </h3>
+        </div>
+        <span className="text-[11px] text-neutral-500">
+          {total} jugador{total > 1 ? 'es' : ''} no disponible{total > 1 ? 's' : ''}
+        </span>
+      </div>
+
+      <div className={`grid gap-3 ${injured.length > 0 && suspended.length > 0 ? 'md:grid-cols-2' : 'grid-cols-1'}`}>
+        {injured.length > 0 && (
+          <div>
+            <h4 className="text-[10px] uppercase tracking-widest font-bold text-red-400 mb-2">
+              🤕 Lesionados ({injured.length})
+            </h4>
+            <ul className="space-y-1.5">
+              {injured.map((p) => (
+                <li key={p.id} className="flex items-center gap-2 bg-red-950/20 border border-red-900/30 rounded-lg px-3 py-2">
+                  {p.photo && (
+                    <img src={p.photo} alt="" className="w-7 h-7 rounded-full object-cover border border-neutral-800"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-white truncate">{p.name}</div>
+                    {(p.injuryType || p.injuryZone) && (
+                      <div className="text-[11px] text-red-300 truncate">
+                        {p.injuryType}{p.injuryZone ? ` — ${p.injuryZone}` : ''}
+                      </div>
+                    )}
+                  </div>
+                  {p.injuryReturnDate && (
+                    <span className="text-[10px] text-neutral-500 tabular-nums">
+                      Vuelve {new Date(p.injuryReturnDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {suspended.length > 0 && (
+          <div>
+            <h4 className="text-[10px] uppercase tracking-widest font-bold text-orange-400 mb-2">
+              🟥 Suspendidos ({suspended.length})
+            </h4>
+            <ul className="space-y-1.5">
+              {suspended.map((p) => (
+                <li key={p.id} className="flex items-center gap-2 bg-orange-950/20 border border-orange-900/30 rounded-lg px-3 py-2">
+                  {p.photo && (
+                    <img src={p.photo} alt="" className="w-7 h-7 rounded-full object-cover border border-neutral-800"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-white truncate">{p.name}</div>
+                    {p.injuryType && (
+                      <div className="text-[11px] text-orange-300 truncate">{p.injuryType}</div>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
 
 function H2HSection({ rival }: { rival: string }) {
   const [h2h, setH2h] = useState<Match[]>([]);
@@ -735,6 +856,9 @@ export default function ProximoPartido() {
 
       {/* Oráculo de IA */}
       <AiPredictionSection matchId={match.id} />
+
+      {/* Bajas confirmadas (lesionados + suspendidos del plantel) */}
+      <BajasSection />
 
       {/* Formación probable: cancha SVG con XI titular */}
       <div id="formacion">

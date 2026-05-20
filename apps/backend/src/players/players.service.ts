@@ -15,6 +15,9 @@ const TM_HEADERS = {
 
 // Transfermarkt: River Plate = club id 209
 const TM_RIVER_INJURIES_URL = 'https://www.transfermarkt.com/club-atletico-river-plate/sperrenundverletzungen/verein/209';
+// Stats de la temporada actual (goles, asistencias, partidos, minutos)
+// "leistungsdaten" = "performance data" en alemán (TM es alemán)
+const TM_RIVER_STATS_URL = 'https://www.transfermarkt.com/club-atletico-river-plate/leistungsdaten/verein/209/reldata/%262024/plus/1';
 
 const API_HEADERS = () => ({
   'x-rapidapi-key': process.env.API_FOOTBALL_KEY ?? '',
@@ -101,24 +104,27 @@ export class PlayersService implements OnModuleInit {
       return this.leaderboardCache.data;
     }
 
-    // Use ESPN season stats (match summaries) instead of N individual API-Football calls
-    const [players, espnMap] = await Promise.all([
+    // 3 fuentes en paralelo: Transfermarkt (más confiable), ESPN (fallback), DB players
+    const [players, espnMap, tmMap] = await Promise.all([
       this.prisma.player.findMany({ orderBy: { number: 'asc' } }),
       this.fetchEspnRoster(),
+      this.fetchTransfermarktStats(),
     ]);
 
     const data: LeaderboardEntry[] = players
       .map((p) => {
         const espn = this.matchEspnPlayer(espnMap, p.name);
+        const tm = this.matchTmPlayer(tmMap, p.name);
+        // Prioridad: override manual > Transfermarkt > ESPN > 0
         return {
           id: p.id,
           name: p.name,
           position: p.position,
           number: p.number,
           photo: p.photo,
-          goals: p.manualGoals ?? espn?.goals ?? 0,
-          assists: p.manualAssists ?? espn?.assists ?? 0,
-          appearances: p.manualAppearances ?? espn?.appearances ?? 0,
+          goals: p.manualGoals ?? tm?.goals ?? espn?.goals ?? 0,
+          assists: p.manualAssists ?? tm?.assists ?? espn?.assists ?? 0,
+          appearances: p.manualAppearances ?? tm?.appearances ?? espn?.appearances ?? 0,
           season: 2026,
         } as LeaderboardEntry;
       })
@@ -150,6 +156,96 @@ export class PlayersService implements OnModuleInit {
       }
     }
     return results;
+  }
+
+  // ── Stats de Transfermarkt (leaderboard) ─────────────────────────────────────
+
+  private tmStatsCache: { data: Map<string, TmPlayerStats>; ts: number } | null = null;
+
+  private async fetchTransfermarktStats(): Promise<Map<string, TmPlayerStats>> {
+    const TTL = 6 * 60 * 60 * 1000; // 6h
+    if (this.tmStatsCache && Date.now() - this.tmStatsCache.ts < TTL) {
+      return this.tmStatsCache.data;
+    }
+
+    const map = new Map<string, TmPlayerStats>();
+    try {
+      const res = await axios.get(TM_RIVER_STATS_URL, {
+        headers: TM_HEADERS,
+        timeout: 15000,
+      });
+      const $ = cheerio.load(res.data as string);
+
+      $('table.items tbody tr').each((_i, row) => {
+        const $row = $(row);
+        const nameLink = $row.find('a[href*="/profil/spieler/"]').first();
+        const name = nameLink.text().trim();
+        if (!name) return;
+
+        // Las stats están en las últimas columnas de la fila.
+        // En la página "leistungsdaten" hay típicamente: # | jugador | pos | partidos | goles | asistencias | tarjetas | minutos
+        // Los valores son <td class="zentriert">. Tomamos todos los TDs centrados y mapeamos.
+        const centeredTds = $row.find('td.zentriert');
+        const values: number[] = [];
+        centeredTds.each((_, td) => {
+          const txt = $(td).text().trim();
+          const cleaned = txt.replace(/\./g, '').replace(/[^\d-]/g, '');
+          if (cleaned === '' || cleaned === '-') {
+            values.push(0);
+          } else {
+            const n = parseInt(cleaned, 10);
+            values.push(Number.isFinite(n) ? n : 0);
+          }
+        });
+
+        // Heurística por posición: las stats típicas en la página de "leistungsdaten"
+        // vienen en orden [partidos, goles, asistencias, tarjetas, minutos] (5 valores numéricos),
+        // a veces con un # de orden al principio. Tomamos los más probables.
+        if (values.length >= 3) {
+          // Buscar el bloque de 5 valores consecutivos al final (apariciones, G, A, tarjetas, minutos)
+          // Saltamos el primer valor si es claramente el número de orden (chico, < 100)
+          const tail = values.slice(-5);
+          if (tail.length >= 3) {
+            const [apps, goals, assists] = tail;
+            map.set(name, {
+              fullName: name,
+              appearances: apps ?? 0,
+              goals: goals ?? 0,
+              assists: assists ?? 0,
+            });
+          }
+        }
+      });
+
+      this.logger.log(`📊 Transfermarkt stats: ${map.size} jugadores cargados`);
+    } catch (e: any) {
+      this.logger.warn(`Transfermarkt stats fetch falló: ${e?.message}`);
+    }
+
+    this.tmStatsCache = { data: map, ts: Date.now() };
+    return map;
+  }
+
+  /** Match TM displayName → DB player (mismas reglas que matchEspnPlayer). */
+  private matchTmPlayer(tmMap: Map<string, TmPlayerStats>, dbName: string): TmPlayerStats | null {
+    if (tmMap.size === 0) return null;
+    const norm = (s: string) =>
+      s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+    const dbStripped = dbName.replace(/^[A-Za-zÀ-ÿ]\.\s+/, '');
+    const dbN = norm(dbStripped);
+    const dbLast = dbN.split(' ').pop() ?? '';
+
+    for (const [key, stats] of tmMap) {
+      const k = norm(key);
+      if (k === dbN) return stats;
+      const lastTm = k.split(' ').pop() ?? '';
+      if (dbLast.length >= 4 && lastTm === dbLast) return stats;
+      // Subapellido: "martinez quarta"
+      const lastTwoTm = k.split(' ').slice(-2).join(' ');
+      const lastTwoDb = dbN.split(' ').slice(-2).join(' ');
+      if (lastTwoTm === lastTwoDb && lastTwoDb.split(' ').length === 2) return stats;
+    }
+    return null;
   }
 
   // ── Auto-sync lesiones desde Transfermarkt ────────────────────────────────────
@@ -744,6 +840,13 @@ export class PlayersService implements OnModuleInit {
     this.statsCache.set(id, { data: result, ts: Date.now() });
     return result;
   }
+}
+
+interface TmPlayerStats {
+  fullName: string;
+  appearances: number;
+  goals: number;
+  assists: number;
 }
 
 interface EspnStats {
