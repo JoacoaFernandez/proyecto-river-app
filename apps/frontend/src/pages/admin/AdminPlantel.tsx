@@ -454,7 +454,6 @@ export default function AdminPlantel() {
 
           {filtered.map((p) => {
             const dot = STATUS_DOT[p.status ?? 'available'] ?? STATUS_DOT.available;
-            const statusLabel = STATUS_OPTIONS.find((o) => o.value === (p.status ?? 'available'))?.label ?? 'Disponible';
             const statusColor = STATUS_OPTIONS.find((o) => o.value === (p.status ?? 'available'))?.color ?? 'text-green-400';
             return (
               <div
@@ -486,9 +485,34 @@ export default function AdminPlantel() {
                   {positionLabel[p.position] ?? p.position}
                 </div>
 
-                <div className={`md:w-28 flex items-center gap-1.5 text-xs font-semibold ${statusColor}`}>
-                  <span className={`w-2 h-2 rounded-full ${dot}`} />
-                  {statusLabel}
+                <div className="md:w-28">
+                  <div className="relative inline-flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full ${dot}`} />
+                    <select
+                      value={p.status ?? 'available'}
+                      onChange={async (e) => {
+                        const newStatus = e.target.value;
+                        if (newStatus === p.status) return;
+                        try {
+                          await updatePlayer(p.id, {
+                            status: newStatus,
+                            // Si pasa a disponible, limpiar campos de lesión
+                            ...(newStatus === 'available' ? { injuryType: null, injuryZone: null, injuryReturnDate: null } as any : {}),
+                          });
+                          flash(`✅ ${p.name} → ${STATUS_OPTIONS.find((o) => o.value === newStatus)?.label}`);
+                          await load();
+                        } catch {
+                          flash('Error al cambiar estado.', true);
+                        }
+                      }}
+                      className={`bg-neutral-950 border border-neutral-800 rounded-lg px-2 py-1 text-xs font-semibold cursor-pointer outline-none focus:border-riverRed ${statusColor}`}
+                      title="Cambiar estado rápido"
+                    >
+                      {STATUS_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 <div className="md:w-48 flex md:justify-end gap-2 flex-wrap">
