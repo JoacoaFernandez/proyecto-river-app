@@ -26,6 +26,7 @@ export interface LineupPlayer {
   photo: string | null;
   nationality: string | null;
   position: string;
+  status?: string; // 'available' | 'injured' | 'suspended' | 'loaned'
   virtual?: boolean;
 }
 
@@ -155,9 +156,15 @@ export class FormationsService {
       orderBy: [{ number: 'asc' }, { name: 'asc' }],
     });
 
-    // Pools por rol, filtrando starters reales primero
+    // EXCLUIR lesionados/suspendidos del XI titular. Si quedan slots vacíos
+    // se rellenan al final con los inactivos (con marker visual).
+    const INACTIVE_STATUSES = new Set(['injured', 'suspended', 'loaned']);
+    const activePlayers = allPlayers.filter((p) => !INACTIVE_STATUSES.has(p.status));
+    const inactivePlayers = allPlayers.filter((p) => INACTIVE_STATUSES.has(p.status));
+
+    // Pools por rol (sólo activos), priorizando starters del último partido ESPN
     const pools: Record<SlotRole, typeof allPlayers> = { GK: [], DEF: [], MID: [], ATK: [] };
-    for (const p of allPlayers) {
+    for (const p of activePlayers) {
       const role = POSITION_TO_ROLE[p.position];
       if (!role) continue;
       if (base.starterIds.size > 0) {
@@ -168,6 +175,13 @@ export class FormationsService {
       }
     }
 
+    // Pool de respaldo con inactivos por rol (último recurso si no hay activos)
+    const inactivePools: Record<SlotRole, typeof allPlayers> = { GK: [], DEF: [], MID: [], ATK: [] };
+    for (const p of inactivePlayers) {
+      const role = POSITION_TO_ROLE[p.position];
+      if (role) inactivePools[role].push(p);
+    }
+
     // Virtual pools (jugadores ESPN no encontrados en DB)
     const virtualPools: Record<SlotRole, VirtualStarter[]> = { GK: [], DEF: [], MID: [], ATK: [] };
     for (const v of base.virtualStarters) virtualPools[v.role].push(v);
@@ -175,8 +189,7 @@ export class FormationsService {
     const used = new Set<string>();
     const lineup: LineupEntry[] = slots.map((slot) => {
       const dbPool = pools[slot.role] ?? [];
-      // Preferir jugadores con subPosition === slot.subRole (ej: LB para slot LB),
-      // después cualquier disponible del mismo role.
+      // 1) Preferir activos con subPosition específica (LB, RB, etc.)
       const candidates = dbPool.filter((p) => !used.has(p.id));
       const subMatch = slot.subRole
         ? candidates.find((p) => (p as any).subPosition === slot.subRole)
@@ -186,9 +199,18 @@ export class FormationsService {
         used.add(dbPlayer.id);
         return { ...slot, player: this.toLineupPlayer(dbPlayer) };
       }
+      // 2) Jugador virtual de ESPN
       const vPool = virtualPools[slot.role];
       const virtual = vPool.shift();
       if (virtual) return { ...slot, player: this.toVirtualPlayer(virtual) };
+      // 3) Último recurso: inactivo (lesionado/suspendido) si no hay otra opción.
+      // Se muestra con marker visual.
+      const inactivePool = inactivePools[slot.role] ?? [];
+      const inactiveCandidate = inactivePool.find((p) => !used.has(p.id));
+      if (inactiveCandidate) {
+        used.add(inactiveCandidate.id);
+        return { ...slot, player: this.toLineupPlayer(inactiveCandidate) };
+      }
       return { ...slot, player: null };
     });
 
@@ -515,8 +537,12 @@ export class FormationsService {
   private toLineupPlayer(p: {
     id: string; name: string; number: number | null;
     photo: string | null; nationality: string | null; position: string;
+    status?: string;
   }): LineupPlayer {
-    return { id: p.id, name: p.name, number: p.number, photo: p.photo, nationality: p.nationality, position: p.position };
+    return {
+      id: p.id, name: p.name, number: p.number, photo: p.photo,
+      nationality: p.nationality, position: p.position, status: p.status,
+    };
   }
 
   private toVirtualPlayer(v: VirtualStarter): LineupPlayer {

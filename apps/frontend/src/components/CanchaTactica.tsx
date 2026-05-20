@@ -23,6 +23,9 @@ function PlayerToken({
   const y = slot.y * SCALE_Y;
   const p = slot.player;
   const isVirtual = p?.virtual === true;
+  const isInjured = p?.status === 'injured';
+  const isSuspended = p?.status === 'suspended';
+  const isInactive = isInjured || isSuspended;
   const clickable = !!onClick;
 
   return (
@@ -43,12 +46,17 @@ function PlayerToken({
       <circle
         r="5.5"
         fill="#0a0a0a"
-        stroke={isAlerted ? '#f59e0b' : isVirtual ? '#94a3b8' : 'white'}
-        strokeWidth={isAlerted ? 0.7 : isVirtual ? 0.6 : 0.35}
+        stroke={
+          isInjured ? '#ef4444' :
+          isSuspended ? '#f97316' :
+          isAlerted ? '#f59e0b' :
+          isVirtual ? '#94a3b8' : 'white'
+        }
+        strokeWidth={isInactive || isAlerted ? 0.8 : isVirtual ? 0.6 : 0.35}
         strokeDasharray={isVirtual ? '2 1' : undefined}
       />
       {/* Body */}
-      <circle r="4.8" fill={p ? (isVirtual ? '#475569' : '#E30613') : '#525252'} />
+      <circle r="4.8" fill={p ? (isVirtual ? '#475569' : isInactive ? '#7c2d2d' : '#E30613') : '#525252'} opacity={isInactive ? 0.85 : 1} />
 
       {/* Number */}
       <text
@@ -62,8 +70,26 @@ function PlayerToken({
         {p?.number ?? '?'}
       </text>
 
-      {/* Alert badge */}
-      {isAlerted && (
+      {/* Status badge (lesionado/suspendido tiene prioridad sobre alert genérico) */}
+      {isInjured ? (
+        <g transform="translate(4.2 -4.2)">
+          <circle r="2.4" fill="#ef4444" stroke="white" strokeWidth="0.3" />
+          <text
+            textAnchor="middle"
+            dominantBaseline="central"
+            fill="white"
+            fontSize="3"
+            fontWeight="900"
+            style={{ fontFamily: 'system-ui, sans-serif', pointerEvents: 'none' }}
+          >
+            +
+          </text>
+        </g>
+      ) : isSuspended ? (
+        <g transform="translate(4.2 -4.2)">
+          <rect x="-1.7" y="-2.2" width="3.4" height="4.4" rx="0.4" fill="#f97316" stroke="white" strokeWidth="0.3" />
+        </g>
+      ) : isAlerted ? (
         <g transform="translate(4.2 -4.2)">
           <circle r="2.2" fill="#f59e0b" />
           <text
@@ -75,6 +101,22 @@ function PlayerToken({
             style={{ fontFamily: 'system-ui, sans-serif', pointerEvents: 'none' }}
           >
             !
+          </text>
+        </g>
+      ) : null}
+
+      {/* Label de estado debajo del nombre */}
+      {isInactive && (
+        <g transform="translate(0 13.2)" style={{ pointerEvents: 'none' }}>
+          <text
+            textAnchor="middle"
+            dominantBaseline="central"
+            fill={isInjured ? '#fca5a5' : '#fdba74'}
+            fontSize="2"
+            fontWeight="900"
+            style={{ fontFamily: 'system-ui, sans-serif', textTransform: 'uppercase', letterSpacing: '0.3px' }}
+          >
+            {isInjured ? 'Lesionado' : 'Suspendido'}
           </text>
         </g>
       )}

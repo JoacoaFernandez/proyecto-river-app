@@ -178,31 +178,42 @@ function FormacionSection() {
               <p className="text-xs text-neutral-500">Sin suplentes disponibles.</p>
             ) : (
               <ul className="space-y-1 text-xs max-h-[480px] overflow-y-auto">
-                {data.bench.map((p) => (
-                  <li
-                    key={p.id}
-                    className={`flex items-center gap-2 py-1 border-b border-neutral-800/50 last:border-0 ${
-                      replacementIds.has(p.id) ? 'bg-emerald-950/20 rounded px-1' : ''
-                    }`}
-                  >
-                    {replacementIds.has(p.id) && (
-                      <span className="text-emerald-400 font-bold text-[10px]">↑</span>
-                    )}
-                    {alertedIds.has(p.id) && !replacementIds.has(p.id) && (
-                      <span className="text-amber-400 text-[10px]">⚠</span>
-                    )}
-                    {!replacementIds.has(p.id) && !alertedIds.has(p.id) && (
-                      <span className="w-3" />
-                    )}
-                    <span className="w-6 text-center font-bold tabular-nums text-neutral-500">
-                      {p.number ?? '–'}
-                    </span>
-                    <span className="flex-1 truncate text-neutral-300">{p.name}</span>
-                    <span className="text-[9px] uppercase tracking-wider text-neutral-600">
-                      {p.position.slice(0, 3)}
-                    </span>
-                  </li>
-                ))}
+                {data.bench.map((p) => {
+                  const isInjured = p.status === 'injured';
+                  const isSuspended = p.status === 'suspended';
+                  const isInactive = isInjured || isSuspended;
+                  return (
+                    <li
+                      key={p.id}
+                      className={`flex items-center gap-2 py-1 border-b border-neutral-800/50 last:border-0 ${
+                        replacementIds.has(p.id) ? 'bg-emerald-950/20 rounded px-1' :
+                        isInjured ? 'opacity-60' :
+                        isSuspended ? 'opacity-60' : ''
+                      }`}
+                    >
+                      {replacementIds.has(p.id) ? (
+                        <span className="text-emerald-400 font-bold text-[10px]">↑</span>
+                      ) : isInjured ? (
+                        <span className="text-red-400 text-[10px]" title="Lesionado">🤕</span>
+                      ) : isSuspended ? (
+                        <span className="text-orange-400 text-[10px]" title="Suspendido">🟥</span>
+                      ) : alertedIds.has(p.id) ? (
+                        <span className="text-amber-400 text-[10px]">⚠</span>
+                      ) : (
+                        <span className="w-3" />
+                      )}
+                      <span className="w-6 text-center font-bold tabular-nums text-neutral-500">
+                        {p.number ?? '–'}
+                      </span>
+                      <span className={`flex-1 truncate ${isInactive ? 'text-neutral-500 line-through decoration-neutral-700' : 'text-neutral-300'}`}>
+                        {p.name}
+                      </span>
+                      <span className="text-[9px] uppercase tracking-wider text-neutral-600">
+                        {p.position.slice(0, 3)}
+                      </span>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>

@@ -16,6 +16,7 @@ export interface LineupPlayer {
   photo: string | null;
   nationality: string | null;
   position: string;
+  status?: string;
   virtual?: boolean;
 }
 
