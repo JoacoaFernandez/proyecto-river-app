@@ -39,6 +39,19 @@ export class MatchesController {
     return this.matchesService.getPastMatches(n);
   }
 
+  @Get('season-progression')
+  @ApiOperation({ summary: 'Evolución acumulada de puntos de River por jornada para una temporada' })
+  async getSeasonProgression(@Query('year') year?: string) {
+    const y = year ? parseInt(year, 10) : new Date().getFullYear();
+    return this.matchesService.getSeasonProgression(y);
+  }
+
+  @Get('seasons-available')
+  @ApiOperation({ summary: 'Lista de años con partidos cargados' })
+  async getSeasonsAvailable() {
+    return this.matchesService.getSeasonsAvailable();
+  }
+
   @Get('h2h')
   @ApiOperation({ summary: 'Historial cara a cara vs un rival' })
   async getH2H(@Query('rival') rival: string, @Query('limit') limit = '6') {
