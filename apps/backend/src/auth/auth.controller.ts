@@ -128,7 +128,7 @@ export class AuthController {
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: 'Banear usuario (admin)' })
   banUser(@Param('id') id: string) {
-    return this.authService.updateProfile(id, { isBanned: true } as any);
+    return this.authService.setBanned(id, true);
   }
 
   @Patch('admin/users/:id/unban')
@@ -136,7 +136,15 @@ export class AuthController {
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: 'Desbanear usuario (admin)' })
   unbanUser(@Param('id') id: string) {
-    return this.authService.updateProfile(id, { isBanned: false } as any);
+    return this.authService.setBanned(id, false);
+  }
+
+  @Get('admin/users/:id/activity')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Timeline de actividad de un usuario (admin)' })
+  getUserActivity(@Param('id') id: string) {
+    return this.authService.getUserActivityTimeline(id);
   }
 
   @Post('me/avatar')

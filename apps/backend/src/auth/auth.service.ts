@@ -5,12 +5,14 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
+import { ActivityService } from '../activity/activity.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
+    private activity: ActivityService,
   ) {}
 
   // REGISTRO DE USUARIOS
@@ -36,6 +38,8 @@ export class AuthService {
         role: 'user', // Rol por defecto (hincha)
       },
     });
+
+    void this.activity.log(newUser.id, 'register');
 
     // Retornamos el usuario sin exponer la contraseña encriptada
     const { password_hash: _, ...userWithoutPassword } = newUser;
@@ -115,11 +119,30 @@ export class AuthService {
 
   // CAMBIAR ROL DE USUARIO (admin)
   async updateUserRole(userId: string, role: string) {
-    return this.prisma.user.update({
+    const before = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    const updated = await this.prisma.user.update({
       where: { id: userId },
       data: { role },
       select: { id: true, display_name: true, role: true },
     });
+    void this.activity.log(userId, 'role_change', { from: before?.role, to: role });
+    return updated;
+  }
+
+  /** Helpers para logear ban/unban desde el controller. */
+  async setBanned(userId: string, banned: boolean) {
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { isBanned: banned } as any,
+    });
+    void this.activity.log(userId, banned ? 'ban' : 'unban');
+    const { password_hash: _, ...safe } = updated;
+    return safe;
+  }
+
+  /** Devuelve la timeline de actividad de un usuario (admin). */
+  async getUserActivityTimeline(userId: string, limit = 80) {
+    return this.activity.getUserTimeline(userId, limit);
   }
 
   // ESTADÍSTICAS DE USUARIOS (para admin dashboard)
@@ -162,6 +185,8 @@ export class AuthService {
     if (!isPasswordValid) {
       throw new UnauthorizedException('Credenciales incorrectas.');
     }
+
+    void this.activity.log(user.id, 'login');
 
     // Generar el Token JWT
     const payload = { sub: user.id, email: user.email, role: user.role };

@@ -17,6 +17,7 @@ import { SurveysModule } from './surveys/surveys.module';
 import { FavoritesModule } from './favorites/favorites.module';
 import { RatingsModule } from './ratings/ratings.module';
 import { MetricsModule } from './metrics/metrics.module';
+import { ActivityModule } from './activity/activity.module';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -41,6 +42,7 @@ import { AppService } from './app.service';
     FavoritesModule,
     RatingsModule,
     MetricsModule,
+    ActivityModule,
   ],
   controllers: [AppController],
   providers: [AppService],

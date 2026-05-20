@@ -1,7 +1,98 @@
 import { useEffect, useState } from 'react';
-import { Search, User, Ban } from 'lucide-react';
+import { Search, User, Ban, Activity, X, LogIn, UserPlus, ShieldCheck, MessageSquare, Target, Vote, Heart, Star } from 'lucide-react';
 import { api } from '../../services/api';
 import { timeAgo } from '../../utils/time';
+
+interface ActivityEntry {
+  type: string;
+  action: string;
+  createdAt: string;
+  detail?: string;
+}
+
+function ActionIcon({ action }: { action: string }) {
+  const cls = 'w-3.5 h-3.5';
+  if (action === 'login') return <LogIn className={`${cls} text-blue-400`} />;
+  if (action === 'register') return <UserPlus className={`${cls} text-green-400`} />;
+  if (action === 'role_change') return <ShieldCheck className={`${cls} text-yellow-400`} />;
+  if (action === 'ban') return <Ban className={`${cls} text-riverRed`} />;
+  if (action === 'unban') return <User className={`${cls} text-green-400`} />;
+  if (action.startsWith('comment')) return <MessageSquare className={`${cls} text-neutral-300`} />;
+  if (action.startsWith('prediction')) return <Target className={`${cls} text-amber-400`} />;
+  if (action === 'survey_vote') return <Vote className={`${cls} text-purple-400`} />;
+  if (action === 'news_like') return <Heart className={`${cls} text-pink-400`} />;
+  if (action.startsWith('favorite')) return <Star className={`${cls} text-amber-400`} />;
+  return <Activity className={`${cls} text-neutral-500`} />;
+}
+
+function ActivityModal({
+  user, onClose,
+}: {
+  user: { id: string; display_name: string };
+  onClose: () => void;
+}) {
+  const [entries, setEntries] = useState<ActivityEntry[] | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get<ActivityEntry[]>(`/auth/admin/users/${user.id}/activity`)
+      .then((r) => setEntries(r.data ?? []))
+      .catch(() => setEntries([]))
+      .finally(() => setLoading(false));
+  }, [user.id]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.7)' }}
+      onClick={onClose}
+    >
+      <div
+        className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-4 border-b border-neutral-800 flex items-center justify-between flex-shrink-0">
+          <div>
+            <h3 className="font-bold flex items-center gap-2">
+              <Activity className="w-4 h-4 text-riverRed" />
+              Actividad de {user.display_name}
+            </h3>
+            <p className="text-[11px] text-neutral-500 mt-0.5">Últimas acciones del usuario</p>
+          </div>
+          <button onClick={onClose} className="text-neutral-500 hover:text-white p-1">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5">
+          {loading ? (
+            <div className="text-center py-10">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-riverRed mx-auto" />
+            </div>
+          ) : !entries || entries.length === 0 ? (
+            <p className="text-center text-sm text-neutral-500 py-10">Sin actividad registrada todavía.</p>
+          ) : (
+            <ul className="space-y-2">
+              {entries.map((e, i) => (
+                <li key={i} className="flex items-start gap-3 bg-neutral-950 border border-neutral-800 rounded-xl p-3">
+                  <div className="w-7 h-7 rounded-full bg-neutral-900 border border-neutral-800 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <ActionIcon action={e.action} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-neutral-200">{e.detail ?? e.action}</div>
+                    <div className="text-[10px] text-neutral-500 mt-0.5">
+                      {new Date(e.createdAt).toLocaleString('es-AR')} · <span className="uppercase tracking-wider">{e.type}</span>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface AdminUser {
   id: string;
@@ -30,6 +121,7 @@ export default function AdminUsuarios() {
   const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'editor' | 'user' | 'banned'>('all');
   const [flash, setFlash] = useState<{ msg: string; error: boolean } | null>(null);
   const [changingRole, setChangingRole] = useState<string | null>(null);
+  const [activityUser, setActivityUser] = useState<{ id: string; display_name: string } | null>(null);
 
   const showFlash = (msg: string, error = false) => {
     setFlash({ msg, error });
@@ -221,6 +313,13 @@ export default function AdminUsuarios() {
               {/* Acciones */}
               <div className="flex justify-end gap-2">
                 <button
+                  onClick={() => setActivityUser({ id: u.id, display_name: u.display_name })}
+                  title="Ver actividad"
+                  className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border bg-neutral-950 border-neutral-800 text-neutral-400 hover:text-white hover:border-neutral-600 transition-all"
+                >
+                  <Activity className="w-3 h-3" />
+                </button>
+                <button
                   onClick={() => handleToggleBan(u)}
                   className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all ${
                     u.isBanned
@@ -255,6 +354,10 @@ export default function AdminUsuarios() {
             </div>
           ))}
         </div>
+      )}
+
+      {activityUser && (
+        <ActivityModal user={activityUser} onClose={() => setActivityUser(null)} />
       )}
     </div>
   );
