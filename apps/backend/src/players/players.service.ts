@@ -1,6 +1,5 @@
 // apps/backend/src/players/players.service.ts
 import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
 import axios from 'axios';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePlayerDto } from './dto/create-player.dto';
@@ -128,8 +127,77 @@ export class PlayersService implements OnModuleInit {
     return results;
   }
 
-  // 8. Sincronizar estado de lesiones desde API-Football (diario + startup)
-  @Cron('0 8 * * *')
+  /**
+   * Intenta detectar lesionados desde ESPN (team injuries endpoint).
+   * Si encuentra a alguien, lo marca como 'injured' en la DB. Nunca pisa estados manuales
+   * (no resetea injured → available automáticamente).
+   */
+  async syncInjuriesFromEspn(): Promise<{ synced: number; matched: number; espnFound: number }> {
+    const ESPN_TEAM_IDS = [16]; // River Plate en arg.1
+    const LEAGUES_FOR_INJURIES = ['arg.1', 'conmebol.libertadores', 'conmebol.sudamericana'];
+
+    const players = await this.prisma.player.findMany();
+    if (players.length === 0) return { synced: 0, matched: 0, espnFound: 0 };
+
+    // Intentar multiples endpoints (algunos solo tienen data en ciertas ligas)
+    const injuredNames = new Map<string, { type: string; date?: string }>();
+    for (const league of LEAGUES_FOR_INJURIES) {
+      for (const teamId of ESPN_TEAM_IDS) {
+        try {
+          const res = await axios.get(
+            `https://site.api.espn.com/apis/site/v2/sports/soccer/${league}/teams/${teamId}/injuries`,
+            { timeout: 10000 },
+          );
+          const list: any[] = res.data?.injuries ?? res.data?.items ?? [];
+          for (const item of list) {
+            const athleteName: string = item.athlete?.displayName ?? item.athlete?.shortName ?? '';
+            if (!athleteName) continue;
+            injuredNames.set(athleteName.toLowerCase(), {
+              type: item.status ?? item.type?.description ?? 'Lesión',
+              date: item.date,
+            });
+          }
+        } catch (e: any) {
+          this.logger.warn(`ESPN injuries ${league}/${teamId} falló: ${e?.message}`);
+        }
+      }
+    }
+
+    let matched = 0;
+    if (injuredNames.size > 0) {
+      const norm = (s: string) =>
+        s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+
+      for (const player of players) {
+        const dbStripped = player.name.replace(/^[A-Za-zÀ-ÿ]\.\s+/, '');
+        const dbN = norm(dbStripped);
+        const lastWord = dbN.split(' ').pop() ?? '';
+        let injuryInfo: { type: string; date?: string } | null = null;
+        for (const [espnName, info] of injuredNames) {
+          const espnN = norm(espnName);
+          if (espnN === dbN || espnN.endsWith(' ' + lastWord) || espnN === lastWord) {
+            injuryInfo = info;
+            break;
+          }
+        }
+        if (injuryInfo && player.status !== 'injured') {
+          await this.prisma.player.update({
+            where: { id: player.id },
+            data: { status: 'injured', injuryType: injuryInfo.type },
+          });
+          matched++;
+          this.logger.log(`  → Lesionado (ESPN): ${player.name} - ${injuryInfo.type}`);
+        }
+      }
+    }
+
+    return { synced: players.length, matched, espnFound: injuredNames.size };
+  }
+
+  /**
+   * Sincronización legacy via API-Football (requiere plan premium).
+   * Solo MARCA lesionados nuevos; nunca pisa status manuales.
+   */
   async syncInjuries(): Promise<{ synced: number; injured: number; raw?: any }> {
     if (!process.env.API_FOOTBALL_KEY) return { synced: 0, injured: 0 };
 
@@ -204,13 +272,9 @@ export class PlayersService implements OnModuleInit {
         });
         this.logger.log(`  → Lesionado: ${player.name} (${details.type})`);
         injured++;
-      } else if (player.status === 'injured') {
-        // Had old injury but no recent fixture confirms it → reset to available
-        await this.prisma.player.update({
-          where: { id: player.id },
-          data: { status: 'available', injuryType: null, injuryZone: null, injuryReturnDate: null },
-        });
       }
+      // NOTA: si un jugador estaba marcado como injured y la API no lo trae,
+      // NO lo reseteamos automáticamente — eso pisaba ediciones manuales del admin.
     }
 
     this.logger.log(`Injuries synced: ${injured} lesionados de ${players.length} jugadores`);
@@ -339,22 +403,55 @@ export class PlayersService implements OnModuleInit {
     return nameStats;
   }
 
-  // Match ESPN displayName → DB player name (API-Football abbreviated: "S. Driussi" → "driussi")
+  /**
+   * Match ESPN displayName → DB player name.
+   * DB suele venir abreviado de API-Football: "S. Driussi", "M. Salas". ESPN trae full name.
+   * Normalizamos sin tildes/diacríticos para evitar falsos negativos (Martinez vs Martínez).
+   */
   private matchEspnPlayer(espnMap: Map<string, EspnStats>, dbName: string): EspnStats | null {
-    // Extract last name(s) from DB name: "S. Driussi" → "driussi", "L. Martínez Quarta" → "martínez quarta"
-    const dbLastName = dbName.replace(/^[A-ZÁÉÍÓÚ]\.\s+/, '').toLowerCase().trim();
+    const norm = (s: string) =>
+      s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
-    // Try exact lowercase match first
+    // Quitar prefijo abreviado tipo "S. " o "L. "
+    const dbStripped = dbName.replace(/^[A-Za-zÀ-ÿ]\.\s+/, '');
+    const dbN = norm(dbStripped);
+    const dbLastWord = dbN.split(' ').pop() ?? '';
+
+    // 1) Match exacto del fullName normalizado (incluye match parcial inicial: "driussi" === "driussi")
     for (const [key, stats] of espnMap) {
-      const espnLastName = stats.fullName.split(' ').slice(1).join(' ').toLowerCase().trim();
-      if (espnLastName === dbLastName || key === dbLastName) return stats;
+      const espnFullN = norm(stats.fullName);
+      const espnKey = norm(key);
+      if (espnFullN === dbN || espnKey === dbN) return stats;
     }
-    // Fallback: last word match
-    const dbLastWord = dbLastName.split(' ').pop() ?? '';
+
+    // 2) Match por apellido(s) completo: "martinez quarta" vs ESPN "martinez quarta"
     for (const stats of espnMap.values()) {
-      const espnLastWord = stats.fullName.split(' ').pop()?.toLowerCase() ?? '';
-      if (espnLastWord === dbLastWord && dbLastWord.length > 3) return stats;
+      const espnLastN = norm(stats.fullName.split(' ').slice(1).join(' '));
+      if (espnLastN && espnLastN === dbN) return stats;
     }
+
+    // 3) Match por última palabra (apellido) ≥ 4 letras para reducir falsos positivos
+    if (dbLastWord.length >= 4) {
+      for (const stats of espnMap.values()) {
+        const espnLastWord = norm(stats.fullName.split(' ').pop() ?? '');
+        if (espnLastWord === dbLastWord) return stats;
+      }
+    }
+
+    // 4) Match por inicial + apellido: "S. Driussi" → ESPN "Sebastian Driussi"
+    const initialMatch = dbName.match(/^([A-Za-zÀ-ÿ])\.\s+(.+)$/);
+    if (initialMatch) {
+      const initial = norm(initialMatch[1]);
+      const last = norm(initialMatch[2]);
+      for (const stats of espnMap.values()) {
+        const parts = stats.fullName.split(' ');
+        if (parts.length < 2) continue;
+        const espnFirstInitial = norm(parts[0])[0];
+        const espnLast = norm(parts.slice(1).join(' '));
+        if (espnFirstInitial === initial && espnLast === last) return stats;
+      }
+    }
+
     return null;
   }
 

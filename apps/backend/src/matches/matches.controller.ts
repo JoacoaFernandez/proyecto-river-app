@@ -100,6 +100,24 @@ export class MatchesController {
     return this.matchesService.importMatchesCsv(body?.csv ?? '', !!body?.dryRun);
   }
 
+  @Post(':id/resync-events')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Re-syncear eventos del partido desde ESPN (admin)' })
+  async resyncEvents(@Param('id') id: string) {
+    return this.matchesService.resyncMatchEvents(id);
+  }
+
+  @Post('events/fix-substitution-swap')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Migración one-shot: corregir orden invertido de sustituciones (admin)' })
+  async fixSubSwap() {
+    return this.matchesService.fixSubstitutionParticipantsSwap();
+  }
+
   @Get(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')

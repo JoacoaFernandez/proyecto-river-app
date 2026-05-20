@@ -60,9 +60,18 @@ export class PlayersController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Sincronizar estado de lesiones desde API-Football (admin)' })
+  @ApiOperation({ summary: 'Sincronizar estado de lesiones desde API-Football (admin, requiere plan premium)' })
   syncInjuries() {
     return this.playersService.syncInjuries();
+  }
+
+  @Post('sync-injuries-espn')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Sincronizar lesionados desde ESPN team page (admin, gratuito)' })
+  syncInjuriesEspn() {
+    return this.playersService.syncInjuriesFromEspn();
   }
 
   @Get('injuries-raw')

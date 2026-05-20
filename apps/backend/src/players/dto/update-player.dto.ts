@@ -13,6 +13,11 @@ export class UpdatePlayerDto {
   @IsOptional()
   position?: string;
 
+  @ApiProperty({ example: 'LB', required: false, description: 'Sub-posición específica: GK, CB, LB, RB, CDM, CM, CAM, LM, RM, LW, RW, CF' })
+  @IsString()
+  @IsOptional()
+  subPosition?: string | null;
+
   @ApiProperty({ example: 1, required: false })
   @IsInt()
   @Min(1)

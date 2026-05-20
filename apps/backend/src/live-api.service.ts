@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import { MatchesService } from './matches/matches.service';
 import { PrismaService } from './prisma/prisma.service';
+import { PlayersService } from './players/players.service';
 
 const ESPN_HEADERS = { 'User-Agent': 'Mozilla/5.0 (compatible; RiverAppBot/2.0)' };
 
@@ -58,6 +59,7 @@ export class LiveApiService {
   constructor(
     private readonly matchesService: MatchesService,
     private readonly prisma: PrismaService,
+    private readonly playersService: PlayersService,
   ) {}
 
   async getDashboardData() {
@@ -125,19 +127,26 @@ export class LiveApiService {
     let stats: any = this.computeStatsFromMatches(pastMatches);
     const localStats = stats; // preserve bestStreak computed from DB
 
-    // Calcular goleador de temporada desde la DB
+    // Goleador de la temporada: usar el leaderboard (que ya combina ESPN + overrides manuales).
+    // Fallback a contar MatchEvents si el leaderboard está vacío.
     try {
-      const goalEvents = await this.prisma.matchEvent.findMany({
-        where: { type: { in: ['goal', 'penalty-goal'] }, playerName: { not: null } },
-        select: { playerName: true },
-        take: 300,
-      });
-      const scorerMap = new Map<string, number>();
-      for (const e of goalEvents) {
-        if (e.playerName) scorerMap.set(e.playerName, (scorerMap.get(e.playerName) ?? 0) + 1);
+      const lb = await this.playersService.getLeaderboard();
+      const topLb = [...lb].sort((a, b) => b.goals - a.goals)[0];
+      if (topLb && topLb.goals > 0) {
+        stats.topScorer = `${topLb.name} (${topLb.goals})`;
+      } else {
+        const goalEvents = await this.prisma.matchEvent.findMany({
+          where: { type: { in: ['goal', 'penalty-goal'] }, playerName: { not: null } },
+          select: { playerName: true },
+          take: 300,
+        });
+        const scorerMap = new Map<string, number>();
+        for (const e of goalEvents) {
+          if (e.playerName) scorerMap.set(e.playerName, (scorerMap.get(e.playerName) ?? 0) + 1);
+        }
+        const top = [...scorerMap.entries()].sort((a, b) => b[1] - a[1])[0];
+        if (top) stats.topScorer = `${top[0]} (${top[1]})`;
       }
-      const top = [...scorerMap.entries()].sort((a, b) => b[1] - a[1])[0];
-      if (top) stats.topScorer = `${top[0]} (${top[1]})`;
     } catch { /* mantener N/A */ }
 
     // Contar goles de penal en la DB
@@ -576,10 +585,15 @@ export class LiveApiService {
           minute, team, playerName: player, playerInName: null, assistName: null, detail: null, period,
         });
       } else if (typeText.includes('substitution') || typeText.includes('sustituci')) {
+        // ESPN convention: participants[0] = subbed-IN (entra), participants[1] = subbed-OUT (sale).
+        // En nuestro schema: playerName = el que SALE, playerInName = el que ENTRA.
+        const playerOut = ke.participants?.[1]?.athlete?.displayName ?? null;
+        const playerIn = ke.participants?.[0]?.athlete?.displayName ?? null;
         events.push({
-          id: `espn-sub-${minute}-${player ?? ''}`, type: 'substitution',
-          minute, team, playerName: player,
-          playerInName: ke.participants?.[1]?.athlete?.displayName ?? null,
+          id: `espn-sub-${minute}-${playerOut ?? playerIn ?? ''}`, type: 'substitution',
+          minute, team,
+          playerName: playerOut,
+          playerInName: playerIn,
           assistName: null, detail: null, period,
         });
       } else if (typeText.includes('var') || typeText.includes('video review')) {

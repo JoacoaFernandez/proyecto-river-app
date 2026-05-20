@@ -14,6 +14,7 @@ import {
 } from '../../services/matches.service';
 import { getPlayers, type Player } from '../../services/players.service';
 import { getRatingsByMatch, upsertRating, deleteRating, type PlayerRating } from '../../services/ratings.service';
+import { api } from '../../services/api';
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   scheduled: { label: 'Programado', color: 'bg-blue-950/40 text-blue-400 border-blue-900/40' },
@@ -72,6 +73,8 @@ export default function AdminPartidos() {
     competition: '',
     stadium: '',
     date: '',
+    tvChannel: '',
+    referee: '',
   });
 
   // Events
@@ -226,6 +229,8 @@ export default function AdminPartidos() {
       competition: m.competition ?? '',
       stadium: m.stadium ?? '',
       date: toLocalInputValue(m.date),
+      tvChannel: m.tvChannel ?? '',
+      referee: m.referee ?? '',
     });
     setAddingEvent(false);
     setEventForm({ type: 'goal', minute: '', team: '', playerName: '', playerInName: '', assistName: '', period: '1' });
@@ -347,7 +352,9 @@ export default function AdminPartidos() {
         competition: editForm.competition || undefined,
         stadium: editForm.stadium || undefined,
         date: new Date(editForm.date).toISOString(),
-      });
+        tvChannel: editForm.tvChannel.trim() || null,
+        referee: editForm.referee.trim() || null,
+      } as any);
       showFlash('✅ Partido actualizado.');
       setEditing(null);
       await load();
@@ -569,6 +576,14 @@ export default function AdminPartidos() {
               <label className={labelClass}>Fecha y hora</label>
               <input type="datetime-local" className={inputClass} value={editForm.date} onChange={(e) => setEditForm({ ...editForm, date: e.target.value })} />
             </div>
+            <div>
+              <label className={labelClass}>Canal de TV</label>
+              <input className={inputClass} placeholder="ESPN Premium / TNT Sports" value={editForm.tvChannel} onChange={(e) => setEditForm({ ...editForm, tvChannel: e.target.value })} />
+            </div>
+            <div>
+              <label className={labelClass}>Árbitro</label>
+              <input className={inputClass} placeholder="Nombre del árbitro" value={editForm.referee} onChange={(e) => setEditForm({ ...editForm, referee: e.target.value })} />
+            </div>
 
             {/* ── Eventos del Partido ── */}
             <div className="border-t border-neutral-800 pt-4 mt-2 space-y-3">
@@ -577,14 +592,34 @@ export default function AdminPartidos() {
                   <span className="w-2 h-2 rounded-full bg-riverRed" />
                   Eventos del partido
                 </h3>
-                <button
-                  type="button"
-                  onClick={() => setAddingEvent((v) => !v)}
-                  className="flex items-center gap-1.5 text-xs bg-riverRed/10 hover:bg-riverRed/20 border border-riverRed/30 text-riverRed px-3 py-1.5 rounded-lg transition-all font-semibold"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  {addingEvent ? 'Cancelar' : 'Agregar evento'}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!editing) return;
+                      if (!confirm('Re-sincronizar eventos desde ESPN borrará los actuales y los volverá a traer. ¿Continuar?')) return;
+                      try {
+                        const res = await api.post<{ ok: boolean; eventCount: number }>(`/matches/${editing.id}/resync-events`);
+                        showFlash(`✅ ${res.data.eventCount} eventos sincronizados.`);
+                        reloadEvents(editing.id);
+                      } catch (e: any) {
+                        showFlash(e?.response?.data?.message ?? 'Error al re-sincronizar.', true);
+                      }
+                    }}
+                    className="text-xs bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-neutral-200 px-3 py-1.5 rounded-lg transition-all font-semibold"
+                    title="Re-trae todos los eventos del partido desde ESPN (descarta los actuales)"
+                  >
+                    Re-sync ESPN
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAddingEvent((v) => !v)}
+                    className="flex items-center gap-1.5 text-xs bg-riverRed/10 hover:bg-riverRed/20 border border-riverRed/30 text-riverRed px-3 py-1.5 rounded-lg transition-all font-semibold"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    {addingEvent ? 'Cancelar' : 'Agregar evento'}
+                  </button>
+                </div>
               </div>
 
               {/* Formulario nuevo evento */}

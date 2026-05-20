@@ -7,5 +7,6 @@ import { PlayersService } from './players.service';
   imports: [ScheduleModule.forRoot()],
   controllers: [PlayersController],
   providers: [PlayersService],
+  exports: [PlayersService],
 })
 export class PlayersModule {}

@@ -41,6 +41,8 @@ export interface Match {
   date: string;
   competition: string | null;
   stadium: string | null;
+  tvChannel?: string | null;
+  referee?: string | null;
   manualOverride: boolean;
   aiPrediction?: string | null;
   events?: MatchEvent[];

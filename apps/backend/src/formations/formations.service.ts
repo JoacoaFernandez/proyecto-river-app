@@ -5,11 +5,18 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateFormationDto } from './dto/create-formation.dto';
 
 export type SlotRole = 'GK' | 'DEF' | 'MID' | 'ATK';
+export type SlotSubRole =
+  | 'GK'
+  | 'CB' | 'LB' | 'RB'
+  | 'CDM' | 'CM' | 'CAM' | 'LM' | 'RM'
+  | 'LW' | 'RW' | 'CF';
 
 export interface PitchSlot {
   x: number;
   y: number;
   role: SlotRole;
+  /** Sub-rol específico (LB, CB, LW…) usado para matchear con Player.subPosition. */
+  subRole?: SlotSubRole;
 }
 
 export interface LineupPlayer {
@@ -168,7 +175,13 @@ export class FormationsService {
     const used = new Set<string>();
     const lineup: LineupEntry[] = slots.map((slot) => {
       const dbPool = pools[slot.role] ?? [];
-      const dbPlayer = dbPool.find((p) => !used.has(p.id));
+      // Preferir jugadores con subPosition === slot.subRole (ej: LB para slot LB),
+      // después cualquier disponible del mismo role.
+      const candidates = dbPool.filter((p) => !used.has(p.id));
+      const subMatch = slot.subRole
+        ? candidates.find((p) => (p as any).subPosition === slot.subRole)
+        : null;
+      const dbPlayer = subMatch ?? candidates[0];
       if (dbPlayer) {
         used.add(dbPlayer.id);
         return { ...slot, player: this.toLineupPlayer(dbPlayer) };
@@ -202,7 +215,7 @@ export class FormationsService {
     }
 
     const allPlayers = await this.prisma.player.findMany({
-      select: { id: true, name: true, number: true, position: true },
+      select: { id: true, name: true, number: true, position: true, subPosition: true },
     });
 
     const [espnResult, alerts] = await Promise.all([
@@ -289,14 +302,20 @@ export class FormationsService {
       const riverRoster = this.extractRiverRoster(summary);
       if (!riverRoster || riverRoster.length === 0) return null;
 
-      // Mapear a jugadores DB o virtuales
+      // Mapear a jugadores DB o virtuales + auto-aprender subPosition desde ESPN
       const starterIds = new Set<string>();
       const virtualStarters: VirtualStarter[] = [];
+      const subPositionUpdates: Array<{ id: string; subPosition: string }> = [];
 
       for (const espnPlayer of riverRoster) {
         const dbMatch = this.matchEspnPlayerToDb(espnPlayer.name, espnPlayer.jersey, allPlayers);
         if (dbMatch) {
           starterIds.add(dbMatch.id);
+          // Si ESPN nos da una posición específica (LB, CB, LW, etc.) y la conocemos, la guardamos.
+          const sub = this.espnAbbrToSubPosition(espnPlayer.posAbbr);
+          if (sub && (dbMatch as any).subPosition !== sub) {
+            subPositionUpdates.push({ id: dbMatch.id, subPosition: sub });
+          }
         } else {
           virtualStarters.push({
             name: espnPlayer.name,
@@ -304,6 +323,16 @@ export class FormationsService {
             role: this.espnPositionToRole(espnPlayer.posAbbr),
           });
         }
+      }
+
+      // Persistir subPositions en background (no bloquea la respuesta)
+      if (subPositionUpdates.length > 0) {
+        Promise.all(
+          subPositionUpdates.map((u) =>
+            this.prisma.player.update({ where: { id: u.id }, data: { subPosition: u.subPosition } as any })
+              .catch(() => null),
+          ),
+        ).catch(() => null);
       }
 
       return {
@@ -418,6 +447,25 @@ export class FormationsService {
     return ESPN_POS_MAP[abbr] ?? 'MID';
   }
 
+  private espnAbbrToSubPosition(abbr: string): SlotSubRole | null {
+    const up = (abbr ?? '').toUpperCase();
+    const map: Record<string, SlotSubRole> = {
+      G: 'GK', GK: 'GK',
+      CB: 'CB', D: 'CB', SW: 'CB',
+      LB: 'LB', LWB: 'LB',
+      RB: 'RB', RWB: 'RB',
+      CDM: 'CDM', DM: 'CDM',
+      CM: 'CM', M: 'CM',
+      CAM: 'CAM', AM: 'CAM',
+      LM: 'LM',
+      RM: 'RM',
+      LW: 'LW',
+      RW: 'RW',
+      CF: 'CF', F: 'CF', SS: 'CF', FW: 'CF',
+    };
+    return map[up] ?? null;
+  }
+
   // ── Alertas de lesiones / suspensiones ───────────────────────────────────────
 
   private async detectInjuryAlerts(
@@ -526,7 +574,7 @@ export class FormationsService {
   private computeSlots(scheme: string): PitchSlot[] {
     const lines = scheme.split('-').map((n) => parseInt(n, 10));
     const slots: PitchSlot[] = [];
-    slots.push({ x: 50, y: 92, role: 'GK' });
+    slots.push({ x: 50, y: 92, role: 'GK', subRole: 'GK' });
 
     const yDef = 70;
     const yAtk = 18;
@@ -537,12 +585,73 @@ export class FormationsService {
       const y = yDef - t * (yDef - yAtk);
       const role: SlotRole = li === 0 ? 'DEF' : li === lineCount - 1 ? 'ATK' : 'MID';
       const playersInLine = lines[li];
+      // Detección de "carrileros" (laterales/wing): solo cuando hay 4+ jugadores en la línea de DEF/ATK
+      // o cuando es una línea de MID de 4+ (LM/RM).
       for (let pi = 0; pi < playersInLine; pi++) {
         const x = ((pi + 1) * 100) / (playersInLine + 1);
-        slots.push({ x, y, role });
+        const isLeftMost = pi === 0;
+        const isRightMost = pi === playersInLine - 1;
+        const subRole = this.computeSubRole(role, playersInLine, isLeftMost, isRightMost, pi, scheme, li, lineCount);
+        slots.push({ x, y, role, subRole });
       }
     }
 
     return slots;
+  }
+
+  private computeSubRole(
+    role: SlotRole,
+    playersInLine: number,
+    isLeftMost: boolean,
+    isRightMost: boolean,
+    indexInLine: number,
+    scheme: string,
+    lineIdx: number,
+    lineCount: number,
+  ): SlotSubRole | undefined {
+    if (role === 'DEF') {
+      // En líneas con 4+ defensores hay LB/RB. Con 3 → todos CB.
+      if (playersInLine >= 4) {
+        if (isLeftMost) return 'LB';
+        if (isRightMost) return 'RB';
+        return 'CB';
+      }
+      return 'CB';
+    }
+    if (role === 'ATK') {
+      // 3 atacantes → LW, CF, RW. 2 → CF, CF. 1 → CF.
+      if (playersInLine >= 3) {
+        if (isLeftMost) return 'LW';
+        if (isRightMost) return 'RW';
+        return 'CF';
+      }
+      return 'CF';
+    }
+    if (role === 'MID') {
+      // 4+ mediocampistas → LM en izq, RM en der, resto CM.
+      // 3 mediocampistas → CDM (más bajo) / CM / CAM (más alto) según esquema.
+      if (playersInLine >= 4) {
+        if (isLeftMost) return 'LM';
+        if (isRightMost) return 'RM';
+        return 'CM';
+      }
+      if (playersInLine === 3) {
+        // En 4-2-3-1 los 3 son LW/CAM/RW. En 4-3-3 son CDM/CM/CAM.
+        // Heurística: la posición ATK ya está después; este MID de 3 es zona ofensiva si scheme tiene "3" en penúltima posición y "1" al final.
+        const parts = scheme.split('-');
+        if (parts.length >= 3 && parts[parts.length - 1] === '1' && parts[parts.length - 2] === '3') {
+          if (isLeftMost) return 'LW';
+          if (isRightMost) return 'RW';
+          return 'CAM';
+        }
+        // Default 4-3-3: CDM más profundo, CAM más alto. Aquí sólo hay 1 línea MID, asumimos CM.
+        if (indexInLine === 0) return 'CDM';
+        if (indexInLine === playersInLine - 1) return 'CAM';
+        return 'CM';
+      }
+      if (playersInLine === 2) return 'CDM';
+      return 'CM';
+    }
+    return undefined;
   }
 }

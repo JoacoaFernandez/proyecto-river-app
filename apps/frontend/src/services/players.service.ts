@@ -5,6 +5,7 @@ export interface Player {
   id: string;
   name: string;
   position: string;
+  subPosition?: string | null;
   number: number | null;
   age: number | null;
   photo: string | null;

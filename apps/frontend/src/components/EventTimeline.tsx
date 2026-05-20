@@ -49,10 +49,10 @@ function EventRow({ event }: { event: MatchEvent }) {
         </div>
 
         {event.type === 'substitution' ? (
-          <div className="text-sm mt-0.5">
-            <span className="text-green-400 font-semibold">↑ {event.playerInName ?? '?'}</span>
-            <span className="text-neutral-600 mx-1.5">por</span>
+          <div className="text-sm mt-0.5 flex items-center gap-1.5 flex-wrap">
             <span className="text-red-400 font-semibold">↓ {event.playerName ?? '?'}</span>
+            <span className="text-neutral-600">por</span>
+            <span className="text-green-400 font-semibold">↑ {event.playerInName ?? '?'}</span>
           </div>
         ) : (
           <div className="text-sm mt-0.5">
@@ -76,9 +76,11 @@ function EventRow({ event }: { event: MatchEvent }) {
 interface EventTimelineProps {
   events: MatchEvent[];
   compact?: boolean;
+  /** 'asc' = primeros eventos arriba (default), 'desc' = últimos arriba (ideal para vivo). */
+  direction?: 'asc' | 'desc';
 }
 
-export default function EventTimeline({ events, compact = false }: EventTimelineProps) {
+export default function EventTimeline({ events, compact = false, direction = 'asc' }: EventTimelineProps) {
   if (!events || events.length === 0) {
     return (
       <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 text-center text-sm text-neutral-500">
@@ -95,7 +97,13 @@ export default function EventTimeline({ events, compact = false }: EventTimeline
     periods.set(e.period, list);
   }
 
-  const sortedPeriods = [...periods.entries()].sort(([a], [b]) => a - b);
+  const sortedPeriods = [...periods.entries()].sort(([a], [b]) =>
+    direction === 'desc' ? b - a : a - b,
+  );
+  // Dentro de cada período, ordenar por minuto en la dirección pedida
+  for (const [, list] of sortedPeriods) {
+    list.sort((x, y) => direction === 'desc' ? y.minute - x.minute : x.minute - y.minute);
+  }
 
   return (
     <div className={`bg-neutral-900 border border-neutral-800 rounded-2xl ${compact ? 'p-4' : 'p-5'} space-y-4`}>

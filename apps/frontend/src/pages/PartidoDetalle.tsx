@@ -434,7 +434,7 @@ export default function PartidoDetalle() {
           )}
 
           {/* Cronología de eventos */}
-          {hasEvents && <EventTimeline events={match.events!} />}
+          {hasEvents && <EventTimeline events={match.events!} direction="desc" />}
 
           {!hasEvents && (isFinished || isLive) && (
             <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-8 text-center text-sm text-neutral-500">

@@ -419,7 +419,7 @@ export default function PartidoEnVivo() {
 
         {/* Cronología de eventos */}
         {events.length > 0 && (
-          <EventTimeline events={events} compact />
+          <EventTimeline events={events} compact direction="desc" />
         )}
 
         <p className="text-center text-[10px] text-neutral-600">

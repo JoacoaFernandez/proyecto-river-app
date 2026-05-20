@@ -9,6 +9,7 @@ import {
   updatePlayer,
   type Player,
 } from '../../services/players.service';
+import { api } from '../../services/api';
 
 const positionLabel: Record<string, string> = {
   Goalkeeper: 'Arquero',
@@ -41,6 +42,7 @@ const labelClass =
 interface PlayerForm {
   name: string;
   position: string;
+  subPosition: string;
   number: string;
   age: string;
   nationality: string;
@@ -54,9 +56,26 @@ interface PlayerForm {
   injuryReturnDate: string;
 }
 
+const SUB_POSITION_OPTIONS = [
+  { value: '',    label: '(auto)',         group: '' },
+  { value: 'GK',  label: 'Arquero (GK)',   group: 'Arquero' },
+  { value: 'CB',  label: 'Central (CB)',   group: 'Defensa' },
+  { value: 'LB',  label: 'Lat. Izq. (LB)', group: 'Defensa' },
+  { value: 'RB',  label: 'Lat. Der. (RB)', group: 'Defensa' },
+  { value: 'CDM', label: 'Volante def. (CDM)', group: 'Medio' },
+  { value: 'CM',  label: 'Volante central (CM)', group: 'Medio' },
+  { value: 'CAM', label: 'Enganche (CAM)', group: 'Medio' },
+  { value: 'LM',  label: 'Volante izq. (LM)', group: 'Medio' },
+  { value: 'RM',  label: 'Volante der. (RM)', group: 'Medio' },
+  { value: 'LW',  label: 'Extremo izq. (LW)', group: 'Delantero' },
+  { value: 'RW',  label: 'Extremo der. (RW)', group: 'Delantero' },
+  { value: 'CF',  label: 'Centro delantero (CF)', group: 'Delantero' },
+];
+
 const emptyForm: PlayerForm = {
   name: '',
   position: 'Midfielder',
+  subPosition: '',
   number: '',
   age: '',
   nationality: '',
@@ -74,6 +93,7 @@ function playerToForm(p: Player): PlayerForm {
   return {
     name: p.name,
     position: p.position,
+    subPosition: p.subPosition ?? '',
     number: p.number != null ? String(p.number) : '',
     age: p.age != null ? String(p.age) : '',
     nationality: p.nationality ?? '',
@@ -107,6 +127,28 @@ export default function AdminPlantel() {
     goals: '', assists: '', appearances: '', minutes: '', yellow: '', red: '',
   });
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+
+  const handleSyncInjuries = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const res = await api.post<{ synced: number; matched: number; espnFound: number }>('/players/sync-injuries-espn');
+      const { matched, espnFound } = res.data;
+      if (matched > 0) {
+        flash(`✅ ${matched} jugador(es) marcado(s) como lesionado(s) (ESPN encontró ${espnFound}).`);
+        await load();
+      } else if (espnFound === 0) {
+        flash('ESPN no devolvió lesionados — marcá manualmente desde "Editar".', true);
+      } else {
+        flash(`ESPN reportó ${espnFound} lesionado(s) pero ninguno matcheó con el plantel actual.`, true);
+      }
+    } catch (e: any) {
+      flash(e?.response?.data?.message ?? 'Error al sincronizar lesionados.', true);
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -126,6 +168,7 @@ export default function AdminPlantel() {
   const formToPayload = (f: PlayerForm) => ({
     name: f.name.trim(),
     position: f.position,
+    subPosition: f.subPosition || null,
     number: f.number ? parseInt(f.number, 10) : undefined,
     age: f.age ? parseInt(f.age, 10) : undefined,
     nationality: f.nationality.trim() || undefined,
@@ -303,12 +346,23 @@ export default function AdminPlantel() {
             )}
           </p>
         </div>
-        <button
-          onClick={() => setShowForm((s) => !s)}
-          className="flex items-center gap-2 bg-riverRed hover:bg-red-700 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-red-900/30"
-        >
-          {showForm ? <><X className="w-4 h-4" /> Cancelar</> : <><Plus className="w-4 h-4" /> Nuevo jugador</>}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleSyncInjuries}
+            disabled={syncing}
+            className="flex items-center gap-2 bg-neutral-800 hover:bg-neutral-700 disabled:bg-neutral-900 border border-neutral-700 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
+            title="Intentar detectar lesionados desde ESPN. Nunca pisa estados manuales."
+          >
+            <AlertTriangle className="w-4 h-4" />
+            {syncing ? 'Sincronizando…' : 'Detectar lesionados (ESPN)'}
+          </button>
+          <button
+            onClick={() => setShowForm((s) => !s)}
+            className="flex items-center gap-2 bg-riverRed hover:bg-red-700 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-red-900/30"
+          >
+            {showForm ? <><X className="w-4 h-4" /> Cancelar</> : <><Plus className="w-4 h-4" /> Nuevo jugador</>}
+          </button>
+        </div>
       </div>
 
       {(error || info) && (
@@ -482,6 +536,13 @@ export default function AdminPlantel() {
                 <select className={inputClass} value={editForm.position} onChange={(e) => setEditForm({ ...editForm, position: e.target.value })}>
                   {POSITIONS.map((p) => <option key={p} value={p}>{positionLabel[p]}</option>)}
                 </select>
+              </div>
+              <div>
+                <label className={labelClass}>Sub-posición</label>
+                <select className={inputClass} value={editForm.subPosition} onChange={(e) => setEditForm({ ...editForm, subPosition: e.target.value })}>
+                  {SUB_POSITION_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+                <p className="text-[10px] text-neutral-500 mt-1">Determina dónde se ubica en la cancha (LB = lateral izquierdo, etc.). "(auto)" usa el genérico.</p>
               </div>
               <div>
                 <label className={labelClass}>Pie hábil</label>

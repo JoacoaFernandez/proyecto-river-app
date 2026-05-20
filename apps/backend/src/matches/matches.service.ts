@@ -52,6 +52,25 @@ function normalizeTeams(
   };
 }
 
+/**
+ * Mapping de canal de TV por competición para el mercado argentino.
+ * ESPN broadcasts solo trae TV de EE.UU., así que llenamos un default por liga.
+ * El admin puede override este valor desde el panel.
+ */
+function defaultTvChannelForLeague(leagueCode: string): string | null {
+  const map: Record<string, string> = {
+    'arg.1': 'ESPN Premium / TNT Sports',
+    'arg.copa': 'TyC Sports / TNT Sports',
+    'arg.copa_argentina': 'TyC Sports / TNT Sports',
+    'arg.supercopa': 'ESPN / TyC Sports',
+    'conmebol.libertadores': 'Telefé / ESPN / Fox Sports',
+    'conmebol.sudamericana': 'DirecTV Sports / ESPN',
+    'conmebol.recopa': 'ESPN',
+    'conmebol.recopa_sudamericana': 'ESPN',
+  };
+  return map[leagueCode] ?? null;
+}
+
 function dedup(matches: any[]): any[] {
   const seen = new Set<string>();
   return matches.filter(m => {
@@ -538,6 +557,8 @@ export class MatchesService implements OnModuleInit {
       competition?: string;
       stadium?: string;
       date?: string;
+      tvChannel?: string | null;
+      referee?: string | null;
     },
   ) {
     const update: any = {};
@@ -547,6 +568,8 @@ export class MatchesService implements OnModuleInit {
     if (data.minute !== undefined) update.minute = data.minute;
     if (data.competition !== undefined) update.competition = data.competition;
     if (data.stadium !== undefined) update.stadium = data.stadium;
+    if (data.tvChannel !== undefined) update.tvChannel = data.tvChannel;
+    if (data.referee !== undefined) update.referee = data.referee;
     if (data.date !== undefined) update.date = new Date(data.date);
     return this.prisma.match.update({ where: { id }, data: update });
   }
@@ -679,6 +702,42 @@ export class MatchesService implements OnModuleInit {
    * Search ESPN for a River Plate match by date/teams and sync all events (goals,
    * cards, substitutions, VAR) into the MatchEvent table. Fully autonomous.
    */
+  /**
+   * One-shot migration: swap playerName <-> playerInName en todos los events de tipo
+   * 'substitution'. Útil para corregir el orden inverso que se guardó antes del fix.
+   * Después de correrlo, NO volver a correrlo (lo dejaría al revés de nuevo).
+   */
+  async fixSubstitutionParticipantsSwap(): Promise<{ swapped: number }> {
+    const subs = await this.prisma.matchEvent.findMany({
+      where: { type: 'substitution' },
+      select: { id: true, playerName: true, playerInName: true },
+    });
+
+    let swapped = 0;
+    for (const ev of subs) {
+      // Solo swapeamos los que tengan AMBOS campos (los que solo tienen uno los dejamos)
+      if (ev.playerName && ev.playerInName && ev.playerName !== ev.playerInName) {
+        await this.prisma.matchEvent.update({
+          where: { id: ev.id },
+          data: { playerName: ev.playerInName, playerInName: ev.playerName },
+        });
+        swapped++;
+      }
+    }
+    return { swapped };
+  }
+
+  /** Wrapper público para re-syncear eventos de un partido específico (admin). */
+  async resyncMatchEvents(matchId: string): Promise<{ ok: boolean; eventCount: number }> {
+    const match = await this.prisma.match.findUnique({ where: { id: matchId } });
+    if (!match) return { ok: false, eventCount: 0 };
+    // Borrar eventos viejos primero para evitar duplicados con keys distintos
+    await this.prisma.matchEvent.deleteMany({ where: { matchId } });
+    await this.autoSyncEventsForMatch(match.id, match.homeTeam, match.awayTeam, match.date);
+    const eventCount = await this.prisma.matchEvent.count({ where: { matchId } });
+    return { ok: true, eventCount };
+  }
+
   private async autoSyncEventsForMatch(
     matchId: string,
     homeTeam: string,
@@ -749,6 +808,17 @@ export class MatchesService implements OnModuleInit {
 
       // Parse events from ESPN summary (goals from scoringPlays, cards/subs from keyEvents)
       const parsedEvents = this.parseEspnSummaryEvents(summaryData);
+
+      // Debug: contar eventos por tipo
+      const eventsByType = parsedEvents.reduce<Record<string, number>>((acc, e) => {
+        acc[e.type] = (acc[e.type] ?? 0) + 1;
+        return acc;
+      }, {});
+      this.logger.log(
+        `📋 ESPN parse: scoringPlays=${(summaryData.scoringPlays ?? []).length}, ` +
+        `keyEvents=${(summaryData.keyEvents ?? []).length}, ` +
+        `parsed=[${Object.entries(eventsByType).map(([t, n]) => `${t}=${n}`).join(', ')}]`,
+      );
 
       // Persist events
       if (parsedEvents.length > 0) {
@@ -940,9 +1010,14 @@ export class MatchesService implements OnModuleInit {
       } else if (typeText.includes('red card') || typeText.includes('tarjeta roja')) {
         events.push({ type: 'red-card', minute, team, playerName: player, playerInName: null, assistName: null, detail: null, period });
       } else if (typeText.includes('substitution') || typeText.includes('sustituci')) {
+        // ESPN: participants[0] = entra (IN), participants[1] = sale (OUT)
+        // Nuestro schema: playerName = OUT, playerInName = IN
+        const playerOut = ke.participants?.[1]?.athlete?.displayName ?? null;
+        const playerIn = ke.participants?.[0]?.athlete?.displayName ?? null;
         events.push({
-          type: 'substitution', minute, team, playerName: player,
-          playerInName: ke.participants?.[1]?.athlete?.displayName ?? null,
+          type: 'substitution', minute, team,
+          playerName: playerOut,
+          playerInName: playerIn,
           assistName: null, detail: null, period,
         });
       } else if (typeText.includes('var') || typeText.includes('video review')) {
@@ -1323,7 +1398,10 @@ export class MatchesService implements OnModuleInit {
           const referee: string | null = refEntry?.displayName ?? refEntry?.official?.displayName ?? null;
           const broadcasts: any[] = comp.broadcasts ?? comp.geoBroadcasts ?? [];
           const tvNames = broadcasts.flatMap((b: any) => b.names ?? b.media?.shortName ? [b.media.shortName] : []);
-          const tvChannel: string | null = tvNames.length > 0 ? tvNames.join(' / ') : null;
+          // ESPN broadcasts solo trae TV de EE.UU. → fallback con mapping argentino por competición.
+          const tvChannel: string | null = tvNames.length > 0
+            ? tvNames.join(' / ')
+            : defaultTvChannelForLeague(league.code);
 
           allMatches.push({
             ...normalized,
