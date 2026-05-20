@@ -794,7 +794,7 @@ function SeasonComparison() {
               <Tooltip
                 contentStyle={{ background: '#171717', border: '1px solid #404040', borderRadius: 12, fontSize: 12 }}
                 labelStyle={{ color: '#a3a3a3', marginBottom: 4 }}
-                formatter={(v: number, name: string) => [`${v} pts`, name]}
+                formatter={(v, name) => [`${v ?? '—'} pts`, String(name)] as [string, string]}
                 labelFormatter={(l) => `Jornada ${l}`}
               />
               <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
