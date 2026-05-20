@@ -104,27 +104,27 @@ export class PlayersService implements OnModuleInit {
       return this.leaderboardCache.data;
     }
 
-    // 3 fuentes en paralelo: Transfermarkt (más confiable), ESPN (fallback), DB players
-    const [players, espnMap, tmMap] = await Promise.all([
+    // 3 fuentes: API-Football (primaria, datos oficiales), ESPN (fallback), DB players
+    const [players, espnMap, apiFootballMap] = await Promise.all([
       this.prisma.player.findMany({ orderBy: { number: 'asc' } }),
       this.fetchEspnRoster(),
-      this.fetchTransfermarktStats(),
+      this.fetchApiFootballRiverStats(),
     ]);
 
     const data: LeaderboardEntry[] = players
       .map((p) => {
         const espn = this.matchEspnPlayer(espnMap, p.name);
-        const tm = this.matchTmPlayer(tmMap, p.name);
-        // Prioridad: override manual > Transfermarkt > ESPN > 0
+        const apif = this.matchApiFootballPlayer(apiFootballMap, p.name);
+        // Prioridad: override manual > API-Football > ESPN > 0
         return {
           id: p.id,
           name: p.name,
           position: p.position,
           number: p.number,
           photo: p.photo,
-          goals: p.manualGoals ?? tm?.goals ?? espn?.goals ?? 0,
-          assists: p.manualAssists ?? tm?.assists ?? espn?.assists ?? 0,
-          appearances: p.manualAppearances ?? tm?.appearances ?? espn?.appearances ?? 0,
+          goals: p.manualGoals ?? apif?.goals ?? espn?.goals ?? 0,
+          assists: p.manualAssists ?? apif?.assists ?? espn?.assists ?? 0,
+          appearances: p.manualAppearances ?? apif?.appearances ?? espn?.appearances ?? 0,
           season: 2026,
         } as LeaderboardEntry;
       })
@@ -158,7 +158,132 @@ export class PlayersService implements OnModuleInit {
     return results;
   }
 
-  // ── Stats de Transfermarkt (leaderboard) ─────────────────────────────────────
+  // ── Stats de API-Football (leaderboard) ──────────────────────────────────────
+
+  private apiFootballStatsCache: { data: Map<string, ApiFootballPlayerStats>; ts: number } | null = null;
+
+  /**
+   * Trae todas las stats de jugadores de River (team 435 = liga, 268 = internacional)
+   * para la temporada actual. Usa el endpoint /players?team=... que es preciso.
+   * Cache 6h para no agotar las 100 calls/día del free tier.
+   */
+  private async fetchApiFootballRiverStats(): Promise<Map<string, ApiFootballPlayerStats>> {
+    const TTL = 6 * 60 * 60 * 1000;
+    if (this.apiFootballStatsCache && Date.now() - this.apiFootballStatsCache.ts < TTL) {
+      return this.apiFootballStatsCache.data;
+    }
+
+    const result = new Map<string, ApiFootballPlayerStats>();
+    if (!process.env.API_FOOTBALL_KEY) {
+      this.logger.warn('API_FOOTBALL_KEY no configurado - skip stats leaderboard');
+      this.apiFootballStatsCache = { data: result, ts: Date.now() };
+      return result;
+    }
+
+    // Probar varias temporadas porque a fin/inicio de año cambia
+    const season = new Date().getFullYear() - (new Date().getMonth() < 6 ? 1 : 0);
+    const seasonsToTry = [season, season - 1];
+
+    for (const teamId of RIVER_TEAM_IDS) {
+      for (const s of seasonsToTry) {
+        try {
+          let page = 1;
+          let totalPages = 1;
+          do {
+            const res = await axios.get('https://v3.football.api-sports.io/players', {
+              params: { team: teamId, season: s, page },
+              headers: API_HEADERS(),
+              timeout: 15000,
+            });
+            const entries: any[] = res.data?.response ?? [];
+            totalPages = res.data?.paging?.total ?? 1;
+
+            for (const entry of entries) {
+              const name: string =
+                entry.player?.name ??
+                (entry.player?.firstname && entry.player?.lastname
+                  ? `${entry.player.firstname} ${entry.player.lastname}`
+                  : '');
+              if (!name) continue;
+              // statistics es un array - sumamos todas las competiciones
+              const stats: any[] = entry.statistics ?? [];
+              let goals = 0, assists = 0, appearances = 0;
+              for (const st of stats) {
+                goals += st.goals?.total ?? 0;
+                assists += st.goals?.assists ?? 0;
+                appearances += st.games?.appearences ?? 0;
+              }
+              // Si ya teníamos data del mismo jugador, sumamos (caso teamId 435 + 268)
+              const existing = result.get(name.toLowerCase());
+              if (existing) {
+                existing.goals += goals;
+                existing.assists += assists;
+                existing.appearances += appearances;
+              } else if (goals > 0 || assists > 0 || appearances > 0) {
+                result.set(name.toLowerCase(), {
+                  fullName: name,
+                  goals, assists, appearances,
+                });
+              }
+            }
+            page++;
+            // El free tier devuelve ~250 ms wait entre páginas idealmente
+          } while (page <= totalPages && page <= 5);
+
+          // Si en esta temporada encontramos jugadores, no probamos la siguiente
+          if (result.size > 0) break;
+        } catch (e: any) {
+          this.logger.warn(`API-Football team=${teamId} season=${s} falló: ${e?.message}`);
+        }
+      }
+      if (result.size > 0) break;
+    }
+
+    this.logger.log(`📊 API-Football stats: ${result.size} jugadores cargados`);
+    this.apiFootballStatsCache = { data: result, ts: Date.now() };
+    return result;
+  }
+
+  /** Match API-Football → DB player. Mismas reglas que ESPN/TM. */
+  private matchApiFootballPlayer(
+    apifMap: Map<string, ApiFootballPlayerStats>,
+    dbName: string,
+  ): ApiFootballPlayerStats | null {
+    if (apifMap.size === 0) return null;
+    const norm = (s: string) =>
+      s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+    const dbStripped = dbName.replace(/^[A-Za-zÀ-ÿ]\.\s+/, '');
+    const dbN = norm(dbStripped);
+    const dbLast = dbN.split(' ').pop() ?? '';
+
+    // 1) Exacto
+    for (const [key, stats] of apifMap) {
+      if (norm(key) === dbN) return stats;
+    }
+    // 2) Match por última palabra (apellido) si ≥ 4 letras
+    if (dbLast.length >= 4) {
+      for (const stats of apifMap.values()) {
+        const apifLast = norm(stats.fullName.split(' ').pop() ?? '');
+        if (apifLast === dbLast) return stats;
+      }
+    }
+    // 3) Inicial + apellido: "S. Driussi" → "Sebastián Driussi"
+    const initialMatch = dbName.match(/^([A-Za-zÀ-ÿ])\.\s+(.+)$/);
+    if (initialMatch) {
+      const initial = norm(initialMatch[1]);
+      const last = norm(initialMatch[2]);
+      for (const stats of apifMap.values()) {
+        const parts = stats.fullName.split(' ');
+        if (parts.length < 2) continue;
+        const apifFirstInitial = norm(parts[0])[0];
+        const apifLast = norm(parts.slice(1).join(' '));
+        if (apifFirstInitial === initial && apifLast === last) return stats;
+      }
+    }
+    return null;
+  }
+
+  // ── Stats de Transfermarkt (leaderboard, deshabilitado por baja precision) ─────
 
   private tmStatsCache: { data: Map<string, TmPlayerStats>; ts: number } | null = null;
 
@@ -843,6 +968,13 @@ export class PlayersService implements OnModuleInit {
 }
 
 interface TmPlayerStats {
+  fullName: string;
+  appearances: number;
+  goals: number;
+  assists: number;
+}
+
+interface ApiFootballPlayerStats {
   fullName: string;
   appearances: number;
   goals: number;
