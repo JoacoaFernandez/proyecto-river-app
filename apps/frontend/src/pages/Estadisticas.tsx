@@ -1,9 +1,17 @@
 // apps/frontend/src/pages/Estadisticas.tsx
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { User, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
+import { User, ChevronUp, ChevronDown, ChevronsUpDown, TrendingUp } from 'lucide-react';
+import {
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
+} from 'recharts';
 import { getLiveDashboard } from '../services/live.service';
-import { getPastMatches } from '../services/matches.service';
+import {
+  getPastMatches,
+  getSeasonProgression,
+  getSeasonsAvailable,
+  type SeasonProgressionEntry,
+} from '../services/matches.service';
 import { getLeaderboard, type LeaderboardEntry } from '../services/players.service';
 
 interface TeamStats {
@@ -678,6 +686,237 @@ export default function Estadisticas() {
           </div>
         )}
       </section>
+
+      {/* Comparativa de temporadas */}
+      <SeasonComparison />
+    </div>
+  );
+}
+
+// ── Comparativa de temporadas ────────────────────────────────────────────────
+
+function SeasonComparison() {
+  const [years, setYears] = useState<number[]>([]);
+  const [yearA, setYearA] = useState<number | null>(null);
+  const [yearB, setYearB] = useState<number | null>(null);
+  const [progA, setProgA] = useState<SeasonProgressionEntry[]>([]);
+  const [progB, setProgB] = useState<SeasonProgressionEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getSeasonsAvailable().then((ys) => {
+      setYears(ys);
+      if (ys[0]) setYearA(ys[0]);
+      if (ys[1]) setYearB(ys[1]);
+      setLoading(false);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (yearA != null) getSeasonProgression(yearA).then(setProgA);
+  }, [yearA]);
+
+  useEffect(() => {
+    if (yearB != null) getSeasonProgression(yearB).then(setProgB);
+  }, [yearB]);
+
+  const chartData = useMemo(() => {
+    const maxLen = Math.max(progA.length, progB.length);
+    const rows: Array<{ matchday: number; yearA?: number; yearB?: number }> = [];
+    for (let i = 0; i < maxLen; i++) {
+      rows.push({
+        matchday: i + 1,
+        yearA: progA[i]?.accumulatedPoints,
+        yearB: progB[i]?.accumulatedPoints,
+      });
+    }
+    return rows;
+  }, [progA, progB]);
+
+  const summaryA = useMemo(() => computeSummary(progA), [progA]);
+  const summaryB = useMemo(() => computeSummary(progB), [progB]);
+
+  if (loading) {
+    return (
+      <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 text-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-riverRed mx-auto" />
+      </section>
+    );
+  }
+
+  if (years.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 md:p-6">
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+        <h2 className="text-base md:text-lg font-black uppercase tracking-wide flex items-center gap-2">
+          <TrendingUp className="w-5 h-5 text-riverRed" />
+          Comparativa de temporadas
+        </h2>
+        <p className="text-[11px] text-neutral-500">Puntos acumulados por jornada (solo partidos finalizados)</p>
+      </div>
+
+      {/* Selectores */}
+      <div className="grid grid-cols-2 gap-3 mb-5">
+        <YearSelector label="Temporada A" value={yearA} years={years} onChange={setYearA} color="riverRed" />
+        <YearSelector label="Temporada B" value={yearB} years={years} onChange={setYearB} color="blue" />
+      </div>
+
+      {/* Resumen */}
+      <div className="grid grid-cols-2 gap-3 mb-5">
+        <SummaryCard year={yearA} summary={summaryA} accent="border-l-riverRed" />
+        <SummaryCard year={yearB} summary={summaryB} accent="border-l-blue-500" />
+      </div>
+
+      {/* Chart */}
+      {chartData.length === 0 ? (
+        <p className="text-center text-sm text-neutral-500 py-8">
+          No hay partidos finalizados en las temporadas seleccionadas.
+        </p>
+      ) : (
+        <div className="h-72 -mx-2">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#262626" />
+              <XAxis
+                dataKey="matchday"
+                stroke="#737373"
+                tick={{ fill: '#737373', fontSize: 11 }}
+                label={{ value: 'Jornada', position: 'insideBottom', offset: -5, fill: '#737373', fontSize: 11 }}
+              />
+              <YAxis
+                stroke="#737373"
+                tick={{ fill: '#737373', fontSize: 11 }}
+                label={{ value: 'Pts acumulados', angle: -90, position: 'insideLeft', fill: '#737373', fontSize: 11 }}
+              />
+              <Tooltip
+                contentStyle={{ background: '#171717', border: '1px solid #404040', borderRadius: 12, fontSize: 12 }}
+                labelStyle={{ color: '#a3a3a3', marginBottom: 4 }}
+                formatter={(v: number, name: string) => [`${v} pts`, name]}
+                labelFormatter={(l) => `Jornada ${l}`}
+              />
+              <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+              <Line
+                type="monotone"
+                dataKey="yearA"
+                name={yearA ? String(yearA) : 'A'}
+                stroke="#E30613"
+                strokeWidth={2.5}
+                dot={{ r: 3 }}
+                activeDot={{ r: 5 }}
+                connectNulls
+              />
+              <Line
+                type="monotone"
+                dataKey="yearB"
+                name={yearB ? String(yearB) : 'B'}
+                stroke="#3b82f6"
+                strokeWidth={2.5}
+                dot={{ r: 3 }}
+                activeDot={{ r: 5 }}
+                connectNulls
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </section>
+  );
+}
+
+interface SeasonSummary {
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  points: number;
+  goalsFor: number;
+  goalsAgainst: number;
+}
+
+function computeSummary(entries: SeasonProgressionEntry[]): SeasonSummary {
+  let won = 0, drawn = 0, lost = 0, gf = 0, ga = 0;
+  for (const e of entries) {
+    if (e.result === 'W') won++;
+    else if (e.result === 'D') drawn++;
+    else lost++;
+    gf += e.riverScore;
+    ga += e.rivalScore;
+  }
+  return {
+    played: entries.length,
+    won, drawn, lost,
+    points: entries[entries.length - 1]?.accumulatedPoints ?? 0,
+    goalsFor: gf,
+    goalsAgainst: ga,
+  };
+}
+
+function YearSelector({
+  label, value, years, onChange, color,
+}: {
+  label: string;
+  value: number | null;
+  years: number[];
+  onChange: (y: number) => void;
+  color: 'riverRed' | 'blue';
+}) {
+  const accent = color === 'riverRed' ? 'text-riverRed' : 'text-blue-400';
+  return (
+    <div>
+      <label className={`block text-[10px] uppercase tracking-widest font-bold mb-1.5 ${accent}`}>{label}</label>
+      <select
+        value={value ?? ''}
+        onChange={(e) => onChange(parseInt(e.target.value, 10))}
+        className="w-full bg-neutral-950 border border-neutral-800 focus:border-riverRed text-white rounded-xl px-3 py-2 text-sm outline-none transition-colors tabular-nums"
+      >
+        {years.map((y) => (
+          <option key={y} value={y}>{y}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function SummaryCard({
+  year, summary, accent,
+}: {
+  year: number | null;
+  summary: SeasonSummary;
+  accent: string;
+}) {
+  return (
+    <div className={`bg-neutral-950 border border-neutral-800 border-l-4 ${accent} rounded-xl p-3`}>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs uppercase tracking-widest text-neutral-500 font-bold">Temporada {year ?? '—'}</span>
+        <span className="text-base font-black tabular-nums">{summary.points} <span className="text-[10px] text-neutral-500">pts</span></span>
+      </div>
+      <div className="grid grid-cols-4 gap-1 text-center">
+        <div>
+          <div className="text-sm font-bold tabular-nums">{summary.played}</div>
+          <div className="text-[9px] uppercase tracking-wider text-neutral-500">PJ</div>
+        </div>
+        <div>
+          <div className="text-sm font-bold tabular-nums text-green-400">{summary.won}</div>
+          <div className="text-[9px] uppercase tracking-wider text-neutral-500">G</div>
+        </div>
+        <div>
+          <div className="text-sm font-bold tabular-nums text-yellow-400">{summary.drawn}</div>
+          <div className="text-[9px] uppercase tracking-wider text-neutral-500">E</div>
+        </div>
+        <div>
+          <div className="text-sm font-bold tabular-nums text-red-400">{summary.lost}</div>
+          <div className="text-[9px] uppercase tracking-wider text-neutral-500">P</div>
+        </div>
+      </div>
+      <div className="text-[10px] text-neutral-500 text-center mt-2 tabular-nums">
+        GF {summary.goalsFor} · GC {summary.goalsAgainst} · DG{' '}
+        <span className={summary.goalsFor - summary.goalsAgainst >= 0 ? 'text-green-400' : 'text-red-400'}>
+          {summary.goalsFor - summary.goalsAgainst >= 0 ? '+' : ''}{summary.goalsFor - summary.goalsAgainst}
+        </span>
+      </div>
     </div>
   );
 }

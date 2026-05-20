@@ -180,3 +180,33 @@ export const deleteMatchEventAdmin = async (
 ): Promise<void> => {
   await api.delete(`/matches/${matchId}/events/${eventId}`);
 };
+
+export interface SeasonProgressionEntry {
+  matchday: number;
+  date: string;
+  opponent: string;
+  isHome: boolean;
+  riverScore: number;
+  rivalScore: number;
+  result: 'W' | 'D' | 'L';
+  pointsThisMatch: number;
+  accumulatedPoints: number;
+}
+
+export const getSeasonsAvailable = async (): Promise<number[]> => {
+  try {
+    const res = await api.get<number[]>('/matches/seasons-available');
+    return Array.isArray(res.data) ? res.data : [];
+  } catch {
+    return [];
+  }
+};
+
+export const getSeasonProgression = async (year: number): Promise<SeasonProgressionEntry[]> => {
+  try {
+    const res = await api.get<SeasonProgressionEntry[]>('/matches/season-progression', { params: { year } });
+    return Array.isArray(res.data) ? res.data : [];
+  } catch {
+    return [];
+  }
+};

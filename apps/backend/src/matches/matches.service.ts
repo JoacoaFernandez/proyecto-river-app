@@ -260,6 +260,101 @@ export class MatchesService implements OnModuleInit {
   }
 
   /**
+   * Lista de años (extraídos de Match.date) con partidos finalizados cargados.
+   */
+  async getSeasonsAvailable(): Promise<number[]> {
+    const matches = await this.prisma.match.findMany({
+      where: { status: 'finished', homeScore: { not: null }, awayScore: { not: null } },
+      select: { date: true },
+    });
+    const years = new Set<number>();
+    for (const m of matches) years.add(m.date.getFullYear());
+    return [...years].sort((a, b) => b - a);
+  }
+
+  /**
+   * Devuelve la evolución acumulada de puntos de River por jornada para una temporada.
+   * Solo cuenta partidos finalizados con score válido. Cada entrada incluye el partido
+   * (rival, score) y los puntos acumulados hasta esa fecha.
+   */
+  async getSeasonProgression(year: number): Promise<Array<{
+    matchday: number;
+    date: string;
+    opponent: string;
+    isHome: boolean;
+    riverScore: number;
+    rivalScore: number;
+    result: 'W' | 'D' | 'L';
+    pointsThisMatch: number;
+    accumulatedPoints: number;
+  }>> {
+    const RIVER_RX = /river\s*plate|^river$/i;
+    const start = new Date(year, 0, 1);
+    const end = new Date(year + 1, 0, 1);
+
+    const matches = await this.prisma.match.findMany({
+      where: {
+        status: 'finished',
+        homeScore: { not: null },
+        awayScore: { not: null },
+        date: { gte: start, lt: end },
+      },
+      orderBy: { date: 'asc' },
+      select: {
+        id: true, date: true,
+        homeTeam: true, awayTeam: true,
+        homeScore: true, awayScore: true,
+      },
+    });
+
+    let acc = 0;
+    let matchday = 0;
+    const result: Array<{
+      matchday: number;
+      date: string;
+      opponent: string;
+      isHome: boolean;
+      riverScore: number;
+      rivalScore: number;
+      result: 'W' | 'D' | 'L';
+      pointsThisMatch: number;
+      accumulatedPoints: number;
+    }> = [];
+
+    for (const m of matches) {
+      const isHome = RIVER_RX.test(m.homeTeam);
+      const isAway = RIVER_RX.test(m.awayTeam);
+      if (!isHome && !isAway) continue;
+
+      const riverScore = isHome ? m.homeScore! : m.awayScore!;
+      const rivalScore = isHome ? m.awayScore! : m.homeScore!;
+      const opponent = isHome ? m.awayTeam : m.homeTeam;
+
+      let res: 'W' | 'D' | 'L';
+      let pts: number;
+      if (riverScore > rivalScore) { res = 'W'; pts = 3; }
+      else if (riverScore < rivalScore) { res = 'L'; pts = 0; }
+      else { res = 'D'; pts = 1; }
+
+      acc += pts;
+      matchday++;
+      result.push({
+        matchday,
+        date: m.date.toISOString(),
+        opponent,
+        isHome,
+        riverScore,
+        rivalScore,
+        result: res,
+        pointsThisMatch: pts,
+        accumulatedPoints: acc,
+      });
+    }
+
+    return result;
+  }
+
+  /**
    * Importa una lista de partidos históricos desde CSV. Cada fila debe traer:
    * date,homeTeam,awayTeam,homeScore,awayScore,competition,stadium
    * (stadium opcional). Si dryRun=true devuelve solo la preview sin tocar la DB.

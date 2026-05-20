@@ -34,6 +34,18 @@ model User {
   commentLikes    CommentLike[]
   surveyVotes     SurveyVote[]
   favorites       Favorite[]
+  activities      UserActivity[]
+}
+
+model UserActivity {
+  id        String   @id @default(uuid())
+  userId    String
+  action    String
+  meta      Json?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
 
 model Player {
