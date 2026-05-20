@@ -133,18 +133,16 @@ export default function AdminPlantel() {
     if (syncing) return;
     setSyncing(true);
     try {
-      const res = await api.post<{ synced: number; matched: number; espnFound: number }>('/players/sync-injuries-espn');
-      const { matched, espnFound } = res.data;
-      if (matched > 0) {
-        flash(`✅ ${matched} jugador(es) marcado(s) como lesionado(s) (ESPN encontró ${espnFound}).`);
-        await load();
-      } else if (espnFound === 0) {
-        flash('ESPN no devolvió lesionados — marcá manualmente desde "Editar".', true);
+      const res = await api.post<{ fetched: number; marked: number; cleared: number; skippedManual: number }>('/players/sync-injuries-tm');
+      const { fetched, marked, cleared, skippedManual } = res.data;
+      if (fetched === 0) {
+        flash('Transfermarkt no devolvió data en este momento. Probá de vuelta en un rato.', true);
       } else {
-        flash(`ESPN reportó ${espnFound} lesionado(s) pero ninguno matcheó con el plantel actual.`, true);
+        flash(`✅ Transfermarkt: ${fetched} bajas detectadas · ${marked} marcadas · ${cleared} recuperadas · ${skippedManual} manuales preservadas`);
+        await load();
       }
     } catch (e: any) {
-      flash(e?.response?.data?.message ?? 'Error al sincronizar lesionados.', true);
+      flash(e?.response?.data?.message ?? 'Error al sincronizar desde Transfermarkt.', true);
     } finally {
       setSyncing(false);
     }
@@ -351,10 +349,10 @@ export default function AdminPlantel() {
             onClick={handleSyncInjuries}
             disabled={syncing}
             className="flex items-center gap-2 bg-neutral-800 hover:bg-neutral-700 disabled:bg-neutral-900 border border-neutral-700 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
-            title="Intentar detectar lesionados desde ESPN. Nunca pisa estados manuales."
+            title="Sincronizar lesionados desde Transfermarkt. Nunca pisa estados marcados manualmente."
           >
             <AlertTriangle className="w-4 h-4" />
-            {syncing ? 'Sincronizando…' : 'Detectar lesionados (ESPN)'}
+            {syncing ? 'Sincronizando…' : 'Detectar lesionados (Transfermarkt)'}
           </button>
           <button
             onClick={() => setShowForm((s) => !s)}

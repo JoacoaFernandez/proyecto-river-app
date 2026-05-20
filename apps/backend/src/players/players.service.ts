@@ -1,8 +1,20 @@
 // apps/backend/src/players/players.service.ts
 import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import axios from 'axios';
+import * as cheerio from 'cheerio';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePlayerDto } from './dto/create-player.dto';
+
+const TM_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+  'Accept-Language': 'es-AR,es;q=0.9,en;q=0.5',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+};
+
+// Transfermarkt: River Plate = club id 209
+const TM_RIVER_INJURIES_URL = 'https://www.transfermarkt.com/club-atletico-river-plate/sperrenundverletzungen/verein/209';
 
 const API_HEADERS = () => ({
   'x-rapidapi-key': process.env.API_FOOTBALL_KEY ?? '',
@@ -30,6 +42,10 @@ export class PlayersService implements OnModuleInit {
 
   // 2. Traer todos los jugadores ordenados por su número de camiseta real
   async findAll() {
+    // Lazy refresh de lesiones en background (no bloquea la respuesta).
+    // Si pasaron > 12h desde el último sync, dispara una tarea async.
+    this.maybeRefreshInjuries();
+
     return this.prisma.player.findMany({
       orderBy: {
         number: 'asc', // Corregido 'jerseyNumber'
@@ -48,12 +64,21 @@ export class PlayersService implements OnModuleInit {
     return player;
   }
 
-  // 4. Actualizar un jugador (La función que le faltaba a tu controlador)
+  // 4. Actualizar un jugador. Si cambia status/injury* desde admin marcamos statusSource='manual'
+  // para que el auto-sync de Transfermarkt no lo pise.
   async update(id: string, updatePlayerDto: any) {
     await this.findOne(id);
+    const editsStatus =
+      'status' in updatePlayerDto ||
+      'injuryType' in updatePlayerDto ||
+      'injuryZone' in updatePlayerDto ||
+      'injuryReturnDate' in updatePlayerDto;
+    const payload = editsStatus
+      ? { ...updatePlayerDto, statusSource: 'manual' }
+      : updatePlayerDto;
     const updated = await this.prisma.player.update({
       where: { id },
-      data: updatePlayerDto,
+      data: payload,
     });
     this.statsCache.delete(id);
     this.leaderboardCache = null;
@@ -125,6 +150,194 @@ export class PlayersService implements OnModuleInit {
       }
     }
     return results;
+  }
+
+  // ── Auto-sync lesiones desde Transfermarkt ────────────────────────────────────
+
+  private lastTmSync = 0;
+  private tmSyncInProgress = false;
+
+  /** Cron diario 8am. En free tier de Render puede no dispararse si el servicio duerme. */
+  @Cron('0 8 * * *')
+  async cronSyncInjuriesAuto() {
+    await this.syncInjuriesFromTransfermarkt().catch((e) =>
+      this.logger.warn(`Cron Transfermarkt falló: ${e?.message}`),
+    );
+  }
+
+  /** Refresh lazy: si pasaron > 12h desde el último sync exitoso, dispara en background. */
+  async maybeRefreshInjuries(): Promise<void> {
+    if (this.tmSyncInProgress) return;
+    const TWELVE_H = 12 * 60 * 60 * 1000;
+    if (Date.now() - this.lastTmSync < TWELVE_H) return;
+    this.tmSyncInProgress = true;
+    this.syncInjuriesFromTransfermarkt()
+      .catch((e) => this.logger.warn(`Lazy Transfermarkt sync falló: ${e?.message}`))
+      .finally(() => { this.tmSyncInProgress = false; });
+  }
+
+  /**
+   * Scrapea la página de lesiones+suspensiones de River en Transfermarkt y sincroniza
+   * el campo Player.status de la DB. Reglas:
+   *  - statusSource === 'manual' → NUNCA se toca (admin tiene la última palabra)
+   *  - jugador aparece en TM → status='injured', statusSource='auto', injuryType=el motivo
+   *  - jugador antes injured con statusSource='auto' pero ya no aparece → vuelve a 'available'
+   */
+  async syncInjuriesFromTransfermarkt(): Promise<{
+    fetched: number; marked: number; cleared: number; skippedManual: number;
+  }> {
+    let html: string;
+    try {
+      const res = await axios.get(TM_RIVER_INJURIES_URL, {
+        headers: TM_HEADERS,
+        timeout: 15000,
+      });
+      html = res.data as string;
+    } catch (e: any) {
+      this.logger.warn(`Transfermarkt fetch falló: ${e?.message}`);
+      return { fetched: 0, marked: 0, cleared: 0, skippedManual: 0 };
+    }
+
+    const tmEntries = this.parseTransfermarktInjuries(html);
+    this.logger.log(`📋 Transfermarkt: ${tmEntries.length} lesionado(s)/suspendido(s) detectado(s)`);
+
+    if (tmEntries.length === 0) {
+      // Si TM no devolvió nada pero la última sync había encontrado gente, podría ser
+      // un fallo de scraping (no querés borrar todos los injured por eso). Cortamos.
+      return { fetched: 0, marked: 0, cleared: 0, skippedManual: 0 };
+    }
+
+    const players = await this.prisma.player.findMany();
+    const norm = (s: string) =>
+      s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+
+    const tmByNorm = new Map<string, { name: string; type: string; isSuspension: boolean }>();
+    for (const e of tmEntries) {
+      tmByNorm.set(norm(e.name), e);
+      // También por apellido para facilitar matching con "S. Driussi"
+      const last = norm(e.name).split(' ').slice(1).join(' ');
+      if (last) tmByNorm.set(last, e);
+      const lastWord = norm(e.name).split(' ').pop() ?? '';
+      if (lastWord.length >= 4) tmByNorm.set(lastWord, e);
+    }
+
+    let marked = 0, cleared = 0, skippedManual = 0;
+    const matchedPlayerIds = new Set<string>();
+
+    for (const player of players) {
+      const dbStripped = player.name.replace(/^[A-Za-zÀ-ÿ]\.\s+/, '');
+      const dbN = norm(dbStripped);
+      const dbLast = dbN.split(' ').pop() ?? '';
+      const candidates = [dbN, dbLast, dbN.split(' ').slice(1).join(' ')];
+      const tmHit = candidates.map((c) => tmByNorm.get(c)).find((v) => v != null);
+
+      if (tmHit) {
+        matchedPlayerIds.add(player.id);
+        if ((player as any).statusSource === 'manual') {
+          skippedManual++;
+          continue;
+        }
+        if (player.status !== 'injured' && !tmHit.isSuspension) {
+          await this.prisma.player.update({
+            where: { id: player.id },
+            data: {
+              status: 'injured',
+              statusSource: 'auto',
+              injuryType: tmHit.type,
+            } as any,
+          });
+          marked++;
+        } else if (player.status !== 'suspended' && tmHit.isSuspension) {
+          await this.prisma.player.update({
+            where: { id: player.id },
+            data: { status: 'suspended', statusSource: 'auto', injuryType: tmHit.type } as any,
+          });
+          marked++;
+        }
+      }
+    }
+
+    // Limpiar los jugadores que estaban auto-marcados como injured/suspended pero ya no aparecen
+    for (const player of players) {
+      if (matchedPlayerIds.has(player.id)) continue;
+      const wasAuto = (player as any).statusSource !== 'manual';
+      const wasInactive = player.status === 'injured' || player.status === 'suspended';
+      if (wasAuto && wasInactive) {
+        await this.prisma.player.update({
+          where: { id: player.id },
+          data: {
+            status: 'available',
+            statusSource: 'auto',
+            injuryType: null,
+            injuryZone: null,
+            injuryReturnDate: null,
+          } as any,
+        });
+        cleared++;
+      }
+    }
+
+    this.lastTmSync = Date.now();
+    this.logger.log(
+      `✅ Transfermarkt sync: ${marked} marcados, ${cleared} recuperados, ${skippedManual} skip manuales`,
+    );
+    return { fetched: tmEntries.length, marked, cleared, skippedManual };
+  }
+
+  /** Parser HTML de Transfermarkt. Devuelve jugadores con nombre + tipo de baja. */
+  private parseTransfermarktInjuries(html: string): Array<{ name: string; type: string; isSuspension: boolean }> {
+    try {
+      const $ = cheerio.load(html);
+      const rows: Array<{ name: string; type: string; isSuspension: boolean }> = [];
+
+      // En la página de TM, la tabla principal de bajas tiene class="items"
+      // Cada fila tiene un <a> con clase "spielprofil_tooltip" o "tooltipstered"
+      $('table.items tbody tr').each((_i, row) => {
+        const $row = $(row);
+        // Nombre del jugador
+        const nameLink = $row.find('a[href*="/profil/spieler/"]').first();
+        const name = nameLink.text().trim();
+        if (!name) return;
+
+        // Motivo: TM lo pone en una columna específica. Capturamos el texto de la fila
+        // y buscamos palabras clave. Esto es laxo pero efectivo.
+        const rowText = $row.text();
+        let type = 'Lesión';
+        let isSuspension = false;
+        if (/suspen|sanci|tarjeta|expulsi/i.test(rowText)) {
+          type = 'Suspensión';
+          isSuspension = true;
+        } else if (/cruzado|rotura|desgarro|esguince|rodilla|tobillo|isquio|aductor|pubalg|fractur|contractura|sobrecarga|gemelo|hombro|operaci/i.test(rowText)) {
+          // Tomar la primera palabra clave para mostrar
+          const m = rowText.match(/(cruzado|rotura|desgarro|esguince|rodilla|tobillo|isquio[a-záéíóú]*|aductor|pubalg[a-záéíóú]*|fractur[a-záéíóú]*|contractura|sobrecarga|gemelo|hombro|operaci[oóa-záéíóú]*)/i);
+          if (m) type = m[1].charAt(0).toUpperCase() + m[1].slice(1);
+        }
+
+        // Intentar capturar "razón" más estructurada: TM tiene <td class="hauptlink" o similar
+        const possibleReason = $row.find('td').filter((_, td) => {
+          const cls = $(td).attr('class') ?? '';
+          const txt = $(td).text().trim();
+          return txt.length > 3 && txt.length < 80 && !cls.includes('zentriert');
+        }).map((_, td) => $(td).text().trim()).get();
+        // El motivo suele ser una de las celdas con texto medio (excluyendo nombre, fecha, etc.)
+
+        rows.push({ name, type, isSuspension });
+
+        // Avoid TS warning unused
+        void possibleReason;
+      });
+
+      // Dedupe por nombre
+      const seen = new Set<string>();
+      return rows.filter((r) => {
+        if (seen.has(r.name)) return false;
+        seen.add(r.name);
+        return true;
+      });
+    } catch (e: any) {
+      this.logger.warn(`Transfermarkt parse falló: ${e?.message}`);
+      return [];
+    }
   }
 
   /**

@@ -74,6 +74,15 @@ export class PlayersController {
     return this.playersService.syncInjuriesFromEspn();
   }
 
+  @Post('sync-injuries-tm')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Sincronizar lesionados desde Transfermarkt (admin, recomendado)' })
+  syncInjuriesTm() {
+    return this.playersService.syncInjuriesFromTransfermarkt();
+  }
+
   @Get('injuries-raw')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')

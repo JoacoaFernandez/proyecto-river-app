@@ -57,6 +57,7 @@ model Player {
   photo            String?
   nationality      String?
   status           String         @default("available")
+  statusSource     String         @default("auto") // "manual" o "auto" - si manual, el sync no lo pisa
   subPosition      String?        // GK | CB | LB | RB | CDM | CM | CAM | LW | RW | CF
   nickname         String?
   preferredFoot    String?
